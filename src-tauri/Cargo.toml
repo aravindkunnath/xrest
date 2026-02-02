@@ -1,0 +1,55 @@
+[package]
+name = "xrest"
+version = "0.1.0"
+description = "Service-first client for microservices"
+authors = ["Aravind Kunnath"]
+edition = "2021"
+default-run = "xrest"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "xrest_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+git2 = { version = "0.20.3", features = ["vendored-openssl", "vendored-libgit2"] }
+openssl = { version = "0.10", features = ["vendored"] }
+serde_yaml = "0.9.34"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+reqwest = { version = "0.13.1", features = ["json", "multipart", "query"] }
+tokio = { version = "1.49.0", features = ["full"] }
+once_cell = "1.21.3"
+regex = "1"
+rusqlite = { version = "0.33.0", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+openapiv3 = "2.0.0"
+async-trait = "0.1"
+base64 = "0.21"
+urlencoding = "2.1"
+curl-parser = "0.6.0"
+url = "2.5.8"
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+csscolorparser = "0.7"
+rand = "0.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
+
+[dev-dependencies]
+mockito = "1"
+mockall = "0.13"
+
