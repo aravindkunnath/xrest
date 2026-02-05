@@ -44,6 +44,7 @@ url = "2.5.8"
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
 csscolorparser = "0.7"
 rand = "0.8"
+xrest-resolve = { path = "../crates/xrest-resolve" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
