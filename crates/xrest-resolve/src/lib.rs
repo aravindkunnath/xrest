@@ -5,8 +5,12 @@ pub mod resolvers;
 pub use variable::Variable;
 pub use resolver::{Resolver, ResolverStrategy, VariableResolver, ResolveError};
 pub use resolvers::{
-    AwsResolver, AzureResolver, EnvFileResolver, GcpResolver, KeychainResolver, SystemEnvResolver,
+    AwsResolver, AzureResolver, EnvFileResolver, GcpResolver, KeychainBackend, KeychainResolver,
+    OsKeychainBackend, SystemEnvResolver,
 };
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use resolvers::MockKeychainBackend;
 
 #[cfg(test)]
 mod tests {

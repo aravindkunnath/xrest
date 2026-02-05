@@ -9,7 +9,7 @@ pub use aws::AwsResolver;
 pub use azure::AzureResolver;
 pub use dotenv::EnvFileResolver;
 pub use gcp::GcpResolver;
-pub use keychain::KeychainResolver;
+pub use keychain::{KeychainBackend, KeychainResolver, OsKeychainBackend};
 pub use system::SystemEnvResolver;
 
 #[cfg(any(test, feature = "test-utils"))]
