@@ -2,11 +2,15 @@
 name = "xrest-resolve"
 version = "0.1.0"
 edition = "2024"
+ 
+ [features]
+ test-utils = []
 
 [dependencies]
 async-trait = "0.1.89"
 dotenvy = "0.15.7"
 serde = { version = "1.0.228", features = ["derive"] }
+keyring = "3.2.1"
 thiserror = "2.0.18"
 
 [dev-dependencies]

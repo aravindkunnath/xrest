@@ -11,3 +11,6 @@ pub use dotenv::EnvFileResolver;
 pub use gcp::GcpResolver;
 pub use keychain::KeychainResolver;
 pub use system::SystemEnvResolver;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub use keychain::MockKeychainBackend;

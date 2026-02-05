@@ -11,6 +11,7 @@ pub use resolvers::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    pub use crate::resolvers::MockKeychainBackend;
     use std::collections::HashMap;
 
     #[tokio::test]
@@ -29,7 +30,10 @@ mod tests {
         resolver.add_strategy(ResolverStrategy::SystemEnv(SystemEnvResolver));
 
         // 3. Keychain Strategy
-        resolver.add_strategy(ResolverStrategy::Keychain(KeychainResolver));
+        let mut keychain_vars = HashMap::new();
+        keychain_vars.insert("my-api-key".to_string(), "mock-keychain-value-for-my-api-key".to_string());
+        let keychain_backend = std::sync::Arc::new(MockKeychainBackend::new(keychain_vars));
+        resolver.add_strategy(ResolverStrategy::Keychain(KeychainResolver::new(keychain_backend)));
 
         // 4. GCP Strategy
         resolver.add_strategy(ResolverStrategy::Gcp(GcpResolver));
@@ -73,6 +77,7 @@ mod tests {
         }
         resolver.add_strategy(ResolverStrategy::SystemEnv(SystemEnvResolver));
 
+        // weird rust syntax for double curly braces - this translates to {{ key }}
         let v = Variable::new("K".into(), format!("{{{{ {} }}}}", key));
         
         // Should return the value from .env file because it's first in the chain
