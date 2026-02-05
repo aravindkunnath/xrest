@@ -1,5 +1,8 @@
 use async_trait::async_trait;
 use thiserror::Error;
+use crate::resolvers::{
+    AwsResolver, AzureResolver, EnvFileResolver, GcpResolver, KeychainResolver, SystemEnvResolver,
+};
 
 #[derive(Debug, Error)]
 pub enum ResolveError {
@@ -18,29 +21,52 @@ pub trait VariableResolver: Send + Sync {
     async fn resolve(&self, content: &str) -> Result<Option<String>, ResolveError>;
 }
 
-/// Orchestrates the resolution of variables using a chain of resolvers.
+/// Enum-based dispatch for different resolution strategies.
+pub enum ResolverStrategy {
+    EnvFile(EnvFileResolver),
+    SystemEnv(SystemEnvResolver),
+    Keychain(KeychainResolver),
+    Gcp(GcpResolver),
+    Aws(AwsResolver),
+    Azure(AzureResolver),
+}
+
+impl ResolverStrategy {
+    pub async fn resolve(&self, content: &str) -> Result<Option<String>, ResolveError> {
+        match self {
+            Self::EnvFile(r) => r.resolve(content).await,
+            Self::SystemEnv(r) => r.resolve(content).await,
+            Self::Keychain(r) => r.resolve(content).await,
+            Self::Gcp(r) => r.resolve(content).await,
+            Self::Aws(r) => r.resolve(content).await,
+            Self::Azure(r) => r.resolve(content).await,
+        }
+    }
+}
+
+/// Orchestrates the resolution of variables using a chain of prioritized strategies.
 pub struct Resolver {
-    pub(crate) resolvers: Vec<Box<dyn VariableResolver>>,
+    strategies: Vec<ResolverStrategy>,
 }
 
 impl Resolver {
     pub fn new() -> Self {
-        Self { resolvers: Vec::new() }
+        Self { strategies: Vec::new() }
     }
 
-    pub fn add_resolver(&mut self, resolver: Box<dyn VariableResolver>) {
-        self.resolvers.push(resolver);
+    pub fn add_strategy(&mut self, strategy: ResolverStrategy) {
+        self.strategies.push(strategy);
     }
 
-    /// Resolves a variable by trying each resolver in order.
+    /// Resolves a variable by trying each strategy in order.
     pub async fn resolve_variable(&self, variable: &crate::variable::Variable) -> Result<String, ResolveError> {
         let content = match variable.get_template_content() {
             Some(c) => c,
             None => return Ok(variable.raw_value.clone()), // Return literal if not a template
         };
 
-        for resolver in &self.resolvers {
-            if let Some(resolved) = resolver.resolve(content).await? {
+        for strategy in &self.strategies {
+            if let Some(resolved) = strategy.resolve(content).await? {
                 return Ok(resolved);
             }
         }

@@ -3,7 +3,7 @@ pub mod resolver;
 pub mod resolvers;
 
 pub use variable::Variable;
-pub use resolver::{Resolver, VariableResolver, ResolveError};
+pub use resolver::{Resolver, ResolverStrategy, VariableResolver, ResolveError};
 pub use resolvers::{
     AwsResolver, AzureResolver, EnvFileResolver, GcpResolver, KeychainResolver, SystemEnvResolver,
 };
@@ -17,22 +17,22 @@ mod tests {
     async fn test_resolver_order() -> Result<(), ResolveError> {
         let mut resolver = Resolver::new();
         
-        // 1. Env File Resolver
+        // 1. Env File Strategy
         let mut env_vars = HashMap::new();
         env_vars.insert("LOCAL_VAR".to_string(), "local_value".to_string());
-        resolver.add_resolver(Box::new(EnvFileResolver::new(env_vars)));
+        resolver.add_strategy(ResolverStrategy::EnvFile(EnvFileResolver::new(env_vars)));
 
-        // 2. System Env Resolver
+        // 2. System Env Strategy
         unsafe {
             std::env::set_var("SYS_VAR", "sys_value");
         }
-        resolver.add_resolver(Box::new(SystemEnvResolver));
+        resolver.add_strategy(ResolverStrategy::SystemEnv(SystemEnvResolver));
 
-        // 3. Keychain
-        resolver.add_resolver(Box::new(KeychainResolver));
+        // 3. Keychain Strategy
+        resolver.add_strategy(ResolverStrategy::Keychain(KeychainResolver));
 
-        // 4. GCP
-        resolver.add_resolver(Box::new(GcpResolver));
+        // 4. GCP Strategy
+        resolver.add_strategy(ResolverStrategy::Gcp(GcpResolver));
 
         // Test Local Env
         let v1 = Variable::new("K1".into(), "{{ LOCAL_VAR }}".into());
@@ -62,16 +62,16 @@ mod tests {
         let env_value = "from_env_file";
         let system_value = "from_system";
 
-        // 1. Add Env File Resolver FIRST
+        // 1. Add Env File Strategy FIRST
         let mut env_vars = HashMap::new();
         env_vars.insert(key.to_string(), env_value.to_string());
-        resolver.add_resolver(Box::new(EnvFileResolver::new(env_vars)));
+        resolver.add_strategy(ResolverStrategy::EnvFile(EnvFileResolver::new(env_vars)));
 
-        // 2. Add System Env Resolver SECOND
+        // 2. Add System Env Strategy SECOND
         unsafe {
             std::env::set_var(key, system_value);
         }
-        resolver.add_resolver(Box::new(SystemEnvResolver));
+        resolver.add_strategy(ResolverStrategy::SystemEnv(SystemEnvResolver));
 
         let v = Variable::new("K".into(), format!("{{{{ {} }}}}", key));
         
