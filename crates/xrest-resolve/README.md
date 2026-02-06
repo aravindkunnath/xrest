@@ -86,7 +86,3 @@ mock_data.insert("test_key".into(), "secret_val".into());
 let backend = Arc::new(MockKeychainBackend::new(mock_data));
 let resolver = KeychainResolver::new(backend);
 ```
-
-## License
-
-MIT / Apache-2.0
