@@ -8,9 +8,11 @@ pub mod system;
 pub use aws::AwsResolver;
 pub use azure::AzureResolver;
 pub use dotenv::EnvFileResolver;
-pub use gcp::GcpResolver;
+pub use gcp::{GcpBackend, GcpResolver, RealGcpBackend};
 pub use keychain::{KeychainBackend, KeychainResolver, OsKeychainBackend};
 pub use system::SystemEnvResolver;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub use gcp::MockGcpBackend;
 #[cfg(any(test, feature = "test-utils"))]
 pub use keychain::MockKeychainBackend;

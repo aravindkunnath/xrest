@@ -1,16 +1,16 @@
-pub mod variable;
 pub mod resolver;
 pub mod resolvers;
+pub mod variable;
 
-pub use variable::Variable;
-pub use resolver::{Resolver, ResolverStrategy, VariableResolver, ResolveError};
+pub use resolver::{ResolveError, Resolver, ResolverStrategy, VariableResolver};
 pub use resolvers::{
-    AwsResolver, AzureResolver, EnvFileResolver, GcpResolver, KeychainBackend, KeychainResolver,
-    OsKeychainBackend, SystemEnvResolver,
+    AwsResolver, AzureResolver, EnvFileResolver, GcpBackend, GcpResolver, KeychainBackend,
+    KeychainResolver, OsKeychainBackend, RealGcpBackend, SystemEnvResolver,
 };
+pub use variable::Variable;
 
 #[cfg(any(test, feature = "test-utils"))]
-pub use resolvers::MockKeychainBackend;
+pub use resolvers::{MockGcpBackend, MockKeychainBackend};
 
 #[cfg(test)]
 mod tests {
@@ -21,7 +21,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolver_order() -> Result<(), ResolveError> {
         let mut resolver = Resolver::new();
-        
+
         // 1. Env File Strategy
         let mut env_vars = HashMap::new();
         env_vars.insert("LOCAL_VAR".to_string(), "local_value".to_string());
@@ -35,12 +35,23 @@ mod tests {
 
         // 3. Keychain Strategy
         let mut keychain_vars = HashMap::new();
-        keychain_vars.insert("my-api-key".to_string(), "mock-keychain-value-for-my-api-key".to_string());
+        keychain_vars.insert(
+            "my-api-key".to_string(),
+            "mock-keychain-value-for-my-api-key".to_string(),
+        );
         let keychain_backend = std::sync::Arc::new(MockKeychainBackend::new(keychain_vars));
-        resolver.add_strategy(ResolverStrategy::Keychain(KeychainResolver::new(keychain_backend)));
+        resolver.add_strategy(ResolverStrategy::Keychain(KeychainResolver::new(
+            keychain_backend,
+        )));
 
         // 4. GCP Strategy
-        resolver.add_strategy(ResolverStrategy::Gcp(GcpResolver));
+        let mut gcp_vars = HashMap::new();
+        gcp_vars.insert(
+            "projects/xyz/secrets/abc".to_string(),
+            "mock-gcp-value-for-projects/xyz/secrets/abc".to_string(),
+        );
+        let gcp_backend = std::sync::Arc::new(MockGcpBackend { secrets: gcp_vars });
+        resolver.add_strategy(ResolverStrategy::Gcp(GcpResolver::new(gcp_backend)));
 
         // Test Local Env
         let v1 = Variable::new("K1".into(), "{{ LOCAL_VAR }}".into());
@@ -52,11 +63,17 @@ mod tests {
 
         // Test Keychain
         let v3 = Variable::new("K3".into(), "{{ secret:my-api-key }}".into());
-        assert_eq!(resolver.resolve_variable(&v3).await?, "mock-keychain-value-for-my-api-key");
+        assert_eq!(
+            resolver.resolve_variable(&v3).await?,
+            "mock-keychain-value-for-my-api-key"
+        );
 
         // Test GCP
         let v4 = Variable::new("K4".into(), "{{ gcp:projects/xyz/secrets/abc }}".into());
-        assert_eq!(resolver.resolve_variable(&v4).await?, "mock-gcp-value-for-projects/xyz/secrets/abc");
+        assert_eq!(
+            resolver.resolve_variable(&v4).await?,
+            "mock-gcp-value-for-projects/xyz/secrets/abc"
+        );
 
         Ok(())
     }
@@ -64,7 +81,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolver_order_env_vs_system() -> Result<(), ResolveError> {
         let mut resolver = Resolver::new();
-        
+
         // Mock a variable that exists in both .env and system env
         let key = "CONFLICT_VAR";
         let env_value = "from_env_file";
@@ -83,7 +100,7 @@ mod tests {
 
         // weird rust syntax for double curly braces - this translates to {{ key }}
         let v = Variable::new("K".into(), format!("{{{{ {} }}}}", key));
-        
+
         // Should return the value from .env file because it's first in the chain
         assert_eq!(resolver.resolve_variable(&v).await?, env_value);
 
