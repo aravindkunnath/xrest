@@ -3,6 +3,7 @@ use crate::core::import::swagger::{create_service_from_spec, parse_spec_content}
 use crate::core::service::service::ServiceDomain;
 use crate::core::settings::SettingsDomain;
 use crate::core::traits::{FileSystem, PathProvider};
+use crate::infra::git::Git2Repository;
 use crate::core::types::{Service, ServiceStub};
 use crate::infra::fs::RealFileSystem;
 use crate::infra::paths::TauriPathProvider;
@@ -30,7 +31,7 @@ pub fn import_service(app: AppHandle, directory: String) -> Result<Service, Stri
     });
 
     let service_name = service.name.clone();
-    service_domain.save_service(&mut service, Some(format!("Import service: {}", service_name)))?;
+    service_domain.save_service(&mut service, Some(format!("Import service: {}", service_name)), Some(&Git2Repository))?;
 
     Ok(service)
 }
@@ -75,6 +76,7 @@ pub async fn import_swagger(
     service_domain.save_service(
         &mut service,
         Some(format!("Import service from Swagger: {}", service_name)),
+        Some(&Git2Repository),
     )?;
 
     let mut settings = settings_domain.load_settings(&settings_path)?;
@@ -120,6 +122,7 @@ pub async fn import_curl(
     service_domain.save_service(
         &mut service,
         Some(format!("Import endpoint from cURL: {}", endpoint_name)),
+        Some(&Git2Repository),
     )?;
 
     Ok(service)

@@ -30,12 +30,13 @@ pub fn run() {
                 let paths = infra::paths::TauriPathProvider::new(app.handle())?;
                 let db_path = paths.history_db_path()?;
                 let conn = rusqlite::Connection::open(db_path).map_err(|e| e.to_string())?;
-                let history_service = core::history::HistoryService::new(conn);
-                history_service.init().map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+                let history_repo = infra::history::SqliteHistoryRepository::new(conn);
+                use core::traits::HistoryRepository;
+                history_repo.init().map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
                 // Load token cache
                 if let Ok(cache_path) = paths.token_cache_path() {
-                    let _ = core::auth::cache::load_cache_from_file(&cache_path);
+                    let _ = core::auth::cache::load_cache_from_file(&cache_path, &infra::fs::RealFileSystem);
                 }
             }
 

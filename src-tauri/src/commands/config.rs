@@ -2,6 +2,7 @@ use crate::core::service::service::ServiceDomain;
 use crate::core::settings::SettingsDomain;
 use crate::core::types::{Service, ServiceStub, UserSettings};
 use crate::infra::fs::RealFileSystem;
+use crate::infra::git::Git2Repository;
 use crate::infra::paths::TauriPathProvider;
 use crate::core::traits::PathProvider;
 use tauri::AppHandle;
@@ -68,7 +69,7 @@ pub fn save_services(
     let mut stubs = Vec::new();
 
     for service in &mut services {
-        service_domain.save_service(service, commit_message.clone())?;
+        service_domain.save_service(service, commit_message.clone(), Some(&Git2Repository))?;
         stubs.push(ServiceStub {
             id: service.id.clone(),
             name: service.name.clone(),

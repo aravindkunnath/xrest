@@ -1,3 +1,5 @@
+use crate::core::traits::GitRepository;
+use crate::infra::git::Git2Repository;
 use tauri::AppHandle;
 
 #[tauri::command]
@@ -5,7 +7,8 @@ pub fn get_git_status(
     _app: AppHandle,
     directory: String,
 ) -> Result<crate::core::types::GitStatus, String> {
-    crate::core::git::get_git_status(&directory)
+    let git = Git2Repository;
+    git.status(&directory)
 }
 
 #[tauri::command]
@@ -14,25 +17,30 @@ pub fn git_init(
     directory: String,
     remote_url: Option<String>,
 ) -> Result<(), String> {
-    crate::core::git::init_git(&directory, remote_url)
+    let git = Git2Repository;
+    git.init(&directory, remote_url)
 }
 
 #[tauri::command]
 pub fn git_pull(_app: AppHandle, directory: String) -> Result<(), String> {
-    crate::core::git::pull_changes(&directory)
+    let git = Git2Repository;
+    git.pull(&directory)
 }
 
 #[tauri::command]
 pub fn git_push(_app: AppHandle, directory: String) -> Result<(), String> {
-    crate::core::git::push_changes(&directory)
+    let git = Git2Repository;
+    git.push(&directory)
 }
 
 #[tauri::command]
 pub fn git_commit(_app: AppHandle, directory: String, message: String) -> Result<(), String> {
-    crate::core::git::commit_changes(&directory, &message)
+    let git = Git2Repository;
+    git.commit(&directory, &message)
 }
 
 #[tauri::command]
 pub fn git_sync(_app: AppHandle, directory: String) -> Result<(), String> {
-    crate::core::git::sync_git(&directory)
+    let git = Git2Repository;
+    git.sync(&directory)
 }

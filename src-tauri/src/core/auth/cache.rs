@@ -67,24 +67,30 @@ pub fn is_token_valid(cached: &CachedToken) -> bool {
 }
 
 /// Persistence: Save the cache to a file
-pub fn save_cache_to_file(path: &std::path::Path) -> Result<(), String> {
+pub fn save_cache_to_file(
+    path: &std::path::Path,
+    fs: &dyn crate::core::traits::FileSystem,
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        if !fs.exists(parent) {
+            fs.create_dir_all(parent)?;
         }
     }
     let cache = TOKEN_CACHE.lock().unwrap();
     let content = serde_yaml::to_string(&*cache).map_err(|e| e.to_string())?;
-    std::fs::write(path, content).map_err(|e| e.to_string())?;
+    fs.write(path, &content)?;
     Ok(())
 }
 
 /// Persistence: Load the cache from a file
-pub fn load_cache_from_file(path: &std::path::Path) -> Result<(), String> {
-    if !path.exists() {
+pub fn load_cache_from_file(
+    path: &std::path::Path,
+    fs: &dyn crate::core::traits::FileSystem,
+) -> Result<(), String> {
+    if !fs.exists(path) {
         return Ok(());
     }
-    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let content = fs.read_to_string(path)?;
     let loaded: TokenCacheInner = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
 
     let mut cache = TOKEN_CACHE.lock().unwrap();

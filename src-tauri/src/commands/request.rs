@@ -1,11 +1,12 @@
-use crate::core::history::HistoryService;
 use crate::core::request::RequestService;
 use crate::core::service::service::ServiceDomain;
 use crate::core::settings::SettingsDomain;
-use crate::core::traits::PathProvider;
+use crate::core::traits::{HistoryRepository, PathProvider};
 use crate::core::types::{HistoryEntry, PreflightConfig, QResponse, RequestTab};
 use crate::infra::fs::RealFileSystem;
+use crate::infra::history::SqliteHistoryRepository;
 use crate::infra::http::RealHttpClient;
+use crate::infra::keyring::KeyringSecretStore;
 use crate::infra::paths::TauriPathProvider;
 use rusqlite::Connection;
 use tauri::AppHandle;
@@ -39,7 +40,8 @@ pub async fn send_request(app: AppHandle, mut tab: RequestTab) -> Result<QRespon
     }
 
     let cache_path = paths.token_cache_path().ok();
-    let request_service = RequestService::new(&RealHttpClient, cache_path);
+    let request_service = RequestService::new(&RealHttpClient, &KeyringSecretStore, cache_path)
+        .with_fs(&RealFileSystem);
     let req_method = tab.method.clone();
     let req_url = tab.url.clone();
     let endpoint_id = tab.endpoint_id.clone();
@@ -69,8 +71,8 @@ pub async fn send_request(app: AppHandle, mut tab: RequestTab) -> Result<QRespon
     let db_path = paths.history_db_path()?;
     tokio::spawn(async move {
         if let Ok(conn) = Connection::open(db_path) {
-            let service = HistoryService::new(conn);
-            if let Err(e) = service.save(history_entry) {
+            let repo = SqliteHistoryRepository::new(conn);
+            if let Err(e) = repo.save(history_entry) {
                 eprintln!("Failed to save history: {}", e);
             }
         }
@@ -95,6 +97,7 @@ pub async fn test_preflight_config(
         &config,
         &variables,
         cache_path.as_ref(),
+        Some(&RealFileSystem as &dyn crate::core::traits::FileSystem),
     )
     .await)
 }

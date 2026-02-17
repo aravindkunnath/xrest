@@ -1,7 +1,7 @@
 use super::endpoint::{Endpoint, EndpointStub, EndpointVersion, PreflightConfig, RequestConfig};
 use super::environment::EnvironmentConfig;
 use crate::core::auth::{AuthConfig, AuthType};
-use crate::core::traits::FileSystem;
+use crate::core::traits::{FileSystem, GitRepository};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -181,6 +181,7 @@ impl<'a> ServiceDomain<'a> {
         &self,
         service: &mut Service,
         commit_msg: Option<String>,
+        git: Option<&dyn GitRepository>,
     ) -> Result<(), String> {
         let dir = PathBuf::from(&service.directory);
         if !self.fs.exists(&dir) {
@@ -270,9 +271,12 @@ impl<'a> ServiceDomain<'a> {
         self.fs.write(&path, &content)?;
 
         // Auto-commit if it's a git repo
-        if crate::core::git::is_git_repo(&service.directory) {
-            let msg = commit_msg.unwrap_or_else(|| "Update service configuration".to_string());
-            let _ = crate::core::git::commit_changes(&service.directory, &msg);
+        if let Some(git_repo) = git {
+            if git_repo.is_repo(&service.directory) {
+                let msg =
+                    commit_msg.unwrap_or_else(|| "Update service configuration".to_string());
+                let _ = git_repo.commit(&service.directory, &msg);
+            }
         }
 
         Ok(())

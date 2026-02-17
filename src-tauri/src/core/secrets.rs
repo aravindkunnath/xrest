@@ -1,5 +1,4 @@
-use crate::core::traits::FileSystem;
-use keyring::Entry;
+use crate::core::traits::{FileSystem, SecretStore};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -10,11 +9,12 @@ pub struct SecretKey {
 
 pub struct SecretsDomain<'a> {
     fs: &'a dyn FileSystem,
+    store: &'a dyn SecretStore,
 }
 
 impl<'a> SecretsDomain<'a> {
-    pub fn new(fs: &'a dyn FileSystem) -> Self {
-        Self { fs }
+    pub fn new(fs: &'a dyn FileSystem, store: &'a dyn SecretStore) -> Self {
+        Self { fs, store }
     }
 
     fn load_keys(&self, secrets_path: &Path) -> Result<Vec<String>, String> {
@@ -47,12 +47,7 @@ impl<'a> SecretsDomain<'a> {
         key: &str,
         value: &str,
     ) -> Result<(), String> {
-        let entry = Entry::new("xrest-secrets", key)
-            .map_err(|e| format!("Failed to create keyring entry: {}", e))?;
-
-        entry
-            .set_password(value)
-            .map_err(|e| format!("Failed to set secret in keyring: {}", e))?;
+        self.store.set(key, value)?;
 
         let mut keys = self.load_keys(secrets_path)?;
         if !keys.contains(&key.to_string()) {
@@ -64,10 +59,7 @@ impl<'a> SecretsDomain<'a> {
     }
 
     pub fn delete_secret(&self, secrets_path: &Path, key: &str) -> Result<(), String> {
-        let entry = Entry::new("xrest-secrets", key)
-            .map_err(|e| format!("Failed to create keyring entry: {}", e))?;
-
-        let _ = entry.delete_credential();
+        self.store.delete(key)?;
 
         let mut keys = self.load_keys(secrets_path)?;
         keys.retain(|k| k != key);
@@ -76,12 +68,7 @@ impl<'a> SecretsDomain<'a> {
         Ok(())
     }
 
-    pub fn get_secret(key: &str) -> Result<String, String> {
-        let entry = Entry::new("xrest-secrets", key)
-            .map_err(|e| format!("Failed to create keyring entry: {}", e))?;
-
-        entry
-            .get_password()
-            .map_err(|e| format!("Failed to get secret from keyring: {}", e))
+    pub fn get_secret(&self, key: &str) -> Result<String, String> {
+        self.store.get(key)
     }
 }

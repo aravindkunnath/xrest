@@ -1,16 +1,19 @@
+use crate::core::traits::HistoryRepository;
 use crate::core::types::{Header, HistoryEntry};
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection};
 
-pub struct HistoryService {
+pub struct SqliteHistoryRepository {
     pub conn: Connection,
 }
 
-impl HistoryService {
+impl SqliteHistoryRepository {
     pub fn new(conn: Connection) -> Self {
         Self { conn }
     }
+}
 
-    pub fn init(&self) -> Result<(), String> {
+impl HistoryRepository for SqliteHistoryRepository {
+    fn init(&self) -> Result<(), String> {
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS history (
@@ -36,7 +39,7 @@ impl HistoryService {
         Ok(())
     }
 
-    pub fn save(&self, entry: HistoryEntry) -> Result<(), String> {
+    fn save(&self, entry: HistoryEntry) -> Result<(), String> {
         let request_headers =
             serde_json::to_string(&entry.request_headers).map_err(|e| e.to_string())?;
         let response_headers =
@@ -73,7 +76,7 @@ impl HistoryService {
         Ok(())
     }
 
-    pub fn get_history(&self, limit: usize, offset: usize) -> Result<Vec<HistoryEntry>, String> {
+    fn get_history(&self, limit: usize, offset: usize) -> Result<Vec<HistoryEntry>, String> {
         let mut stmt = self
             .conn
             .prepare(
@@ -126,7 +129,7 @@ impl HistoryService {
         Ok(history)
     }
 
-    pub fn clear(&self) -> Result<(), String> {
+    fn clear(&self) -> Result<(), String> {
         self.conn
             .execute("DELETE FROM history", [])
             .map_err(|e| e.to_string())?;

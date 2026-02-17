@@ -1,15 +1,31 @@
-use crate::core::traits::HttpClient;
+use crate::core::traits::{FileSystem, HttpClient, SecretStore};
 use crate::core::types::{PreflightConfig, QResponse, RequestTab};
 use std::collections::HashMap;
 
 pub struct RequestService<'a> {
     pub http: &'a dyn HttpClient,
+    pub secret_store: &'a dyn SecretStore,
+    pub fs: Option<&'a dyn FileSystem>,
     pub cache_path: Option<std::path::PathBuf>,
 }
 
 impl<'a> RequestService<'a> {
-    pub fn new(http: &'a dyn HttpClient, cache_path: Option<std::path::PathBuf>) -> Self {
-        Self { http, cache_path }
+    pub fn new(
+        http: &'a dyn HttpClient,
+        secret_store: &'a dyn SecretStore,
+        cache_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        Self {
+            http,
+            secret_store,
+            fs: None,
+            cache_path,
+        }
+    }
+
+    pub fn with_fs(mut self, fs: &'a dyn FileSystem) -> Self {
+        self.fs = Some(fs);
+        self
     }
 
     pub async fn send_request(&self, mut tab: RequestTab) -> Result<QResponse, String> {
@@ -150,6 +166,7 @@ impl<'a> RequestService<'a> {
             config,
             variables,
             self.cache_path.as_ref(),
+            self.fs,
         )
         .await
     }
@@ -169,7 +186,7 @@ impl<'a> RequestService<'a> {
 
                     if var_name.starts_with("secret.") {
                         let key = &var_name[7..];
-                        match crate::core::secrets::SecretsDomain::get_secret(key) {
+                        match self.secret_store.get(key) {
                             Ok(val) => val,
                             Err(e) => {
                                 println!("Failed to resolve secret {}: {}", key, e);
