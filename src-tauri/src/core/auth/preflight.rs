@@ -1,6 +1,6 @@
-use crate::domains::service::endpoint::PreflightConfig;
-use crate::io::HttpClient;
-use crate::types::{Header, PreflightTestResult};
+use crate::core::service::endpoint::PreflightConfig;
+use crate::core::traits::HttpClient;
+use crate::core::types::{Header, PreflightTestResult};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -158,7 +158,7 @@ pub async fn test_preflight(
                             let duration_value = response_json
                                 .get(&config.cache_duration_key)
                                 .and_then(|v| v.as_u64())
-                                .unwrap_or(3600); // Default if key missing to avoid testing failure? Or fail? Logic in execute was strict
+                                .unwrap_or(3600);
 
                             match config.cache_duration_unit.as_str() {
                                 "seconds" => duration_value,

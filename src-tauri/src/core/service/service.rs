@@ -1,11 +1,10 @@
 use super::endpoint::{Endpoint, EndpointStub, EndpointVersion, PreflightConfig, RequestConfig};
 use super::environment::EnvironmentConfig;
-use crate::domains::auth::{AuthConfig, AuthType};
-use crate::io::FileSystem;
+use crate::core::auth::{AuthConfig, AuthType};
+use crate::core::traits::FileSystem;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -242,10 +241,6 @@ impl<'a> ServiceDomain<'a> {
             self.fs.write(&ep_path, &ep_content)?;
         }
 
-        // Remove legacy endpoints.yaml if it exists to avoid confusion
-        // Note: fs trait missing remove_file, so skipping delete for now to be safe,
-        // but load_service prioritizes endpoints/ anyway.
-
         let endpoint_stubs = service
             .endpoints
             .iter()
@@ -275,22 +270,15 @@ impl<'a> ServiceDomain<'a> {
         self.fs.write(&path, &content)?;
 
         // Auto-commit if it's a git repo
-        if crate::domains::git::is_git_repo(&service.directory) {
+        if crate::core::git::is_git_repo(&service.directory) {
             let msg = commit_msg.unwrap_or_else(|| "Update service configuration".to_string());
-            let _ = crate::domains::git::commit_changes(&service.directory, &msg);
+            let _ = crate::core::git::commit_changes(&service.directory, &msg);
         }
 
         Ok(())
     }
 
     // Collections
-
-    pub fn get_collections_path<R: tauri::Runtime>(
-        app: &tauri::AppHandle<R>,
-    ) -> Result<PathBuf, String> {
-        let path = app.path().app_config_dir().map_err(|e| e.to_string())?;
-        Ok(path.join("collections.yaml"))
-    }
 
     pub fn load_collections(&self, path: &PathBuf) -> Result<Vec<Service>, String> {
         if !self.fs.exists(path) {

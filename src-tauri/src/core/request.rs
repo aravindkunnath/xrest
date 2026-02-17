@@ -1,82 +1,6 @@
-use crate::io::{FileSystem, HttpClient};
-use crate::types::{PreflightConfig, QResponse, RequestTab, Service, TabState, UserSettings};
+use crate::core::traits::HttpClient;
+use crate::core::types::{PreflightConfig, QResponse, RequestTab};
 use std::collections::HashMap;
-use tauri::{AppHandle, Runtime};
-
-pub struct ConfigService<'a> {
-    pub fs: &'a dyn FileSystem,
-}
-
-impl<'a> ConfigService<'a> {
-    pub fn new(fs: &'a dyn FileSystem) -> Self {
-        Self { fs }
-    }
-
-    pub fn load_settings<R: Runtime>(&self, app: &AppHandle<R>) -> Result<UserSettings, String> {
-        let path = crate::domains::settings::SettingsDomain::get_settings_path(app)?;
-        let domain = crate::domains::settings::SettingsDomain::new(self.fs);
-        domain.load_settings(&path)
-    }
-
-    pub fn save_settings<R: Runtime>(
-        &self,
-        app: &AppHandle<R>,
-        settings: &UserSettings,
-    ) -> Result<(), String> {
-        let path = crate::domains::settings::SettingsDomain::get_settings_path(app)?;
-        let domain = crate::domains::settings::SettingsDomain::new(self.fs);
-        domain.save_settings(&path, settings)
-    }
-
-    pub fn load_service(&self, directory: &str) -> Result<Service, String> {
-        let domain = crate::domains::service::service::ServiceDomain::new(self.fs);
-        domain.load_service(directory)
-    }
-
-    pub fn save_service(
-        &self,
-        service: &mut Service,
-        commit_msg: Option<String>,
-    ) -> Result<(), String> {
-        let domain = crate::domains::service::service::ServiceDomain::new(self.fs);
-        domain.save_service(service, commit_msg)
-    }
-
-    pub fn load_collections<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Vec<Service>, String> {
-        let path = crate::domains::service::service::ServiceDomain::get_collections_path(app)?;
-        let domain = crate::domains::service::service::ServiceDomain::new(self.fs);
-        domain.load_collections(&path)
-    }
-
-    pub fn save_collections<R: Runtime>(
-        &self,
-        app: &AppHandle<R>,
-        collections: &Vec<Service>,
-    ) -> Result<(), String> {
-        let path = crate::domains::service::service::ServiceDomain::get_collections_path(app)?;
-        let domain = crate::domains::service::service::ServiceDomain::new(self.fs);
-        domain.save_collections(&path, collections)
-    }
-
-    pub fn load_tab_state<R: Runtime>(
-        &self,
-        app: &AppHandle<R>,
-    ) -> Result<Option<TabState>, String> {
-        let d = crate::domains::settings::SettingsDomain::new(self.fs);
-        let path = crate::domains::settings::SettingsDomain::get_tab_state_path(app)?;
-        d.load_tab_state(&path)
-    }
-
-    pub fn save_tab_state<R: Runtime>(
-        &self,
-        app: &AppHandle<R>,
-        state: &TabState,
-    ) -> Result<(), String> {
-        let d = crate::domains::settings::SettingsDomain::new(self.fs);
-        let path = crate::domains::settings::SettingsDomain::get_tab_state_path(app)?;
-        d.save_tab_state(&path, state)
-    }
-}
 
 pub struct RequestService<'a> {
     pub http: &'a dyn HttpClient,
@@ -111,8 +35,8 @@ impl<'a> RequestService<'a> {
             );
         } else if !service_id_str.is_empty() {
             // Even if preflight is disabled for this tab, check if we have a cached token for this service
-            if let Some(cached) = crate::domains::auth::cache::get_cached_token(service_id_str) {
-                if crate::domains::auth::cache::is_token_valid(&cached) {
+            if let Some(cached) = crate::core::auth::cache::get_cached_token(service_id_str) {
+                if crate::core::auth::cache::is_token_valid(&cached) {
                     token = Some(cached.token);
                 }
             }
@@ -130,7 +54,7 @@ impl<'a> RequestService<'a> {
                 tab.auth.bearer_token = token_val;
                 tab.auth.r#type = "bearer".to_string();
             } else {
-                tab.headers.push(crate::types::Header {
+                tab.headers.push(crate::core::types::Header {
                     name: token_header,
                     value: token_val,
                     enabled: true,
@@ -220,7 +144,7 @@ impl<'a> RequestService<'a> {
         config: &PreflightConfig,
         variables: &HashMap<String, String>,
     ) -> Result<String, String> {
-        crate::domains::auth::preflight::execute_preflight(
+        crate::core::auth::preflight::execute_preflight(
             self.http,
             service_id,
             config,
@@ -234,7 +158,6 @@ impl<'a> RequestService<'a> {
         let re = regex::Regex::new(r"\{\{([^}]+)\}\}").expect("Invalid regex");
         let mut result = text.to_string();
 
-        // We use a counter to prevent infinite recursion if somehow secret resolution leads to more variables
         let mut iterations = 0;
         const MAX_ITERATIONS: usize = 10;
 
@@ -246,7 +169,7 @@ impl<'a> RequestService<'a> {
 
                     if var_name.starts_with("secret.") {
                         let key = &var_name[7..];
-                        match crate::domains::secrets::SecretsDomain::get_secret(key) {
+                        match crate::core::secrets::SecretsDomain::get_secret(key) {
                             Ok(val) => val,
                             Err(e) => {
                                 println!("Failed to resolve secret {}: {}", key, e);

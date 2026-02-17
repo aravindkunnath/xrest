@@ -1,5 +1,5 @@
-use crate::history::HistoryService;
-use crate::types::HistoryEntry;
+use crate::core::history::HistoryService;
+use crate::core::types::HistoryEntry;
 use rusqlite::Connection;
 
 #[test]

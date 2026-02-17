@@ -1,6 +1,6 @@
-use crate::io::MockHttpClient;
-use crate::services::RequestService;
-use crate::types::{AuthConfig, BodyConfig, PreflightConfig, QResponse, RequestTab};
+use crate::core::traits::MockHttpClient;
+use crate::core::request::RequestService;
+use crate::core::types::{AuthConfig, BodyConfig, PreflightConfig, QResponse, RequestTab};
 use mockall::predicate;
 use std::collections::HashMap;
 

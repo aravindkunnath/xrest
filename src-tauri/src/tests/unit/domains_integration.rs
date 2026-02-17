@@ -1,8 +1,8 @@
-use crate::domains::auth::AuthConfig;
-use crate::domains::service::service::ServiceDomain;
-use crate::domains::settings::SettingsDomain;
-use crate::io::MockFileSystem;
-use crate::types::{AuthType, Endpoint, EndpointMetadata, PreflightConfig, Service};
+use crate::core::auth::AuthConfig;
+use crate::core::service::service::ServiceDomain;
+use crate::core::settings::SettingsDomain;
+use crate::core::traits::MockFileSystem;
+use crate::core::types::{AuthType, Endpoint, EndpointMetadata, PreflightConfig, Service};
 use mockall::predicate::*;
 use std::path::PathBuf;
 

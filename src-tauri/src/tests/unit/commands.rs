@@ -1,4 +1,4 @@
-use crate::commands::parse_spec_content;
+use crate::core::import::swagger::parse_spec_content;
 
 #[test]
 fn test_parse_openapi_3_json() {
@@ -56,7 +56,7 @@ paths:
 
 #[test]
 fn test_curl_to_endpoint_parsing() {
-    use crate::commands::curl_to_endpoint;
+    use crate::core::import::curl::curl_to_endpoint;
 
     // Test simple GET
     let curl = "curl https://api.example.com/users";

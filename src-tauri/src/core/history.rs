@@ -1,7 +1,5 @@
-use crate::types::{Header, HistoryEntry};
+use crate::core::types::{Header, HistoryEntry};
 use rusqlite::{params, Connection, Result};
-use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Runtime};
 
 pub struct HistoryService {
     pub conn: Connection,
@@ -47,10 +45,10 @@ impl HistoryService {
         self.conn
             .execute(
                 "INSERT INTO history (
-                id, service_id, endpoint_id, method, url, 
-                request_headers, request_body, 
-                response_status, response_status_text, 
-                response_headers, response_body, 
+                id, service_id, endpoint_id, method, url,
+                request_headers, request_body,
+                response_status, response_status_text,
+                response_headers, response_body,
                 time_elapsed, size, created_at
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
@@ -79,14 +77,14 @@ impl HistoryService {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT 
-                    id, service_id, endpoint_id, method, url, 
-                    request_headers, request_body, 
-                    response_status, response_status_text, 
-                    response_headers, response_body, 
-                    time_elapsed, size, created_at 
-                FROM history 
-                ORDER BY created_at DESC 
+                "SELECT
+                    id, service_id, endpoint_id, method, url,
+                    request_headers, request_body,
+                    response_status, response_status_text,
+                    response_headers, response_body,
+                    time_elapsed, size, created_at
+                FROM history
+                ORDER BY created_at DESC
                 LIMIT ?1 OFFSET ?2",
             )
             .map_err(|e| e.to_string())?;
@@ -135,45 +133,4 @@ impl HistoryService {
 
         Ok(())
     }
-}
-
-// Wrapper functions for Tauri commands
-pub fn get_db_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let path = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    if !path.exists() {
-        std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
-    }
-    Ok(path.join("history.db"))
-}
-
-pub fn init_db<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let db_path = get_db_path(app)?;
-    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    let service = HistoryService::new(conn);
-    service.init()
-}
-
-pub fn save_history<R: Runtime>(app: &AppHandle<R>, entry: HistoryEntry) -> Result<(), String> {
-    let db_path = get_db_path(app)?;
-    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    let service = HistoryService::new(conn);
-    service.save(entry)
-}
-
-pub fn get_history<R: Runtime>(
-    app: &AppHandle<R>,
-    limit: usize,
-    offset: usize,
-) -> Result<Vec<HistoryEntry>, String> {
-    let db_path = get_db_path(app)?;
-    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    let service = HistoryService::new(conn);
-    service.get_history(limit, offset)
-}
-
-pub fn clear_history<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let db_path = get_db_path(app)?;
-    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-    let service = HistoryService::new(conn);
-    service.clear()
 }

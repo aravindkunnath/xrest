@@ -1,6 +1,6 @@
-use crate::io::{MockFileSystem, MockHttpClient};
-use crate::services::RequestService;
-use crate::types::{PreflightConfig, QResponse, RequestTab};
+use crate::core::traits::MockHttpClient;
+use crate::core::request::RequestService;
+use crate::core::types::{PreflightConfig, QResponse, RequestTab};
 use mockall::predicate;
 
 #[tokio::test]
@@ -70,11 +70,11 @@ async fn test_send_request_with_preflight() {
         url: "https://api.example.com/data".to_string(),
         params: vec![],
         headers: vec![],
-        body: crate::types::BodyConfig {
+        body: crate::core::types::BodyConfig {
             r#type: "none".to_string(),
             content: "".to_string(),
         },
-        auth: crate::types::AuthConfig {
+        auth: crate::core::types::AuthConfig {
             r#type: "none".to_string(),
             active: true,
             bearer_token: "".to_string(),
@@ -162,11 +162,11 @@ async fn test_variable_resolution() {
         url: "{{BASE_URL}}/items/{{ITEM_ID}}".to_string(),
         params: vec![],
         headers: vec![],
-        body: crate::types::BodyConfig {
+        body: crate::core::types::BodyConfig {
             r#type: "application/json".to_string(),
             content: "{\"id\": \"item-{{ITEM_ID}}\"}".to_string(),
         },
-        auth: crate::types::AuthConfig {
+        auth: crate::core::types::AuthConfig {
             r#type: "none".to_string(),
             active: true,
             bearer_token: "".to_string(),
@@ -236,7 +236,7 @@ async fn test_status_codes_and_headers() {
                 Ok(QResponse {
                     status: 404,
                     status_text: "Not Found".to_string(),
-                    headers: vec![crate::types::Header {
+                    headers: vec![crate::core::types::Header {
                         name: "Content-Type".to_string(),
                         value: "application/json".to_string(),
                         enabled: true,
@@ -278,11 +278,11 @@ fn create_mock_tab(
         url: url.to_string(),
         params: vec![],
         headers: vec![],
-        body: crate::types::BodyConfig {
+        body: crate::core::types::BodyConfig {
             r#type: "none".to_string(),
             content: "".to_string(),
         },
-        auth: crate::types::AuthConfig {
+        auth: crate::core::types::AuthConfig {
             r#type: "none".to_string(),
             active: true,
             bearer_token: "".to_string(),

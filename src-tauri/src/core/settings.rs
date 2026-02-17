@@ -1,8 +1,7 @@
-use crate::domains::service::service::ServiceStub;
-use crate::io::FileSystem;
+use crate::core::service::service::ServiceStub;
+use crate::core::traits::FileSystem;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Runtime};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -28,11 +27,6 @@ pub struct SettingsDomain<'a> {
 impl<'a> SettingsDomain<'a> {
     pub fn new(fs: &'a dyn FileSystem) -> Self {
         Self { fs }
-    }
-
-    pub fn get_settings_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-        let path = app.path().app_config_dir().map_err(|e| e.to_string())?;
-        Ok(path.join("settings.yaml"))
     }
 
     pub fn load_settings(&self, path: &PathBuf) -> Result<UserSettings, String> {
@@ -65,17 +59,12 @@ impl<'a> SettingsDomain<'a> {
         Ok(())
     }
 
-    pub fn get_tab_state_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-        let path = app.path().app_config_dir().map_err(|e| e.to_string())?;
-        Ok(path.join("tabstate.yaml"))
-    }
-
-    pub fn load_tab_state(&self, path: &PathBuf) -> Result<Option<crate::types::TabState>, String> {
+    pub fn load_tab_state(&self, path: &PathBuf) -> Result<Option<crate::core::types::TabState>, String> {
         if !self.fs.exists(path) {
             return Ok(None);
         }
         let content = self.fs.read_to_string(path).map_err(|e| e.to_string())?;
-        let state: crate::types::TabState =
+        let state: crate::core::types::TabState =
             serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
         Ok(Some(state))
     }
@@ -83,7 +72,7 @@ impl<'a> SettingsDomain<'a> {
     pub fn save_tab_state(
         &self,
         path: &PathBuf,
-        state: &crate::types::TabState,
+        state: &crate::core::types::TabState,
     ) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             if !self.fs.exists(parent) {
