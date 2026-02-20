@@ -1,6 +1,9 @@
+use crate::core::service::service::ServiceDomain;
+use crate::core::settings::SettingsDomain;
 use crate::core::traits::{FileSystem, HttpClient, SecretStore};
-use crate::core::types::{PreflightConfig, QResponse, RequestTab};
+use crate::core::types::{HistoryEntry, PreflightConfig, QResponse, RequestTab};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub struct RequestService<'a> {
     pub http: &'a dyn HttpClient,
@@ -209,4 +212,63 @@ impl<'a> RequestService<'a> {
         }
         result
     }
+}
+
+/// Executes a request with full service context resolution (auth/preflight inheritance)
+/// and produces a history entry alongside the response.
+pub async fn send_request_with_context(
+    http: &dyn HttpClient,
+    fs: &dyn FileSystem,
+    secret_store: &dyn SecretStore,
+    settings_path: &PathBuf,
+    cache_path: Option<PathBuf>,
+    mut tab: RequestTab,
+) -> Result<(QResponse, HistoryEntry), String> {
+    // Load service config and inherit auth/preflight if not overridden
+    if let Some(sid) = &tab.service_id {
+        let settings_domain = SettingsDomain::new(fs);
+        let service_domain = ServiceDomain::new(fs);
+
+        if let Ok(settings) = settings_domain.load_settings(settings_path) {
+            if let Some(stub) = settings.services.iter().find(|s| s.id == *sid) {
+                if let Ok(service) = service_domain.load_service(&stub.directory) {
+                    if tab.auth.r#type == "none" {
+                        tab.auth = service.auth;
+                    }
+                    if !tab.preflight.enabled {
+                        tab.preflight = service.preflight;
+                    }
+                }
+            }
+        }
+    }
+
+    let req_method = tab.method.clone();
+    let req_url = tab.url.clone();
+    let endpoint_id = tab.endpoint_id.clone();
+    let service_id = tab.service_id.clone();
+    let headers_clone = tab.headers.clone();
+    let body_clone = tab.body.content.clone();
+
+    let request_service = RequestService::new(http, secret_store, cache_path).with_fs(fs);
+    let response = request_service.send_request(tab).await?;
+
+    let history_entry = HistoryEntry {
+        id: uuid::Uuid::new_v4().to_string(),
+        service_id,
+        endpoint_id,
+        method: req_method,
+        url: req_url,
+        request_headers: headers_clone,
+        request_body: body_clone,
+        response_status: response.status,
+        response_status_text: response.status_text.clone(),
+        response_headers: response.headers.clone(),
+        response_body: response.body.clone(),
+        time_elapsed: response.time_elapsed,
+        size: response.size,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    Ok((response, history_entry))
 }

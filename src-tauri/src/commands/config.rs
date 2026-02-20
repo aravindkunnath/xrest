@@ -1,10 +1,10 @@
 use crate::core::service::service::ServiceDomain;
 use crate::core::settings::SettingsDomain;
-use crate::core::types::{Service, ServiceStub, UserSettings};
+use crate::core::traits::PathProvider;
+use crate::core::types::{Service, UserSettings};
 use crate::infra::fs::RealFileSystem;
 use crate::infra::git::Git2Repository;
 use crate::infra::paths::TauriPathProvider;
-use crate::core::traits::PathProvider;
 use tauri::AppHandle;
 
 #[tauri::command]
@@ -17,42 +17,16 @@ pub fn get_settings(app: AppHandle) -> Result<UserSettings, String> {
 #[tauri::command]
 pub fn save_settings(app: AppHandle, settings: UserSettings) -> Result<(), String> {
     let paths = TauriPathProvider::new(&app)?;
-    let path = paths.settings_path()?;
     let domain = SettingsDomain::new(&RealFileSystem);
-    // Load existing settings first to preserve other fields (like services)
-    let mut current_settings = domain.load_settings(&path)?;
-    current_settings.theme = settings.theme;
-    domain.save_settings(&path, &current_settings)
+    domain.update_theme(&paths.settings_path()?, settings.theme)
 }
 
 #[tauri::command]
 pub fn get_services(app: AppHandle) -> Result<Vec<Service>, String> {
     let paths = TauriPathProvider::new(&app)?;
     let settings_domain = SettingsDomain::new(&RealFileSystem);
-    let settings = settings_domain.load_settings(&paths.settings_path()?)?;
-
     let service_domain = ServiceDomain::new(&RealFileSystem);
-    let mut services = Vec::new();
-    let mut errors = Vec::new();
-
-    for stub in settings.services {
-        match service_domain.load_service(&stub.directory) {
-            Ok(service) => {
-                services.push(service);
-            }
-            Err(e) => {
-                let err_msg = format!("Failed to load service {}: {}", stub.name, e);
-                println!("{}", err_msg);
-                errors.push(err_msg);
-            }
-        }
-    }
-
-    if !errors.is_empty() && services.is_empty() {
-        return Err(errors.join("\n"));
-    }
-
-    Ok(services)
+    settings_domain.load_all_services(&paths.settings_path()?, &service_domain)
 }
 
 #[tauri::command]
@@ -62,23 +36,13 @@ pub fn save_services(
     commit_message: Option<String>,
 ) -> Result<Vec<Service>, String> {
     let paths = TauriPathProvider::new(&app)?;
-    let settings_path = paths.settings_path()?;
-    let settings_domain = SettingsDomain::new(&RealFileSystem);
-    let mut settings = settings_domain.load_settings(&settings_path)?;
-    let service_domain = ServiceDomain::new(&RealFileSystem);
-    let mut stubs = Vec::new();
-
-    for service in &mut services {
-        service_domain.save_service(service, commit_message.clone(), Some(&Git2Repository))?;
-        stubs.push(ServiceStub {
-            id: service.id.clone(),
-            name: service.name.clone(),
-            directory: service.directory.clone(),
-        });
-    }
-
-    settings.services = stubs;
-    settings_domain.save_settings(&settings_path, &settings)?;
+    let domain = SettingsDomain::new(&RealFileSystem);
+    domain.save_all_services(
+        &paths.settings_path()?,
+        &mut services,
+        commit_message,
+        Some(&Git2Repository),
+    )?;
     Ok(services)
 }
 

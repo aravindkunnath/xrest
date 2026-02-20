@@ -1,5 +1,6 @@
-use crate::core::service::service::ServiceStub;
-use crate::core::traits::FileSystem;
+use crate::core::service::service::{ServiceDomain, ServiceStub};
+use crate::core::traits::{FileSystem, GitRepository};
+use crate::core::types::Service;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -82,5 +83,62 @@ impl<'a> SettingsDomain<'a> {
         let content = serde_yaml::to_string(state).map_err(|e| e.to_string())?;
         self.fs.write(path, &content)?;
         Ok(())
+    }
+
+    pub fn update_theme(&self, path: &PathBuf, theme: String) -> Result<(), String> {
+        let mut settings = self.load_settings(path)?;
+        settings.theme = theme;
+        self.save_settings(path, &settings)
+    }
+
+    pub fn load_all_services(
+        &self,
+        settings_path: &PathBuf,
+        service_domain: &ServiceDomain,
+    ) -> Result<Vec<Service>, String> {
+        let settings = self.load_settings(settings_path)?;
+        let mut services = Vec::new();
+        let mut errors = Vec::new();
+
+        for stub in settings.services {
+            match service_domain.load_service(&stub.directory) {
+                Ok(service) => services.push(service),
+                Err(e) => {
+                    let err_msg = format!("Failed to load service {}: {}", stub.name, e);
+                    println!("{}", err_msg);
+                    errors.push(err_msg);
+                }
+            }
+        }
+
+        if !errors.is_empty() && services.is_empty() {
+            return Err(errors.join("\n"));
+        }
+
+        Ok(services)
+    }
+
+    pub fn save_all_services(
+        &self,
+        settings_path: &PathBuf,
+        services: &mut Vec<Service>,
+        commit_message: Option<String>,
+        git: Option<&dyn GitRepository>,
+    ) -> Result<(), String> {
+        let mut settings = self.load_settings(settings_path)?;
+        let mut stubs = Vec::new();
+
+        for service in services.iter_mut() {
+            let service_domain = ServiceDomain::new(self.fs);
+            service_domain.save_service(service, commit_message.clone(), git)?;
+            stubs.push(ServiceStub {
+                id: service.id.clone(),
+                name: service.name.clone(),
+                directory: service.directory.clone(),
+            });
+        }
+
+        settings.services = stubs;
+        self.save_settings(settings_path, &settings)
     }
 }
