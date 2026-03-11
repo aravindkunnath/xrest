@@ -238,6 +238,27 @@ pub async fn send_request_with_context(
                     if !tab.preflight.enabled {
                         tab.preflight = service.preflight;
                     }
+
+                    // Resolve `env:KEY` variable values from the service's .env file
+                    let env_name = service.selected_environment.as_deref().unwrap_or("");
+                    if !env_name.is_empty() {
+                        if let Ok(dotenv_map) = crate::core::service::dotenv::load_dotenv_vars(
+                            &stub.directory,
+                            env_name,
+                            fs,
+                        ) {
+                            if let Some(vars) = tab.variables.as_mut() {
+                                for val in vars.values_mut() {
+                                    if let Some(key) = val.strip_prefix("env:") {
+                                        if let Some(resolved) = dotenv_map.get(key) {
+                                            *val = resolved.clone();
+                                        }
+                                        // If key not in dotenv, leave as "env:KEY" (visible, not silently empty)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -68,7 +68,8 @@ pub fn run() {
             commands::secrets::add_secret,
             commands::secrets::delete_secret,
             commands::secrets::get_secret,
-            commands::request::test_preflight_config
+            commands::request::test_preflight_config,
+            commands::request::read_dotenv_variables
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
