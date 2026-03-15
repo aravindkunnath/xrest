@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub use crate::domains::auth::AuthConfig;
-pub use crate::domains::auth::AuthType;
+pub use crate::core::auth::{AuthConfig, AuthType};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -12,6 +11,12 @@ pub struct NameValue {
     pub enabled: bool,
     #[serde(default)]
     pub secret_key: Option<String>,
+    #[serde(default = "default_type")]
+    pub r#type: String,
+}
+
+fn default_type() -> String {
+    "plain".to_string()
 }
 
 fn default_true() -> bool {
@@ -22,12 +27,12 @@ pub type Variable = NameValue;
 pub type Param = NameValue;
 pub type Header = NameValue;
 
-pub use crate::domains::service::environment::EnvironmentConfig;
+pub use crate::core::service::environment::EnvironmentConfig;
 
-pub use crate::domains::service::endpoint::{Endpoint, EndpointMetadata, PreflightConfig};
-pub use crate::domains::service::service::{Service, ServiceStub};
+pub use crate::core::service::endpoint::{Endpoint, EndpointMetadata, PreflightConfig};
+pub use crate::core::service::service::{Service, ServiceStub};
 
-pub use crate::domains::git::GitStatus;
+pub use crate::core::git::GitStatus;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -112,7 +117,7 @@ pub struct TabState {
     pub tabs: Vec<Tab>,
 }
 
-pub use crate::domains::settings::UserSettings;
+pub use crate::core::settings::UserSettings;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -156,12 +161,14 @@ mod tests {
                 value: "v1".to_string(),
                 enabled: true,
                 secret_key: None,
+                r#type: "plain".to_string(),
             }],
             headers: vec![NameValue {
                 name: "h1".to_string(),
                 value: "v1".to_string(),
                 enabled: true,
                 secret_key: None,
+                r#type: "plain".to_string(),
             }],
             body: "".to_string(),
             preflight: PreflightConfig {
@@ -205,6 +212,7 @@ mod tests {
                     value: "http://localhost:3000".to_string(),
                     enabled: true,
                     secret_key: None,
+                    r#type: "plain".to_string(),
                 }],
             }],
             is_authenticated: true,

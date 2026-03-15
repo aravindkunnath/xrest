@@ -1,6 +1,6 @@
-use crate::io::MockHttpClient;
-use crate::services::RequestService;
-use crate::types::{AuthConfig, BodyConfig, PreflightConfig, QResponse, RequestTab};
+use crate::core::traits::{MockHttpClient, MockSecretStore};
+use crate::core::request::RequestService;
+use crate::core::types::{AuthConfig, BodyConfig, PreflightConfig, QResponse, RequestTab};
 use mockall::predicate;
 use std::collections::HashMap;
 
@@ -62,7 +62,8 @@ async fn test_preflight_token_caching() {
             })
         });
 
-    let service = RequestService::new(&mock_http, None);
+    let mock_secrets = MockSecretStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None);
 
     let preflight = PreflightConfig {
         enabled: true,
@@ -176,7 +177,8 @@ async fn test_preflight_token_sharing_between_endpoints() {
             })
         });
 
-    let service = RequestService::new(&mock_http, None);
+    let mock_secrets = MockSecretStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None);
 
     let preflight = PreflightConfig {
         enabled: true,
@@ -267,7 +269,8 @@ async fn test_preflight_token_implicit_sharing() {
             })
         });
 
-    let service = RequestService::new(&mock_http, None);
+    let mock_secrets = MockSecretStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None);
 
     let preflight_on = PreflightConfig {
         enabled: true,
@@ -387,7 +390,8 @@ async fn test_preflight_token_caching_no_service_id() {
             })
         });
 
-    let service = RequestService::new(&mock_http, None);
+    let mock_secrets = MockSecretStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None);
 
     let mut tab_a = create_mock_tab("GET", "https://api.a.com", None);
     tab_a.service_id = None;

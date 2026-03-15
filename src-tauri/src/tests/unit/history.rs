@@ -1,14 +1,15 @@
-use crate::history::HistoryService;
-use crate::types::HistoryEntry;
+use crate::core::traits::HistoryRepository;
+use crate::core::types::HistoryEntry;
+use crate::infra::history::SqliteHistoryRepository;
 use rusqlite::Connection;
 
 #[test]
 fn test_history_lifecycle() {
     let conn = Connection::open_in_memory().unwrap();
-    let service = HistoryService::new(conn);
+    let repo = SqliteHistoryRepository::new(conn);
 
     // Init DB
-    assert!(service.init().is_ok());
+    assert!(repo.init().is_ok());
 
     // Save entry
     let entry = HistoryEntry {
@@ -28,15 +29,15 @@ fn test_history_lifecycle() {
         created_at: "2023-01-01T00:00:00Z".to_string(),
     };
 
-    assert!(service.save(entry.clone()).is_ok());
+    assert!(repo.save(entry.clone()).is_ok());
 
     // Get history
-    let history = service.get_history(10, 0).unwrap();
+    let history = repo.get_history(10, 0).unwrap();
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].id, "h1");
 
     // Clear history
-    assert!(service.clear().is_ok());
-    let history = service.get_history(10, 0).unwrap();
+    assert!(repo.clear().is_ok());
+    let history = repo.get_history(10, 0).unwrap();
     assert_eq!(history.len(), 0);
 }

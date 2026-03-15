@@ -1,57 +1,6 @@
-use crate::types::QResponse;
+use crate::core::traits::HttpClient;
+use crate::core::types::QResponse;
 use async_trait::async_trait;
-use std::path::{Path, PathBuf};
-
-#[async_trait]
-#[cfg_attr(test, mockall::automock)]
-pub trait FileSystem: Send + Sync {
-    fn read_to_string(&self, path: &Path) -> Result<String, String>;
-    fn write(&self, path: &Path, content: &str) -> Result<(), String>;
-    fn exists(&self, path: &Path) -> bool;
-    fn create_dir_all(&self, path: &Path) -> Result<(), String>;
-    fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, String>;
-}
-
-pub struct RealFileSystem;
-
-impl FileSystem for RealFileSystem {
-    fn read_to_string(&self, path: &Path) -> Result<String, String> {
-        std::fs::read_to_string(path).map_err(|e| e.to_string())
-    }
-
-    fn write(&self, path: &Path, content: &str) -> Result<(), String> {
-        std::fs::write(path, content).map_err(|e| e.to_string())
-    }
-
-    fn exists(&self, path: &Path) -> bool {
-        path.exists()
-    }
-
-    fn create_dir_all(&self, path: &Path) -> Result<(), String> {
-        std::fs::create_dir_all(path).map_err(|e| e.to_string())
-    }
-
-    fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, String> {
-        let mut paths = Vec::new();
-        for entry in std::fs::read_dir(path).map_err(|e| e.to_string())? {
-            paths.push(entry.map_err(|e| e.to_string())?.path());
-        }
-        Ok(paths)
-    }
-}
-
-#[async_trait]
-#[cfg_attr(test, mockall::automock)]
-pub trait HttpClient: Send + Sync {
-    async fn send_request(
-        &self,
-        method: &str,
-        url: &str,
-        headers: Vec<(String, String)>,
-        body: Option<String>,
-        query: Vec<(String, String)>,
-    ) -> Result<QResponse, String>;
-}
 
 pub struct RealHttpClient;
 
@@ -65,6 +14,20 @@ impl HttpClient for RealHttpClient {
         body: Option<String>,
         query: Vec<(String, String)>,
     ) -> Result<QResponse, String> {
+        // Print final URL with query params
+        if let Ok(mut parsed_url) = url::Url::parse(url) {
+            if !query.is_empty() {
+                parsed_url.query_pairs_mut().extend_pairs(query.iter());
+            }
+            println!(
+                "🚀 Sending Request: {} {}",
+                method.to_uppercase(),
+                parsed_url
+            );
+        } else {
+            println!("🚀 Sending Request: {} {}", method.to_uppercase(), url);
+        }
+
         let client = reqwest::Client::new();
         let mut builder = match method.to_uppercase().as_str() {
             "GET" => client.get(url),
@@ -101,16 +64,17 @@ impl HttpClient for RealHttpClient {
 
         let mut res_headers = Vec::new();
         for (name, value) in response.headers() {
-            res_headers.push(crate::types::Header {
+            res_headers.push(crate::core::types::Header {
                 name: name.to_string(),
                 value: value.to_str().unwrap_or_default().to_string(),
                 enabled: true,
                 secret_key: None,
+                r#type: "plain".to_string(),
             });
         }
 
         let body_content = response.text().await.map_err(|e| e.to_string())?;
-        let _size = body_content.len() as u64;
+        let size = body_content.len() as u64;
 
         Ok(QResponse {
             status,
@@ -119,7 +83,7 @@ impl HttpClient for RealHttpClient {
             body: body_content,
             error: None,
             time_elapsed: elapsed,
-            size: _size,
+            size,
         })
     }
 }

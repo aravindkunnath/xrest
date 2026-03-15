@@ -1,4 +1,4 @@
-use crate::types::{Header, Param};
+use crate::core::types::{Header, Param};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
