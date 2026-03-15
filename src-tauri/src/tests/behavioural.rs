@@ -244,6 +244,7 @@ async fn test_status_codes_and_headers() {
                         value: "application/json".to_string(),
                         enabled: true,
                         secret_key: None,
+                        r#type: "plain".to_string(),
                     }],
                     body: "{\"error\": \"not found\"}".to_string(),
                     error: None,

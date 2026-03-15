@@ -59,6 +59,7 @@ pub async fn test_preflight(
             value,
             enabled: true,
             secret_key: None,
+            r#type: "plain".to_string(),
         });
     }
 
@@ -101,6 +102,7 @@ pub async fn test_preflight(
             value: config.body_type.clone(),
             enabled: true,
             secret_key: None,
+            r#type: "plain".to_string(),
         });
     }
 
@@ -128,6 +130,7 @@ pub async fn test_preflight(
                     value: h.value.clone(),
                     enabled: true,
                     secret_key: None,
+                    r#type: "plain".to_string(),
                 })
                 .collect();
 

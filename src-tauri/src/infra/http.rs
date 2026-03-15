@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::core::traits::HttpClient;
 use crate::core::types::QResponse;
+use async_trait::async_trait;
 
 pub struct RealHttpClient;
 
@@ -14,6 +14,20 @@ impl HttpClient for RealHttpClient {
         body: Option<String>,
         query: Vec<(String, String)>,
     ) -> Result<QResponse, String> {
+        // Print final URL with query params
+        if let Ok(mut parsed_url) = url::Url::parse(url) {
+            if !query.is_empty() {
+                parsed_url.query_pairs_mut().extend_pairs(query.iter());
+            }
+            println!(
+                "🚀 Sending Request: {} {}",
+                method.to_uppercase(),
+                parsed_url
+            );
+        } else {
+            println!("🚀 Sending Request: {} {}", method.to_uppercase(), url);
+        }
+
         let client = reqwest::Client::new();
         let mut builder = match method.to_uppercase().as_str() {
             "GET" => client.get(url),
@@ -55,6 +69,7 @@ impl HttpClient for RealHttpClient {
                 value: value.to_str().unwrap_or_default().to_string(),
                 enabled: true,
                 secret_key: None,
+                r#type: "plain".to_string(),
             });
         }
 

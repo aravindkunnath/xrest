@@ -78,6 +78,7 @@ impl<'a> RequestService<'a> {
                     value: token_val,
                     enabled: true,
                     secret_key: None,
+                    r#type: "plain".to_string(),
                 });
                 tab.auth.r#type = "none".to_string();
             }
@@ -187,8 +188,8 @@ impl<'a> RequestService<'a> {
                 .replace_all(&result, |caps: &regex::Captures| {
                     let var_name = caps[1].trim();
 
-                    if var_name.starts_with("secret.") {
-                        let key = &var_name[7..];
+                    if let Some(key) = var_name.strip_prefix("secret:").or_else(|| var_name.strip_prefix("secret.")) {
+                        let key = key.trim();
                         match self.secret_store.get(key) {
                             Ok(val) => val,
                             Err(e) => {
@@ -239,29 +240,84 @@ pub async fn send_request_with_context(
                         tab.preflight = service.preflight;
                     }
 
-                    // Resolve `env:KEY` variable values from the service's .env file
+                    // 1. Identify selected environment config
                     let env_name = service.selected_environment.as_deref().unwrap_or("");
+
                     if !env_name.is_empty() {
-                        if let Ok(dotenv_map) = crate::core::service::dotenv::load_dotenv_vars(
+                        // 2. Load the .env file for this environment
+                        let dotenv_map = crate::core::service::dotenv::load_dotenv_vars(
                             &stub.directory,
                             env_name,
                             fs,
-                        ) {
-                            if let Some(vars) = tab.variables.as_mut() {
-                                for val in vars.values_mut() {
-                                    if let Some(key) = val.strip_prefix("env:") {
-                                        if let Some(resolved) = dotenv_map.get(key) {
-                                            *val = resolved.clone();
+                        ).unwrap_or_default();
+
+                        // 3. Update the tab's variable pool with environment-level variables
+                        if let Some(env_config) = service.environments.iter().find(|e| e.name == env_name) {
+                            for var in &env_config.variables {
+                                if var.enabled {
+                                    let tab_vars = tab.variables.get_or_insert_with(HashMap::new);
+                                    // Tab variables take precedence
+                                    if !tab_vars.contains_key(&var.name) {
+                                        let mut final_val = var.value.clone();
+                                        match var.r#type.as_str() {
+                                            "env" => {
+                                                let key = final_val.strip_prefix("env:").unwrap_or(&final_val).trim();
+                                                if let Some(resolved) = dotenv_map.get(key) {
+                                                    final_val = resolved.clone();
+                                                }
+                                            },
+                                            "secret" => {
+                                                let key = final_val.trim();
+                                                if let Ok(resolved) = secret_store.get(key) {
+                                                    final_val = resolved;
+                                                }
+                                            },
+                                            _ => {
+                                                // Backward compatibility for "env:" prefix
+                                                if let Some(key) = final_val.strip_prefix("env:") {
+                                                    if let Some(resolved) = dotenv_map.get(key.trim()) {
+                                                        final_val = resolved.clone();
+                                                    }
+                                                }
+                                            }
                                         }
-                                        // If key not in dotenv, leave as "env:KEY" (visible, not silently empty)
+                                        tab_vars.insert(var.name.clone(), final_val);
                                     }
                                 }
                             }
+                        }
+
+                        // 4. Resolve any "env:" prefixes in tab-provided variables
+                        if let Some(tab_vars) = tab.variables.as_mut() {
+                            for val in tab_vars.values_mut() {
+                                if let Some(key) = val.strip_prefix("env:") {
+                                    if let Some(resolved) = dotenv_map.get(key.trim()) {
+                                        *val = resolved.clone();
+                                    }
+                                }
+                            }
+                        }
+
+                        // 5. Inject all .env variables as env:KEY and env.KEY for direct interpolation
+                        let tab_vars = tab.variables.get_or_insert_with(HashMap::new);
+                        for (k, v) in &dotenv_map {
+                            tab_vars.entry(format!("env:{}", k)).or_insert(v.clone());
+                            tab_vars.entry(format!("env.{}", k)).or_insert(v.clone());
                         }
                     }
                 }
             }
         }
+    }
+
+    let request_service = RequestService::new(http, secret_store, cache_path.clone()).with_fs(fs);
+
+    // Resolve variables in URL and headers using the combined variable set
+    let vars = tab.variables.clone().unwrap_or_default();
+    tab.url = request_service.resolve_variables(&tab.url, &vars);
+    for header in tab.headers.iter_mut() {
+        header.name = request_service.resolve_variables(&header.name, &vars);
+        header.value = request_service.resolve_variables(&header.value, &vars);
     }
 
     let req_method = tab.method.clone();

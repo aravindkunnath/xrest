@@ -11,6 +11,12 @@ pub struct NameValue {
     pub enabled: bool,
     #[serde(default)]
     pub secret_key: Option<String>,
+    #[serde(default = "default_type")]
+    pub r#type: String,
+}
+
+fn default_type() -> String {
+    "plain".to_string()
 }
 
 fn default_true() -> bool {
@@ -155,12 +161,14 @@ mod tests {
                 value: "v1".to_string(),
                 enabled: true,
                 secret_key: None,
+                r#type: "plain".to_string(),
             }],
             headers: vec![NameValue {
                 name: "h1".to_string(),
                 value: "v1".to_string(),
                 enabled: true,
                 secret_key: None,
+                r#type: "plain".to_string(),
             }],
             body: "".to_string(),
             preflight: PreflightConfig {
@@ -204,6 +212,7 @@ mod tests {
                     value: "http://localhost:3000".to_string(),
                     enabled: true,
                     secret_key: None,
+                    r#type: "plain".to_string(),
                 }],
             }],
             is_authenticated: true,

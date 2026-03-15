@@ -59,6 +59,7 @@ pub fn parse_spec_content(
                                             value: "".to_string(),
                                             enabled: true,
                                             secret_key: None,
+                                            r#type: "plain".to_string(),
                                         });
                                     }
                                     openapiv3::Parameter::Header { parameter_data, .. } => {
@@ -67,6 +68,7 @@ pub fn parse_spec_content(
                                             value: "".to_string(),
                                             enabled: true,
                                             secret_key: None,
+                                            r#type: "plain".to_string(),
                                         });
                                     }
                                     _ => continue,
@@ -137,6 +139,7 @@ pub fn parse_spec_content(
                                         value: "".to_string(),
                                         enabled: true,
                                         secret_key: None,
+                                        r#type: "plain".to_string(),
                                     });
                                 } else if p_in == "header" {
                                     headers.push(NameValue {
@@ -144,6 +147,7 @@ pub fn parse_spec_content(
                                         value: "".to_string(),
                                         enabled: true,
                                         secret_key: None,
+                                        r#type: "plain".to_string(),
                                     });
                                 }
                             }
@@ -194,6 +198,7 @@ pub fn create_service_from_spec(
                     value: base_url.clone(),
                     enabled: true,
                     secret_key: None,
+                    r#type: "plain".to_string(),
                 }],
             },
             EnvironmentConfig {
@@ -204,6 +209,7 @@ pub fn create_service_from_spec(
                     value: base_url.clone(),
                     enabled: true,
                     secret_key: None,
+                    r#type: "plain".to_string(),
                 }],
             },
             EnvironmentConfig {
@@ -214,6 +220,7 @@ pub fn create_service_from_spec(
                     value: base_url,
                     enabled: true,
                     secret_key: None,
+                    r#type: "plain".to_string(),
                 }],
             },
         ],

@@ -34,6 +34,7 @@ pub fn curl_to_endpoint(
             value: value.to_str().unwrap_or("").to_string(),
             enabled: true,
             secret_key: None,
+            r#type: "plain".to_string(),
         });
     }
 
