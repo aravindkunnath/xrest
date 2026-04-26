@@ -79,6 +79,7 @@ async fn test_preflight_token_caching() {
         cache_duration_unit: "seconds".to_string(),
         token_key: "access_token".to_string(),
         token_header: Some("Authorization".to_string()),
+        ..Default::default()
     };
 
     let tab = RequestTab {
@@ -194,6 +195,7 @@ async fn test_preflight_token_sharing_between_endpoints() {
         cache_duration_unit: "seconds".to_string(),
         token_key: "access_token".to_string(),
         token_header: Some("Authorization".to_string()),
+        ..Default::default()
     };
 
     let mut tab_a = create_mock_tab("GET", "https://api.a.com", None);
@@ -286,6 +288,7 @@ async fn test_preflight_token_implicit_sharing() {
         cache_duration_unit: "seconds".to_string(),
         token_key: "access_token".to_string(),
         token_header: Some("Authorization".to_string()),
+        ..Default::default()
     };
 
     let preflight_off = PreflightConfig {
@@ -455,6 +458,7 @@ fn create_mock_tab(
             cache_duration_unit: "seconds".to_string(),
             token_key: "access_token".to_string(),
             token_header: None,
+            ..Default::default()
         },
         variables,
         is_edited: false,

@@ -45,6 +45,7 @@ mod tests {
                 cache_duration_unit: "seconds".to_string(),
                 token_key: "access_token".to_string(),
                 token_header: None,
+                ..Default::default()
             },
             variables: None,
             is_edited: false,

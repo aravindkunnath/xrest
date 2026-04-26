@@ -60,6 +60,12 @@ pub struct PreflightTestResult {
     pub response_body: String,
     pub response_headers: Vec<Header>,
     pub time_elapsed: u64,
+    #[serde(default)]
+    pub extraction_path: Option<String>,
+    #[serde(default)]
+    pub cache_status: String,
+    #[serde(default)]
+    pub cache_status_detail: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -185,6 +191,7 @@ mod tests {
                 cache_duration_unit: "seconds".to_string(),
                 token_key: "access_token".to_string(),
                 token_header: Some("Authorization".to_string()),
+                ..Default::default()
             },
             last_version: 0,
             versions: vec![],
@@ -241,6 +248,7 @@ mod tests {
                 cache_duration_unit: "seconds".to_string(),
                 token_key: "".to_string(),
                 token_header: None,
+                ..Default::default()
             },
             endpoints: vec![],
             directory: "/tmp".to_string(),

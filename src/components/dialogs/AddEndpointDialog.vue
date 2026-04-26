@@ -66,6 +66,8 @@ const handleAddEndpoint = () => {
       headers: [],
       cacheToken: true,
       cacheDuration: "derived",
+      cacheDurationMode: "derived",
+      cacheDurationSeconds: 3600,
       cacheDurationKey: "expires_in",
       cacheDurationUnit: "seconds",
       tokenKey: "access_token",

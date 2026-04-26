@@ -250,6 +250,7 @@ pub fn create_service_from_spec(
             cache_duration_unit: "seconds".to_string(),
             token_key: "".to_string(),
             token_header: None,
+            ..Default::default()
         },
         endpoints,
         directory,
@@ -299,6 +300,7 @@ fn create_endpoint(
             cache_duration_unit: "seconds".to_string(),
             token_key: "access_token".to_string(),
             token_header: Some("Authorization".to_string()),
+            ..Default::default()
         },
         last_version: 0,
         versions: vec![],

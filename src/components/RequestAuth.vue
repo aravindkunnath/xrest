@@ -27,10 +27,8 @@ const props = defineProps<{
 const showTestDialog = ref(false);
 
 const auth = computed(() => props.auth);
-const preflight = computed(() => props.preflight);
 const variables = computed(() => props.variables);
 const environmentName = computed(() => props.environmentName);
-const serviceId = computed(() => props.serviceId);
 </script>
 
 <template>
@@ -39,7 +37,7 @@ const serviceId = computed(() => props.serviceId);
     <div class="space-y-4">
       <div class="flex items-center gap-2 border-b pb-2">
         <ShieldCheck class="h-4 w-4 text-primary" />
-        <h3 class="font-semibold uppercase tracking-wider">
+        <h3 class="font-semibold uppercase tracking-wider text-sm">
           Authentication Configuration
         </h3>
       </div>
@@ -111,115 +109,6 @@ const serviceId = computed(() => props.serviceId);
           </Select>
         </div>
       </template>
-    </div>
-
-    <div class="space-y-4 pt-4">
-      <div class="flex items-center gap-2 border-b pb-2">
-        <Switch v-model="preflight.enabled" />
-        <Globe class="h-4 w-4 text-primary" />
-        <h3 class="font-semibold uppercase tracking-wider">
-          Authentication Pre-flight
-        </h3>
-        <button @click="showTestDialog = true"
-          class="ml-auto flex items-center gap-1.5 px-3 py-1 bg-primary/10 text-primary rounded-full font-bold border border-primary/20 hover:bg-primary/20 transition-all">
-          <Play class="h-2.5 w-2.5 fill-primary" /> TEST SEQUENCE
-        </button>
-      </div>
-
-      <TestPreflightDialog v-if="serviceId" v-model:open="showTestDialog" :service-id="serviceId" :config="preflight"
-        :variables="variables" />
-
-      <div v-if="preflight.enabled"
-        class="bg-muted/30 border rounded-lg overflow-hidden space-y-4 p-4 animate-in fade-in slide-in-from-top-2">
-        <div class="space-y-3">
-          <Label class="font-bold uppercase text-muted-foreground">Request Details</Label>
-          <div class="flex items-center gap-2 bg-muted/50 p-2 rounded border">
-            <Select v-model="preflight.method">
-              <SelectTrigger class="w-24 h-8 font-bold bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="GET" class="font-bold text-green-600">GET</SelectItem>
-                <SelectItem value="POST" class="font-bold text-orange-600">POST</SelectItem>
-                <SelectItem value="PUT" class="font-bold text-blue-600">PUT</SelectItem>
-              </SelectContent>
-            </Select>
-            <InterpolatedInput v-model="preflight.url" :variables="variables" :environment-name="environmentName"
-              placeholder="Pre-flight URL (e.g. /oauth/token)" class="flex-1 h-8" />
-          </div>
-
-          <div v-if="preflight.method !== 'GET'" class="space-y-2">
-            <div class="flex items-center justify-between">
-              <Label class="text-muted-foreground uppercase font-bold tracking-tight">Request Body</Label>
-              <Select v-model="preflight.bodyType">
-                <SelectTrigger class="h-6 w-fit font-medium bg-background border-none shadow-none focus:ring-0 px-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="application/json" class="">JSON</SelectItem>
-                  <SelectItem value="application/x-www-form-urlencoded" class="">URL Encoded</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div v-show="preflight.bodyType === 'application/json'">
-              <InterpolatedTextarea v-model="preflight.body" :variables="variables" :environment-name="environmentName"
-                language="json"
-                class="w-full h-24 bg-background border rounded p-2 resize-none focus:ring-1 focus:ring-primary"
-                placeholder='{ "grant_type": "password", ... }' />
-            </div>
-            <div v-show="preflight.bodyType === 'application/x-www-form-urlencoded'
-              ">
-              <RequestParameters :items="preflight.bodyParams" :variables="variables"
-                :environment-name="environmentName" />
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-4 pt-2 border-t mt-2">
-          <div class="space-y-2">
-            <Label class="font-bold uppercase text-muted-foreground">Token Extraction</Label>
-            <div class="space-y-1.5">
-              <Label class="text-muted-foreground">Token Key (Response JSON)</Label>
-              <Input v-model="preflight.tokenKey" class="h-7" placeholder="access_token" />
-            </div>
-            <div class="space-y-1.5">
-              <Label class="text-muted-foreground">Token Header Name</Label>
-              <Input v-model="preflight.tokenHeader" class="h-7" placeholder="Authorization" />
-            </div>
-          </div>
-
-          <div class="space-y-2">
-            <Label class="font-bold uppercase text-muted-foreground">Caching & Expiration</Label>
-            <div class="flex items-center justify-between mb-1">
-              <Label class="text-muted-foreground">Enable Caching</Label>
-              <Switch v-model="preflight.cacheToken" class="scale-75" />
-            </div>
-            <div v-if="preflight.cacheToken" class="space-y-2 animate-in fade-in">
-              <div class="space-y-1.5">
-                <Label class="text-muted-foreground">Duration Key / Unit</Label>
-                <div class="flex gap-2">
-                  <Input v-model="preflight.cacheDurationKey" class="h-7 flex-1" placeholder="expires_in" />
-                  <Select v-model="preflight.cacheDurationUnit">
-                    <SelectTrigger class="h-7 w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="seconds" class="">sec</SelectItem>
-                      <SelectItem value="minutes" class="">min</SelectItem>
-                      <SelectItem value="hours" class="">hrs</SelectItem>
-                      <SelectItem value="days" class="">days</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="text-muted-foreground italic bg-primary/5 p-2 rounded border border-primary/10">
-          // This request will run automatically to obtain and refresh the
-          authentication token.
-        </div>
-      </div>
     </div>
   </div>
 </template>

@@ -3,9 +3,10 @@ pub mod preflight;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthType {
+    #[default]
     None,
     Basic,
     Bearer,
@@ -23,7 +24,7 @@ impl std::fmt::Display for AuthType {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
     pub r#type: String,

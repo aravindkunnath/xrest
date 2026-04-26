@@ -20,6 +20,10 @@ pub struct PreflightConfig {
     pub headers: Vec<Header>,
     #[serde(default)]
     pub cache_token: bool,
+    #[serde(default = "default_duration_mode")]
+    pub cache_duration_mode: String,
+    #[serde(default = "default_3600")]
+    pub cache_duration_seconds: u64,
     #[serde(default)]
     pub cache_duration: String,
     #[serde(default)]
@@ -30,6 +34,20 @@ pub struct PreflightConfig {
     pub token_key: String,
     #[serde(default)]
     pub token_header: Option<String>,
+}
+
+impl Default for PreflightConfig {
+    fn default() -> Self {
+        default_preflight_config()
+    }
+}
+
+fn default_duration_mode() -> String {
+    "derived".to_string()
+}
+
+fn default_3600() -> u64 {
+    3600
 }
 
 fn default_method() -> String {
@@ -90,6 +108,8 @@ fn default_preflight_config() -> PreflightConfig {
         body_params: vec![],
         headers: vec![],
         cache_token: true,
+        cache_duration_mode: "derived".to_string(),
+        cache_duration_seconds: 3600,
         cache_duration: "".to_string(),
         cache_duration_key: "".to_string(),
         cache_duration_unit: "seconds".to_string(),

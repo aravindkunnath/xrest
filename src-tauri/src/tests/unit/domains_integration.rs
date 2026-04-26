@@ -150,6 +150,7 @@ fn test_save_service_versioning() {
             cache_duration_unit: "seconds".to_string(),
             token_key: "".to_string(),
             token_header: None,
+            ..Default::default()
         },
         endpoints: vec![Endpoint {
             id: "e1".to_string(),
@@ -180,6 +181,7 @@ fn test_save_service_versioning() {
                 cache_duration_unit: "seconds".to_string(),
                 token_key: "access_token".to_string(),
                 token_header: None,
+                ..Default::default()
             },
             last_version: 0,
             versions: vec![],

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RequestAuth from "@/components/RequestAuth.vue";
+import PreflightTab from "@/components/services/PreflightTab.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -168,8 +169,13 @@ const handleGitCommit = async () => {
         <p class="text-sm text-muted-foreground">
           Configure authentication that will be used by default for all requests in this service.
         </p>
-        <RequestAuth v-if="tab.serviceData.auth && tab.serviceData.preflight" v-model:auth="tab.serviceData.auth"
-          v-model:preflight="tab.serviceData.preflight" :variables="{}" :environment-name="''"
+        <RequestAuth v-if="tab.serviceData.auth" v-model:auth="tab.serviceData.auth"
+          :variables="{}" :environment-name="''" />
+      </div>
+
+      <!-- Pre-flight Settings -->
+      <div v-if="tab.serviceData.preflight" class="bg-card rounded-lg border shadow-sm p-5 space-y-4">
+        <PreflightTab :preflight="tab.serviceData.preflight" :variables="{}" :environment-name="''"
           :service-id="tab.serviceId" />
       </div>
 

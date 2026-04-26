@@ -9,7 +9,7 @@ import {
     DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-vue-next";
+import { Loader2, CheckCircle2, XCircle, AlertTriangle, Play, RefreshCw } from "lucide-vue-next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const props = defineProps<{
@@ -56,14 +56,6 @@ const runTest = async () => {
     }
 };
 
-watch(
-    () => props.open,
-    (val) => {
-        if (val) {
-            runTest();
-        }
-    }
-);
 </script>
 
 <template>
@@ -78,51 +70,74 @@ watch(
             </div>
 
             <div class="flex-1 overflow-y-auto p-6">
+                <!-- Initial/Idle State -->
+                <div v-if="!isLoading && !result && !error" class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-4">
+                    <div class="h-20 w-20 bg-muted/20 rounded-full flex items-center justify-center border border-muted-foreground/10">
+                        <Play class="h-8 w-8 text-muted-foreground/40" />
+                    </div>
+                    <div class="text-center">
+                        <h4 class="font-bold text-muted-foreground uppercase text-xs tracking-widest mb-1">Ready to Test</h4>
+                        <p class="text-xs text-muted-foreground/60 max-w-[250px]">
+                            Click the button below to execute the pre-flight sequence and verify your configuration.
+                        </p>
+                    </div>
+                    <Button @click="runTest" class="gap-2 px-8">
+                        <Play class="h-4 w-4 fill-current" /> START TEST
+                    </Button>
+                </div>
+
                 <!-- Loading State -->
-                <div v-if="isLoading" class="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <div v-else-if="isLoading" class="flex flex-col items-center justify-center py-12 text-muted-foreground">
                     <Loader2 class="h-10 w-10 animate-spin mb-4 text-primary" />
-                    <p>Executing pre-flight request...</p>
+                    <p class="text-sm font-medium">Executing pre-flight request...</p>
                 </div>
 
                 <!-- Error State (Command Failure) -->
                 <div v-else-if="error"
-                    class="bg-destructive/10 text-destructive p-4 rounded-md flex items-center gap-3">
-                    <XCircle class="h-5 w-5 shrink-0" />
+                    class="bg-destructive/10 text-destructive p-6 rounded-lg flex flex-col items-center gap-4 text-center">
+                    <XCircle class="h-10 w-10 shrink-0" />
                     <div>
                         <h4 class="font-bold">Test Failed to Execute</h4>
-                        <p class="text-sm opacity-90">{{ error }}</p>
+                        <p class="text-sm opacity-90 font-mono mt-1">{{ error }}</p>
                     </div>
+                    <Button variant="outline" @click="runTest" class="gap-2">
+                        <RefreshCw class="h-4 w-4" /> RETRY TEST
+                    </Button>
                 </div>
 
                 <!-- Result State -->
                 <div v-else-if="result" class="space-y-6">
                     <!-- Status Banner -->
                     <div :class="[
-                        'p-4 rounded-md border flex items-start gap-3',
+                        'p-5 rounded-xl border flex items-start gap-4 transition-all duration-300',
                         result.success
-                            ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400'
-                            : 'bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-400',
+                            ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400 shadow-[0_0_15px_rgba(34,197,94,0.05)]'
+                            : 'bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.05)]',
                     ]">
-                        <component :is="result.success ? CheckCircle2 : AlertTriangle"
-                            class="h-5 w-5 shrink-0 mt-0.5" />
-                        <div>
-                            <h4 class="font-bold">
+                        <div :class="[
+                            'p-2 rounded-lg shrink-0',
+                            result.success ? 'bg-green-500/20' : 'bg-red-500/20'
+                        ]">
+                            <component :is="result.success ? CheckCircle2 : AlertTriangle" class="h-5 w-5" />
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-bold text-sm tracking-tight mb-0.5">
                                 {{
                                     result.success
                                         ? "Authentication Successful"
                                         : "Authentication Failed"
                                 }}
                             </h4>
-                            <p class="text-sm opacity-90">
+                            <p class="text-[11px] opacity-80 leading-relaxed">
                                 {{
                                     result.success
-                                        ? "Token extracted successfully and cached."
-                                        : result.error ||
-                                        "Failed to extract token."
+                                        ? "The token was successfully extracted and is now active in the cache."
+                                        : result.error || "The pre-flight sequence failed to return a valid token."
                                 }}
                             </p>
                             <div v-if="result.success && result.token"
-                                class="mt-2 bg-background/50 p-2 rounded font-mono text-xs break-all border border-green-500/20">
+                                class="mt-3 bg-background/40 p-3 rounded-lg font-mono text-[10px] break-all border border-green-500/10 shadow-inner">
+                                <span class="text-muted-foreground mr-2 select-none font-bold uppercase tracking-widest text-[9px]">Token:</span>
                                 {{ result.token }}
                             </div>
                         </div>
@@ -135,38 +150,79 @@ watch(
                             <TabsTrigger value="response">Response</TabsTrigger>
                         </TabsList>
 
-                        <TabsContent value="summary" class="space-y-4 pt-4">
-                            <div class="grid grid-cols-2 gap-4">
-                                <div class="space-y-1">
-                                    <span class="text-xs text-muted-foreground uppercase font-bold">Request URL</span>
-                                    <div class="font-mono text-sm break-all p-2 bg-muted rounded">
-                                        {{ result.requestUrl }}
+                        <TabsContent value="summary" class="space-y-6 pt-4">
+                            <div class="space-y-4">
+                                <div class="space-y-1.5">
+                                    <span class="text-[10px] text-muted-foreground uppercase font-bold tracking-tight ml-1">Request URL</span>
+                                    <div class="font-mono text-xs break-all p-3 bg-muted/30 border rounded-lg shadow-inner min-h-[40px] flex items-center">
+                                        {{ result.requestUrl || 'None' }}
                                     </div>
                                 </div>
-                                <div class="space-y-1">
-                                    <span class="text-xs text-muted-foreground uppercase font-bold">Method</span>
-                                    <div class="font-mono text-sm p-2 bg-muted rounded">
-                                        {{ result.requestMethod }}
+                                
+                                <div class="grid grid-cols-3 gap-4">
+                                    <div class="space-y-1.5">
+                                        <span class="text-[10px] text-muted-foreground uppercase font-bold tracking-tight ml-1">Method</span>
+                                        <div class="font-bold text-xs p-2.5 bg-muted/30 border rounded-lg flex items-center justify-center">
+                                            {{ result.requestMethod }}
+                                        </div>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <span class="text-[10px] text-muted-foreground uppercase font-bold tracking-tight ml-1">Status</span>
+                                        <div class="p-2.5 bg-muted/30 border rounded-lg flex items-center justify-center font-bold text-xs">
+                                            <span :class="[
+                                                result.responseStatus > 0 && result.responseStatus < 300 ? 'text-green-500' :
+                                                result.responseStatus >= 400 ? 'text-red-500' :
+                                                'text-muted-foreground'
+                                            ]">
+                                                {{ result.responseStatus || 'N/A' }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <span class="text-[10px] text-muted-foreground uppercase font-bold tracking-tight ml-1">Duration</span>
+                                        <div class="font-mono text-xs p-2.5 bg-muted/30 border rounded-lg flex items-center justify-center">
+                                            {{ result.timeElapsed }}ms
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="space-y-1">
-                                    <span class="text-xs text-muted-foreground uppercase font-bold">Status</span>
-                                    <div class="font-mono text-sm p-2 bg-muted rounded flex items-center gap-2">
-                                        <span :class="{
-                                            'text-green-600':
-                                                result.responseStatus < 300,
-                                            'text-red-600':
-                                                result.responseStatus >=
-                                                400,
-                                        }">
-                                            {{ result.responseStatus }}
-                                        </span>
-                                    </div>
+                            </div>
+
+                            <!-- Telemetry Section -->
+                            <div class="pt-6 border-t mt-4">
+                                <div class="flex items-center gap-2 mb-4">
+                                    <h4 class="text-[11px] font-bold uppercase text-muted-foreground tracking-widest">Cache & Extraction Info</h4>
+                                    <div class="h-px flex-1 bg-border/50"></div>
                                 </div>
-                                <div class="space-y-1">
-                                    <span class="text-xs text-muted-foreground uppercase font-bold">Time</span>
-                                    <div class="font-mono text-sm p-2 bg-muted rounded">
-                                        {{ result.timeElapsed }}ms
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="bg-muted/20 p-4 rounded-xl border flex flex-col gap-3">
+                                        <span class="text-[10px] uppercase font-bold text-muted-foreground tracking-tight">Cache Status</span>
+                                        <div class="flex flex-col gap-2">
+                                            <div class="flex items-center gap-2">
+                                                <span :class="[
+                                                    'px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border shadow-sm',
+                                                    result.cacheStatus === 'hit' ? 'bg-blue-500/10 border-blue-500/30 text-blue-500' :
+                                                    result.cacheStatus === 'miss' ? 'bg-orange-500/10 border-orange-500/30 text-orange-500' :
+                                                    result.cacheStatus === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-500' :
+                                                    'bg-muted border-muted text-muted-foreground'
+                                                ]">
+                                                    {{ result.cacheStatus || 'None' }}
+                                                </span>
+                                            </div>
+                                            <p class="text-[11px] text-muted-foreground leading-relaxed italic">
+                                                {{ result.cacheStatusDetail || 'No cache telemetry available.' }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="bg-muted/20 p-4 rounded-xl border flex flex-col gap-3">
+                                        <span class="text-[10px] uppercase font-bold text-muted-foreground tracking-tight">Extraction Path</span>
+                                        <div class="flex flex-col gap-2">
+                                            <div class="font-mono text-xs p-2 bg-background/50 rounded border border-dashed text-center min-h-[32px] flex items-center justify-center">
+                                                {{ result.extractionPath || 'None' }}
+                                            </div>
+                                            <p class="text-[11px] text-muted-foreground leading-relaxed italic">
+                                                The JSON path used to find the token in the response.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -229,8 +285,12 @@ watch(
                 </div>
             </div>
 
-            <div class="p-4 border-t bg-muted/10 flex justify-end">
-                <Button @click="isOpen = false">Close</Button>
+            <div class="p-4 border-t bg-muted/5 flex justify-end gap-3">
+                <Button variant="ghost" @click="runTest" :disabled="isLoading" class="text-xs h-9">
+                    <RefreshCw class="h-3.5 w-3.5 mr-2" :class="{ 'animate-spin': isLoading }" />
+                    Re-run Test
+                </Button>
+                <Button @click="isOpen = false" class="text-xs h-9 px-6 font-bold">Close Dialog</Button>
             </div>
         </DialogContent>
     </Dialog>

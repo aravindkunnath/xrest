@@ -10,3 +10,5 @@ pub mod env_resolution;
 pub mod history;
 #[cfg(test)]
 pub mod services;
+#[cfg(test)]
+pub mod preflight;

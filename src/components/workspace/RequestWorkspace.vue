@@ -15,6 +15,7 @@ import RequestBody from "@/components/RequestBody.vue";
 import RequestHistory from "@/components/RequestHistory.vue";
 import ResponseViewer from "@/components/ResponseViewer.vue";
 import ServiceSettingsView from "@/components/ServiceSettingsView.vue";
+import PreflightTab from "@/components/services/PreflightTab.vue";
 
 // Composables & Utils
 import { useTabManager } from "@/composables/useTabManager";
@@ -325,70 +326,13 @@ const handleUpdateBody = (content: string, tab: any) => {
                           :endpoint-id="tab.endpointId"
                         />
                       </TabsContent>
-                      <TabsContent value="preflight" class="p-0 m-0 overflow-visible">
-                        <div class="p-4">
-                          <div class="flex items-center justify-between mb-4">
-                            <div>
-                              <h3 class="text-sm font-medium">Pre-request Script (UI Config)</h3>
-                              <p class="text-xs text-muted-foreground">Configure a request to run before this one (e.g.,
-                                to fetch a token).</p>
-                            </div>
-                            <div class="flex items-center gap-2">
-                              <span class="text-xs font-medium">{{ tab.preflight?.enabled ? 'Enabled' : 'Disabled'
-                                }}</span>
-                              <button @click="tab.preflight.enabled = !tab.preflight.enabled"
-                                :class="['w-8 h-4 rounded-full transition-colors relative', tab.preflight?.enabled ? 'bg-primary' : 'bg-muted border']">
-                                <div
-                                  :class="['absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all', tab.preflight?.enabled ? 'left-4.5' : 'left-0.5']">
-                                </div>
-                              </button>
-                            </div>
-                          </div>
-
-                          <div v-if="tab.preflight?.enabled" class="space-y-4 animate-in fade-in slide-in-from-top-2">
-                            <div class="grid grid-cols-4 gap-4">
-                              <div class="col-span-1">
-                                <label
-                                  class="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Method</label>
-                                <select v-model="tab.preflight.method"
-                                  class="w-full bg-background border rounded px-2 py-1 text-sm h-8">
-                                  <option>GET</option>
-                                  <option>POST</option>
-                                  <option>PUT</option>
-                                </select>
-                              </div>
-                              <div class="col-span-3">
-                                <label
-                                  class="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">URL</label>
-                                <input v-model="tab.preflight.url" placeholder="https://auth.example.com/token"
-                                  class="w-full bg-background border rounded px-2 py-1 text-sm h-8" />
-                              </div>
-                            </div>
-
-                            <div>
-                              <label
-                                class="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Body</label>
-                              <textarea v-model="tab.preflight.body" rows="3"
-                                placeholder='{"grant_type": "client_credentials"}'
-                                class="w-full bg-background border rounded px-2 py-1 text-sm font-mono" />
-                            </div>
-
-                            <div class="grid grid-cols-2 gap-4">
-                              <div>
-                                <label class="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Token
-                                  Key in Response</label>
-                                <input v-model="tab.preflight.tokenKey" placeholder="access_token"
-                                  class="w-full bg-background border rounded px-2 py-1 text-sm h-8" />
-                              </div>
-                              <div>
-                                <label class="text-[10px] uppercase font-bold text-muted-foreground mb-1 block">Inject
-                                  into Header</label>
-                                <input v-model="tab.preflight.tokenHeader" placeholder="Authorization"
-                                  class="w-full bg-background border rounded px-2 py-1 text-sm h-8" />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                      <TabsContent value="preflight" class="p-4 m-0 overflow-visible">
+                        <PreflightTab
+                          :preflight="tab.preflight"
+                          :variables="tabVariablesMap[tab.id] ?? {}"
+                          :environment-name="getEnvName(tab)"
+                          :service-id="tab.serviceId"
+                        />
                       </TabsContent>
                     </div>
                   </Tabs>

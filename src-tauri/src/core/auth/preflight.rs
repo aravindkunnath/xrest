@@ -87,6 +87,9 @@ pub async fn test_preflight(
                     response_body: "Token served from cache".to_string(),
                     response_headers: vec![],
                     time_elapsed: 0,
+                    extraction_path: Some(config.token_key.clone()),
+                    cache_status: "hit".to_string(),
+                    cache_status_detail: Some("Valid token found in memory cache".to_string()),
                 };
             }
         }
@@ -159,11 +162,11 @@ pub async fn test_preflight(
                 Ok((token, response_json)) => {
                     // Update cache
                     if config.cache_token {
-                        let expires_in_seconds = if config.cache_duration == "derived" {
+                        let expires_in_seconds = if config.cache_duration_mode == "derived" {
                             let duration_value = response_json
                                 .get(&config.cache_duration_key)
                                 .and_then(|v| v.as_u64())
-                                .unwrap_or(3600);
+                                .unwrap_or(config.cache_duration_seconds);
 
                             match config.cache_duration_unit.as_str() {
                                 "seconds" => duration_value,
@@ -173,7 +176,7 @@ pub async fn test_preflight(
                                 _ => duration_value,
                             }
                         } else {
-                            config.cache_duration.parse::<u64>().unwrap_or(3600)
+                            config.cache_duration_seconds
                         };
 
                         let now = SystemTime::now()
@@ -205,6 +208,9 @@ pub async fn test_preflight(
                         response_body: response.body,
                         response_headers: response_headers_vec,
                         time_elapsed: response.time_elapsed,
+                        extraction_path: Some(config.token_key.clone()),
+                        cache_status: if config.cache_token { "miss".to_string() } else { "none".to_string() },
+                        cache_status_detail: if config.cache_token { Some("Token fetched and cached".to_string()) } else { None },
                     }
                 }
                 Err(e) => PreflightTestResult {
@@ -219,6 +225,9 @@ pub async fn test_preflight(
                     response_body: response.body,
                     response_headers: response_headers_vec,
                     time_elapsed: response.time_elapsed,
+                    extraction_path: Some(config.token_key.clone()),
+                    cache_status: "error".to_string(),
+                    cache_status_detail: Some("Failed to extract token from response".to_string()),
                 },
             }
         }
@@ -234,6 +243,9 @@ pub async fn test_preflight(
             response_body: "".to_string(),
             response_headers: vec![],
             time_elapsed: 0,
+            extraction_path: None,
+            cache_status: "error".to_string(),
+            cache_status_detail: Some("Request execution failed".to_string()),
         },
     }
 }

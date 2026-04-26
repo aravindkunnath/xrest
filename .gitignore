@@ -25,3 +25,7 @@ dist-ssr
 .vscode
 .claude
 coverage/
+# Agent and Spec directories
+.agent
+.cursor
+openspec

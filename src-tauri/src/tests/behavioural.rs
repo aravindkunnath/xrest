@@ -101,6 +101,7 @@ async fn test_send_request_with_preflight() {
             cache_duration_unit: "seconds".to_string(),
             token_key: "access_token".to_string(),
             token_header: Some("Authorization".to_string()),
+            ..Default::default()
         },
         variables: None,
         is_edited: false,
@@ -110,6 +111,99 @@ async fn test_send_request_with_preflight() {
     assert!(result.is_ok());
     let resp = result.unwrap();
     assert_eq!(resp.body, "data");
+}
+
+#[tokio::test]
+async fn test_send_request_with_manual_preflight_cache() {
+    let mut mock_http = MockHttpClient::new();
+
+    // Expect preflight request ONLY ONCE
+    mock_http
+        .expect_send_request()
+        .with(
+            predicate::eq("POST"),
+            predicate::eq("https://auth.example.com/token"),
+            predicate::always(),
+            predicate::always(),
+            predicate::always(),
+        )
+        .times(1)
+        .returning(|_, _, _, _, _| {
+            Box::pin(async {
+                Ok(QResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers: vec![],
+                    body: r#"{"access_token": "manual_token"}"#.to_string(),
+                    error: None,
+                    time_elapsed: 10,
+                    size: 30,
+                })
+            })
+        });
+
+    // Expect main request TWICE (cached token should be used)
+    mock_http
+        .expect_send_request()
+        .with(
+            predicate::eq("GET"),
+            predicate::always(),
+            predicate::function(|headers: &Vec<(String, String)>| {
+                headers
+                    .iter()
+                    .any(|(n, v)| n == "Authorization" && v == "Bearer manual_token")
+            }),
+            predicate::always(),
+            predicate::always(),
+        )
+        .times(2)
+        .returning(|_, _, _, _, _| {
+            Box::pin(async {
+                Ok(QResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers: vec![],
+                    body: "ok".to_string(),
+                    error: None,
+                    time_elapsed: 5,
+                    size: 2,
+                })
+            })
+        });
+
+    let mock_secrets = MockSecretStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let tab = RequestTab {
+        id: "tab1".to_string(),
+        endpoint_id: None,
+        title: "Test".to_string(),
+        method: "GET".to_string(),
+        url: "https://api.com/data".to_string(),
+        params: vec![],
+        headers: vec![],
+        body: crate::core::types::BodyConfig { r#type: "none".to_string(), content: "".to_string() },
+        auth: crate::core::types::AuthConfig { r#type: "none".to_string(), ..Default::default() },
+        active_sub_tab: None,
+        service_id: Some("manual-service".to_string()),
+        preflight: PreflightConfig {
+            enabled: true,
+            method: "POST".to_string(),
+            url: "https://auth.example.com/token".to_string(),
+            cache_token: true,
+            cache_duration_mode: "manual".to_string(),
+            cache_duration_seconds: 3600,
+            token_key: "access_token".to_string(),
+            ..Default::default()
+        },
+        variables: None,
+        is_edited: false,
+    };
+
+    // First request - triggers preflight
+    service.send_request(tab.clone()).await.unwrap();
+
+    // Second request - should use cache
+    service.send_request(tab).await.unwrap();
 }
 
 use std::collections::HashMap;
@@ -194,6 +288,7 @@ async fn test_variable_resolution() {
             cache_duration_unit: "seconds".to_string(),
             token_key: "access_token".to_string(),
             token_header: None,
+            ..Default::default()
         },
         variables: Some(variables),
         is_edited: false,
@@ -313,6 +408,7 @@ fn create_mock_tab(
             cache_duration_unit: "seconds".to_string(),
             token_key: "access_token".to_string(),
             token_header: None,
+            ..Default::default()
         },
         variables,
         is_edited: false,

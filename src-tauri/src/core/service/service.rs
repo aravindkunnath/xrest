@@ -52,6 +52,7 @@ fn default_preflight() -> PreflightConfig {
         cache_duration_unit: "seconds".to_string(),
         token_key: "".to_string(),
         token_header: None,
+        ..Default::default()
     }
 }
 

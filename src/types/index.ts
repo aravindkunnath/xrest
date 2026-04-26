@@ -56,13 +56,34 @@ export type PreflightConfig = {
     method: string;
     url: string;
     body: string;
+    bodyType?: string;
+    bodyParams?: Param[];
     headers: Header[];
     cacheToken: boolean;
     cacheDuration: string;
+    cacheDurationMode: string;
+    cacheDurationSeconds: number;
     cacheDurationKey: string;
     cacheDurationUnit: string;
     tokenKey: string;
     tokenHeader: string;
+}
+
+export type PreflightTestResult = {
+    success: boolean;
+    error?: string;
+    token?: string;
+    requestUrl: string;
+    requestMethod: string;
+    requestHeaders: Header[];
+    requestBody: string;
+    responseStatus: number;
+    responseHeaders: Header[];
+    responseBody: string;
+    timeElapsed: number;
+    cacheStatus: string;
+    cacheStatusDetail?: string;
+    extractionPath?: string;
 }
 
 export type RequestConfig = {
