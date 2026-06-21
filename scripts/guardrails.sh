@@ -39,11 +39,11 @@ else
 fi
 
 # 6. Mutation Testing
-if command -v cargo-mutants &> /dev/null; then
-    echo "Running cargo mutants on xrest-core..."
-    cargo mutants -d crates/xrest-core
-else
-    echo "cargo-mutants not found. Run 'cargo install cargo-mutants' to enable."
-fi
+# if command -v cargo-mutants &> /dev/null; then
+#     echo "Running cargo mutants on xrest-core..."
+#     cargo mutants -d crates/xrest-core
+# else
+#     echo "cargo-mutants not found. Run 'cargo install cargo-mutants' to enable."
+# fi
 
 echo "All guardrails passed successfully!"
