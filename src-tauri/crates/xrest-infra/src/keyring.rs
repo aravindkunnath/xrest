@@ -1,4 +1,4 @@
-use crate::core::traits::SecretStore;
+use xrest_core::traits::SecretStore;
 use keyring::Entry;
 
 pub struct KeyringSecretStore;

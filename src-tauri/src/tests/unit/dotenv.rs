@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::core::service::dotenv::{load_dotenv_vars, parse_dotenv};
-    use crate::core::traits::MockFileSystem;
+    use xrest_core::service::dotenv::{load_dotenv_vars, parse_dotenv};
+    use xrest_core::traits::MockFileSystem;
     use std::path::Path;
 
     // --- parse_dotenv tests ---

@@ -1,9 +1,9 @@
-use crate::core::import::curl::curl_to_endpoint;
-use crate::core::import::swagger::{create_service_from_spec, parse_spec_content};
-use crate::core::service::service::ServiceDomain;
-use crate::core::settings::SettingsDomain;
-use crate::core::traits::{FileSystem, GitRepository};
-use crate::core::types::{Service, ServiceStub};
+use crate::import::curl::curl_to_endpoint;
+use crate::import::swagger::{create_service_from_spec, parse_spec_content};
+use crate::service::service::ServiceDomain;
+use crate::settings::SettingsDomain;
+use crate::traits::{FileSystem, GitRepository};
+use crate::types::{Service, ServiceStub};
 use std::path::PathBuf;
 
 pub struct ImportDomain<'a> {

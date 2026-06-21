@@ -1,14 +1,14 @@
-use crate::core::request::send_request_with_context;
-use crate::core::traits::{HistoryRepository, PathProvider};
-use crate::core::types::{PreflightConfig, QResponse, RequestTab};
-use crate::infra::fs::RealFileSystem;
-use crate::infra::history::SqliteHistoryRepository;
-use crate::infra::http::RealHttpClient;
-use crate::infra::keyring::KeyringSecretStore;
-use crate::infra::paths::TauriPathProvider;
+use xrest_core::request::send_request_with_context;
+use xrest_core::traits::{HistoryRepository, PathProvider};
+use xrest_core::types::{PreflightConfig, QResponse, RequestTab};
+use xrest_infra::fs::RealFileSystem;
+use xrest_infra::history::SqliteHistoryRepository;
+use xrest_infra::http::RealHttpClient;
+use xrest_infra::keyring::KeyringSecretStore;
+use xrest_infra::paths::TauriPathProvider;
 use rusqlite::Connection;
 use tauri::AppHandle;
-use crate::core::settings::SettingsDomain;
+use xrest_core::settings::SettingsDomain;
 
 #[tauri::command]
 pub async fn send_request(app: AppHandle, tab: RequestTab) -> Result<QResponse, String> {
@@ -58,7 +58,7 @@ pub async fn read_dotenv_variables(
         .find(|s| s.id == service_id)
         .ok_or_else(|| format!("Service not found: {}", service_id))?;
 
-    crate::core::service::dotenv::load_dotenv_vars(&stub.directory, &env_name, &fs)
+    xrest_core::service::dotenv::load_dotenv_vars(&stub.directory, &env_name, &fs)
 }
 
 #[tauri::command]
@@ -67,17 +67,17 @@ pub async fn test_preflight_config(
     service_id: String,
     config: PreflightConfig,
     variables: std::collections::HashMap<String, String>,
-) -> Result<crate::core::types::PreflightTestResult, String> {
+) -> Result<xrest_core::types::PreflightTestResult, String> {
     let paths = TauriPathProvider::new(&app)?;
     let cache_path = paths.token_cache_path().ok();
 
-    Ok(crate::core::auth::preflight::test_preflight(
+    Ok(xrest_core::auth::preflight::test_preflight(
         &RealHttpClient,
         &service_id,
         &config,
         &variables,
         cache_path.as_ref(),
-        Some(&RealFileSystem as &dyn crate::core::traits::FileSystem),
+        Some(&RealFileSystem as &dyn xrest_core::traits::FileSystem),
     )
     .await)
 }

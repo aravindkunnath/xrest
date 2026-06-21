@@ -1,9 +1,9 @@
-use crate::core::types::{GitStatus, HistoryEntry, QResponse};
+use crate::types::{GitStatus, HistoryEntry, QResponse};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 
 #[async_trait]
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(any(test, feature = "mocks"), mockall::automock)]
 pub trait FileSystem: Send + Sync {
     fn read_to_string(&self, path: &Path) -> Result<String, String>;
     fn write(&self, path: &Path, content: &str) -> Result<(), String>;
@@ -13,7 +13,7 @@ pub trait FileSystem: Send + Sync {
 }
 
 #[async_trait]
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(any(test, feature = "mocks"), mockall::automock)]
 pub trait HttpClient: Send + Sync {
     async fn send_request(
         &self,
@@ -51,7 +51,7 @@ pub trait HistoryRepository {
     fn clear(&self) -> Result<(), String>;
 }
 
-#[cfg_attr(test, mockall::automock)]
+#[cfg_attr(any(test, feature = "mocks"), mockall::automock)]
 pub trait SecretStore: Send + Sync {
     fn get(&self, key: &str) -> Result<String, String>;
     fn set(&self, key: &str, value: &str) -> Result<(), String>;

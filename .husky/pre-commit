@@ -1,0 +1,2 @@
+./scripts/guardrails.sh
+pnpm lint-staged

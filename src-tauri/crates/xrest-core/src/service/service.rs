@@ -1,7 +1,7 @@
 use super::endpoint::{Endpoint, EndpointStub, EndpointVersion, PreflightConfig, RequestConfig};
 use super::environment::EnvironmentConfig;
-use crate::core::auth::{AuthConfig, AuthType};
-use crate::core::traits::{FileSystem, GitRepository};
+use crate::auth::{AuthConfig, AuthType};
+use crate::traits::{FileSystem, GitRepository};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};

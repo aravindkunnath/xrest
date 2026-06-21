@@ -1,4 +1,4 @@
-use crate::core::traits::{FileSystem, SecretStore};
+use crate::traits::{FileSystem, SecretStore};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 

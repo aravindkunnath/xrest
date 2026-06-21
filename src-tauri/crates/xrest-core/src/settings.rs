@@ -1,6 +1,6 @@
-use crate::core::service::service::{ServiceDomain, ServiceStub};
-use crate::core::traits::{FileSystem, GitRepository};
-use crate::core::types::Service;
+use crate::service::service::{ServiceDomain, ServiceStub};
+use crate::traits::{FileSystem, GitRepository};
+use crate::types::Service;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -60,12 +60,12 @@ impl<'a> SettingsDomain<'a> {
         Ok(())
     }
 
-    pub fn load_tab_state(&self, path: &PathBuf) -> Result<Option<crate::core::types::TabState>, String> {
+    pub fn load_tab_state(&self, path: &PathBuf) -> Result<Option<crate::types::TabState>, String> {
         if !self.fs.exists(path) {
             return Ok(None);
         }
         let content = self.fs.read_to_string(path).map_err(|e| e.to_string())?;
-        let state: crate::core::types::TabState =
+        let state: crate::types::TabState =
             serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
         Ok(Some(state))
     }
@@ -73,7 +73,7 @@ impl<'a> SettingsDomain<'a> {
     pub fn save_tab_state(
         &self,
         path: &PathBuf,
-        state: &crate::core::types::TabState,
+        state: &crate::types::TabState,
     ) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             if !self.fs.exists(parent) {

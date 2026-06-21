@@ -1,4 +1,4 @@
-use crate::core::traits::FileSystem;
+use xrest_core::traits::FileSystem;
 use std::path::{Path, PathBuf};
 
 pub struct RealFileSystem;

@@ -1,12 +1,12 @@
-use crate::core::traits::GitRepository;
-use crate::infra::git::Git2Repository;
+use xrest_core::traits::GitRepository;
+use xrest_infra::git::Git2Repository;
 use tauri::AppHandle;
 
 #[tauri::command]
 pub fn get_git_status(
     _app: AppHandle,
     directory: String,
-) -> Result<crate::core::types::GitStatus, String> {
+) -> Result<xrest_core::types::GitStatus, String> {
     let git = Git2Repository;
     git.status(&directory)
 }

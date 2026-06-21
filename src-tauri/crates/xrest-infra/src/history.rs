@@ -1,5 +1,5 @@
-use crate::core::traits::HistoryRepository;
-use crate::core::types::{Header, HistoryEntry};
+use xrest_core::traits::HistoryRepository;
+use xrest_core::types::{Header, HistoryEntry};
 use rusqlite::{params, Connection};
 
 pub struct SqliteHistoryRepository {

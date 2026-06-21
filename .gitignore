@@ -25,3 +25,5 @@ dist-ssr
 .vscode
 .claude
 coverage/
+**/mutants*
+**/tarpaulin-report.html

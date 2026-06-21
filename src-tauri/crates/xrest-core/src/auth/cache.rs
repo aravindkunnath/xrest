@@ -69,7 +69,7 @@ pub fn is_token_valid(cached: &CachedToken) -> bool {
 /// Persistence: Save the cache to a file
 pub fn save_cache_to_file(
     path: &std::path::Path,
-    fs: &dyn crate::core::traits::FileSystem,
+    fs: &dyn crate::traits::FileSystem,
 ) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         if !fs.exists(parent) {
@@ -85,7 +85,7 @@ pub fn save_cache_to_file(
 /// Persistence: Load the cache from a file
 pub fn load_cache_from_file(
     path: &std::path::Path,
-    fs: &dyn crate::core::traits::FileSystem,
+    fs: &dyn crate::traits::FileSystem,
 ) -> Result<(), String> {
     if !fs.exists(path) {
         return Ok(());

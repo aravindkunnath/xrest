@@ -1,6 +1,6 @@
-use crate::core::service::endpoint::PreflightConfig;
-use crate::core::traits::{FileSystem, HttpClient};
-use crate::core::types::{Header, PreflightTestResult};
+use crate::service::endpoint::PreflightConfig;
+use crate::traits::{FileSystem, HttpClient};
+use crate::types::{Header, PreflightTestResult};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 

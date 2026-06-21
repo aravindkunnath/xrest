@@ -1,6 +1,6 @@
-use crate::core::traits::{MockHttpClient, MockSecretStore};
-use crate::core::request::RequestService;
-use crate::core::types::{PreflightConfig, QResponse, RequestTab};
+use xrest_core::traits::{MockHttpClient, MockSecretStore};
+use xrest_core::request::RequestService;
+use xrest_core::types::{PreflightConfig, QResponse, RequestTab};
 use mockall::predicate;
 
 #[tokio::test]
@@ -71,11 +71,11 @@ async fn test_send_request_with_preflight() {
         url: "https://api.example.com/data".to_string(),
         params: vec![],
         headers: vec![],
-        body: crate::core::types::BodyConfig {
+        body: xrest_core::types::BodyConfig {
             r#type: "none".to_string(),
             content: "".to_string(),
         },
-        auth: crate::core::types::AuthConfig {
+        auth: xrest_core::types::AuthConfig {
             r#type: "none".to_string(),
             active: true,
             bearer_token: "".to_string(),
@@ -164,11 +164,11 @@ async fn test_variable_resolution() {
         url: "{{BASE_URL}}/items/{{ITEM_ID}}".to_string(),
         params: vec![],
         headers: vec![],
-        body: crate::core::types::BodyConfig {
+        body: xrest_core::types::BodyConfig {
             r#type: "application/json".to_string(),
             content: "{\"id\": \"item-{{ITEM_ID}}\"}".to_string(),
         },
-        auth: crate::core::types::AuthConfig {
+        auth: xrest_core::types::AuthConfig {
             r#type: "none".to_string(),
             active: true,
             bearer_token: "".to_string(),
@@ -239,7 +239,7 @@ async fn test_status_codes_and_headers() {
                 Ok(QResponse {
                     status: 404,
                     status_text: "Not Found".to_string(),
-                    headers: vec![crate::core::types::Header {
+                    headers: vec![xrest_core::types::Header {
                         name: "Content-Type".to_string(),
                         value: "application/json".to_string(),
                         enabled: true,
@@ -283,11 +283,11 @@ fn create_mock_tab(
         url: url.to_string(),
         params: vec![],
         headers: vec![],
-        body: crate::core::types::BodyConfig {
+        body: xrest_core::types::BodyConfig {
             r#type: "none".to_string(),
             content: "".to_string(),
         },
-        auth: crate::core::types::AuthConfig {
+        auth: xrest_core::types::AuthConfig {
             r#type: "none".to_string(),
             active: true,
             bearer_token: "".to_string(),

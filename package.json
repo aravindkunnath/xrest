@@ -10,7 +10,8 @@
     "test": "vitest",
     "test:tauri": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:tauri:unit": "cargo test --manifest-path src-tauri/Cargo.toml --lib tests::unit",
-    "test:tauri:behavioral": "cargo test --manifest-path src-tauri/Cargo.toml --lib tests::behavioural"
+    "test:tauri:behavioral": "cargo test --manifest-path src-tauri/Cargo.toml --lib tests::behavioural",
+    "prepare": "husky"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
@@ -46,7 +47,9 @@
     "@vitest/ui": "^4.0.16",
     "@vue/test-utils": "^2.4.6",
     "chai": "^6.2.2",
+    "husky": "^9.1.7",
     "jsdom": "^27.4.0",
+    "lint-staged": "^17.0.8",
     "mocha": "^11.7.5",
     "selenium-webdriver": "^4.39.0",
     "ts-node": "^10.9.2",

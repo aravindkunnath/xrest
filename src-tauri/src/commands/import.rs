@@ -1,9 +1,9 @@
-use crate::core::import::service::ImportDomain;
-use crate::core::traits::{FileSystem, PathProvider};
-use crate::core::types::Service;
-use crate::infra::fs::RealFileSystem;
-use crate::infra::git::Git2Repository;
-use crate::infra::paths::TauriPathProvider;
+use xrest_core::import::service::ImportDomain;
+use xrest_core::traits::{FileSystem, PathProvider};
+use xrest_core::types::Service;
+use xrest_infra::fs::RealFileSystem;
+use xrest_infra::git::Git2Repository;
+use xrest_infra::paths::TauriPathProvider;
 use tauri::AppHandle;
 
 #[tauri::command]
