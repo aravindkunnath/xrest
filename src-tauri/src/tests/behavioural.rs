@@ -62,7 +62,7 @@ async fn test_send_request_with_preflight() {
         });
 
     let mock_secrets = MockSecretStore::new();
-    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let service = RequestService::new(&mock_http, &mock_secrets, None, None);
     let tab = RequestTab {
         id: "tab1".to_string(),
         endpoint_id: Some("endpoint1".to_string()),
@@ -148,7 +148,7 @@ async fn test_variable_resolution() {
         });
 
     let mock_secrets = MockSecretStore::new();
-    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let service = RequestService::new(&mock_http, &mock_secrets, None, None);
     let mut variables = HashMap::new();
     variables.insert(
         "BASE_URL".to_string(),
@@ -213,7 +213,7 @@ async fn test_http_error_handling() {
         .returning(|_, _, _, _, _| Box::pin(async { Err("Network unreachable".to_string()) }));
 
     let mock_secrets = MockSecretStore::new();
-    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let service = RequestService::new(&mock_http, &mock_secrets, None, None);
     let tab = create_mock_tab("GET", "https://api.example.com", None);
 
     let result = service.send_request(tab).await;
@@ -255,7 +255,7 @@ async fn test_status_codes_and_headers() {
         });
 
     let mock_secrets = MockSecretStore::new();
-    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let service = RequestService::new(&mock_http, &mock_secrets, None, None);
     let tab = create_mock_tab("GET", "https://api.example.com/not-found", None);
 
     let result = service.send_request(tab).await;

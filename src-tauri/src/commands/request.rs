@@ -9,6 +9,7 @@ use xrest_infra::paths::TauriPathProvider;
 use rusqlite::Connection;
 use tauri::AppHandle;
 use xrest_core::settings::SettingsDomain;
+use tauri::Manager;
 
 #[tauri::command]
 pub async fn send_request(app: AppHandle, tab: RequestTab) -> Result<QResponse, String> {
@@ -17,12 +18,16 @@ pub async fn send_request(app: AppHandle, tab: RequestTab) -> Result<QResponse, 
     let cache_path = paths.token_cache_path().ok();
     let db_path = paths.history_db_path()?;
 
+    let token_store_state = app.try_state::<std::sync::Arc<xrest_core::auth::cache::MemoryTokenStore>>();
+    let token_store = token_store_state.as_ref().map(|s| &***s as &dyn xrest_core::auth::cache::TokenStore);
+
     let (response, history_entry) = send_request_with_context(
         &RealHttpClient,
         &RealFileSystem,
         &KeyringSecretStore,
         &settings_path,
         cache_path,
+        token_store,
         tab,
     )
     .await?;
@@ -71,11 +76,15 @@ pub async fn test_preflight_config(
     let paths = TauriPathProvider::new(&app)?;
     let cache_path = paths.token_cache_path().ok();
 
+    let token_store_state = app.try_state::<std::sync::Arc<xrest_core::auth::cache::MemoryTokenStore>>();
+    let token_store = token_store_state.as_ref().map(|s| &***s as &dyn xrest_core::auth::cache::TokenStore);
+
     Ok(xrest_core::auth::preflight::test_preflight(
         &RealHttpClient,
         &service_id,
         &config,
         &variables,
+        token_store,
         cache_path.as_ref(),
         Some(&RealFileSystem as &dyn xrest_core::traits::FileSystem),
     )

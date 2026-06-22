@@ -9,10 +9,11 @@ pub async fn execute_preflight(
     service_id: &str,
     config: &PreflightConfig,
     variables: &HashMap<String, String>,
+    token_store: Option<&dyn crate::auth::cache::TokenStore>,
     cache_path: Option<&std::path::PathBuf>,
     fs: Option<&dyn FileSystem>,
 ) -> Result<String, String> {
-    let result = test_preflight(http, service_id, config, variables, cache_path, fs).await;
+    let result = test_preflight(http, service_id, config, variables, token_store, cache_path, fs).await;
     if result.success {
         Ok(result.token.unwrap_or_default())
     } else {
@@ -25,6 +26,7 @@ pub async fn test_preflight(
     service_id: &str,
     config: &PreflightConfig,
     variables: &HashMap<String, String>,
+    token_store: Option<&dyn crate::auth::cache::TokenStore>,
     cache_path: Option<&std::path::PathBuf>,
     fs: Option<&dyn FileSystem>,
 ) -> PreflightTestResult {
@@ -63,7 +65,7 @@ pub async fn test_preflight(
         });
     }
 
-    let cache_key = super::cache::generate_key(
+    let cache_key = super::cache::TokenKey::generate(
         service_id,
         &resolved_url,
         &config.method,
@@ -73,21 +75,23 @@ pub async fn test_preflight(
 
     // Check cache
     if config.cache_token {
-        if let Some(cached) = super::cache::get_cached_token(&cache_key) {
-            if super::cache::is_token_valid(&cached) {
-                return PreflightTestResult {
-                    success: true,
-                    token: Some(cached.token),
-                    error: None,
-                    request_url: resolved_url,
-                    request_method: config.method.clone(),
-                    request_headers: request_headers_vec,
-                    request_body: resolved_body,
-                    response_status: 200,
-                    response_body: "Token served from cache".to_string(),
-                    response_headers: vec![],
-                    time_elapsed: 0,
-                };
+        if let Some(store) = token_store {
+            if let Some(cached) = store.get(&cache_key) {
+                if cached.is_valid() {
+                    return PreflightTestResult {
+                        success: true,
+                        token: Some(cached.token),
+                        error: None,
+                        request_url: resolved_url,
+                        request_method: config.method.clone(),
+                        request_headers: request_headers_vec,
+                        request_body: resolved_body,
+                        response_status: 200,
+                        response_body: "Token served from cache".to_string(),
+                        response_headers: vec![],
+                        time_elapsed: 0,
+                    };
+                }
             }
         }
     }
@@ -180,15 +184,18 @@ pub async fn test_preflight(
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs();
-                        super::cache::set_cached_token(
-                            cache_key,
-                            token.clone(),
-                            now + expires_in_seconds,
-                        );
+                            
+                        if let Some(store) = token_store {
+                            store.set(
+                                cache_key,
+                                token.clone(),
+                                now + expires_in_seconds,
+                            );
 
-                        if let Some(path) = cache_path {
-                            if let Some(fs) = fs {
-                                let _ = super::cache::save_cache_to_file(path, fs);
+                            if let Some(path) = cache_path {
+                                if let Some(fs) = fs {
+                                    let _ = store.save_to_file(path, fs);
+                                }
                             }
                         }
                     }

@@ -1,4 +1,5 @@
 #![allow(deprecated)]
+use tauri::Manager;
 mod commands;
 #[cfg(test)]
 mod tests;
@@ -34,9 +35,12 @@ pub fn run() {
                 history_repo.init().map_err(|e| Box::new(std::io::Error::other(e)))?;
 
                 // Load token cache
+                let token_store = std::sync::Arc::new(xrest_core::auth::cache::MemoryTokenStore::new());
                 if let Ok(cache_path) = paths.token_cache_path() {
-                    let _ = xrest_core::auth::cache::load_cache_from_file(&cache_path, &xrest_infra::fs::RealFileSystem);
+                    use xrest_core::auth::cache::TokenStore;
+                    let _ = token_store.load_from_file(&cache_path, &xrest_infra::fs::RealFileSystem);
                 }
+                app.manage(token_store);
             }
 
             Ok(())

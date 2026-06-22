@@ -63,7 +63,8 @@ async fn test_preflight_token_caching() {
         });
 
     let mock_secrets = MockSecretStore::new();
-    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let token_store = xrest_core::auth::cache::MemoryTokenStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None, Some(&token_store));
 
     let preflight = PreflightConfig {
         enabled: true,
@@ -178,7 +179,8 @@ async fn test_preflight_token_sharing_between_endpoints() {
         });
 
     let mock_secrets = MockSecretStore::new();
-    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let token_store = xrest_core::auth::cache::MemoryTokenStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None, Some(&token_store));
 
     let preflight = PreflightConfig {
         enabled: true,
@@ -270,7 +272,8 @@ async fn test_preflight_token_implicit_sharing() {
         });
 
     let mock_secrets = MockSecretStore::new();
-    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let token_store = xrest_core::auth::cache::MemoryTokenStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None, Some(&token_store));
 
     let preflight_on = PreflightConfig {
         enabled: true,
@@ -391,7 +394,8 @@ async fn test_preflight_token_caching_no_service_id() {
         });
 
     let mock_secrets = MockSecretStore::new();
-    let service = RequestService::new(&mock_http, &mock_secrets, None);
+    let token_store = xrest_core::auth::cache::MemoryTokenStore::new();
+    let service = RequestService::new(&mock_http, &mock_secrets, None, Some(&token_store));
 
     let mut tab_a = create_mock_tab("GET", "https://api.a.com", None);
     tab_a.service_id = None;

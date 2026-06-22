@@ -10,6 +10,7 @@ pub struct RequestService<'a> {
     pub secret_store: &'a dyn SecretStore,
     pub fs: Option<&'a dyn FileSystem>,
     pub cache_path: Option<std::path::PathBuf>,
+    pub token_store: Option<&'a dyn crate::auth::cache::TokenStore>,
 }
 
 impl<'a> RequestService<'a> {
@@ -17,12 +18,14 @@ impl<'a> RequestService<'a> {
         http: &'a dyn HttpClient,
         secret_store: &'a dyn SecretStore,
         cache_path: Option<std::path::PathBuf>,
+        token_store: Option<&'a dyn crate::auth::cache::TokenStore>,
     ) -> Self {
         Self {
             http,
             secret_store,
             fs: None,
             cache_path,
+            token_store,
         }
     }
 
@@ -54,9 +57,11 @@ impl<'a> RequestService<'a> {
             );
         } else if !service_id_str.is_empty() {
             // Even if preflight is disabled for this tab, check if we have a cached token for this service
-            if let Some(cached) = crate::auth::cache::get_cached_token(service_id_str) {
-                if crate::auth::cache::is_token_valid(&cached) {
-                    token = Some(cached.token);
+            if let Some(store) = self.token_store {
+                if let Some(cached) = store.get(service_id_str) {
+                    if cached.is_valid() {
+                        token = Some(cached.token);
+                    }
                 }
             }
         }
@@ -167,6 +172,7 @@ impl<'a> RequestService<'a> {
             service_id,
             config,
             variables,
+            self.token_store,
             self.cache_path.as_ref(),
             self.fs,
         )
@@ -221,6 +227,7 @@ pub async fn send_request_with_context(
     secret_store: &dyn SecretStore,
     settings_path: &PathBuf,
     cache_path: Option<PathBuf>,
+    token_store: Option<&dyn crate::auth::cache::TokenStore>,
     mut tab: RequestTab,
 ) -> Result<(QResponse, HistoryEntry), String> {
     // Load service config and inherit auth/preflight if not overridden
@@ -308,7 +315,7 @@ pub async fn send_request_with_context(
         }
     }
 
-    let request_service = RequestService::new(http, secret_store, cache_path.clone()).with_fs(fs);
+    let request_service = RequestService::new(http, secret_store, cache_path.clone(), token_store).with_fs(fs);
 
     // Resolve variables in URL and headers using the combined variable set
     let vars = tab.variables.clone().unwrap_or_default();
@@ -325,7 +332,7 @@ pub async fn send_request_with_context(
     let headers_clone = tab.headers.clone();
     let body_clone = tab.body.content.clone();
 
-    let request_service = RequestService::new(http, secret_store, cache_path).with_fs(fs);
+    let request_service = RequestService::new(http, secret_store, cache_path, token_store).with_fs(fs);
     let response = request_service.send_request(tab).await?;
 
     let history_entry = HistoryEntry {

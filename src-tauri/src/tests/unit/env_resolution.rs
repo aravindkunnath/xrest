@@ -115,6 +115,7 @@ mod tests {
             &mock_secrets,
             &settings_path,
             None,
+            None,
             tab,
         )
         .await
@@ -182,6 +183,7 @@ mod tests {
             &mock_fs,
             &mock_secrets,
             &settings_path,
+            None,
             None,
             tab,
         )
@@ -254,6 +256,7 @@ mod tests {
             &mock_secrets,
             &settings_path,
             None,
+            None,
             tab,
         ).await.unwrap();
 
@@ -319,6 +322,7 @@ mod tests {
             &mock_secrets,
             &settings_path,
             None,
+            None,
             tab,
         ).await.unwrap();
         assert_eq!(history.url, "https://api.com/999/999");
@@ -379,6 +383,7 @@ mod tests {
             &mock_fs,
             &mock_secrets,
             &settings_path,
+            None,
             None,
             tab,
         ).await.unwrap();

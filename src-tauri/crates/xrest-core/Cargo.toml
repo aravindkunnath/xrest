@@ -24,6 +24,7 @@ rand = "0.8"
 
 [features]
 mocks = ["mockall"]
+desktop = []
 
 [dev-dependencies]
 mockito = "1"
