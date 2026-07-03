@@ -1,4 +1,4 @@
-use crate::core::types::{
+use crate::types::{
     AuthConfig, AuthType, Endpoint, EndpointMetadata, EnvironmentConfig, NameValue,
     PreflightConfig, Service,
 };

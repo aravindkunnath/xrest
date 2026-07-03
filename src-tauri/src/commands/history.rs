@@ -1,7 +1,7 @@
-use crate::core::traits::{HistoryRepository, PathProvider};
-use crate::core::types::HistoryEntry;
-use crate::infra::history::SqliteHistoryRepository;
-use crate::infra::paths::TauriPathProvider;
+use xrest_core::traits::{HistoryRepository, PathProvider};
+use xrest_core::types::HistoryEntry;
+use xrest_infra::history::SqliteHistoryRepository;
+use xrest_infra::paths::TauriPathProvider;
 use rusqlite::Connection;
 use tauri::AppHandle;
 

@@ -1,3 +1,4 @@
+#![allow(clippy::ptr_arg)]
 pub mod auth;
 pub mod git;
 pub mod import;

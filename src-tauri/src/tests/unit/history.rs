@@ -1,6 +1,6 @@
-use crate::core::traits::HistoryRepository;
-use crate::core::types::HistoryEntry;
-use crate::infra::history::SqliteHistoryRepository;
+use xrest_core::traits::HistoryRepository;
+use xrest_core::types::HistoryEntry;
+use xrest_infra::history::SqliteHistoryRepository;
 use rusqlite::Connection;
 
 #[test]

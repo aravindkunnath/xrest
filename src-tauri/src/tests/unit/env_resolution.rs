@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::core::traits::{MockFileSystem, MockHttpClient, MockSecretStore};
-    use crate::core::types::{AuthConfig, BodyConfig, PreflightConfig, QResponse, RequestTab};
+    use xrest_core::traits::{MockFileSystem, MockHttpClient, MockSecretStore};
+    use xrest_core::types::{AuthConfig, BodyConfig, PreflightConfig, QResponse, RequestTab};
     use mockall::predicate;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -109,11 +109,12 @@ mod tests {
         let mut tab = create_mock_tab("GET", "https://api.com/{{TEST_ID}}");
         tab.service_id = Some("s1".to_string());
 
-        let (_response, history) = crate::core::request::send_request_with_context(
+        let (_response, history) = xrest_core::request::send_request_with_context(
             &mock_http,
             &mock_fs,
             &mock_secrets,
             &settings_path,
+            None,
             None,
             tab,
         )
@@ -177,11 +178,12 @@ mod tests {
         vars.insert("MY_VAR".to_string(), "env:TEST_KEY".to_string());
         tab.variables = Some(vars);
 
-        let (_response, history) = crate::core::request::send_request_with_context(
+        let (_response, history) = xrest_core::request::send_request_with_context(
             &mock_http,
             &mock_fs,
             &mock_secrets,
             &settings_path,
+            None,
             None,
             tab,
         )
@@ -248,11 +250,12 @@ mod tests {
         let mut tab = create_mock_tab("GET", "https://api.com/{{MY_SECRET}}");
         tab.service_id = Some("s1".to_string());
 
-        let (_response, history) = crate::core::request::send_request_with_context(
+        let (_response, history) = xrest_core::request::send_request_with_context(
             &mock_http,
             &mock_fs,
             &mock_secrets,
             &settings_path,
+            None,
             None,
             tab,
         ).await.unwrap();
@@ -313,11 +316,12 @@ mod tests {
             create_mock_tab("GET", "https://api.com/{{env:DIRECT_VAL}}/{{env.DIRECT_VAL}}");
         tab.service_id = Some("s1".to_string());
 
-        let (_response, history) = crate::core::request::send_request_with_context(
+        let (_response, history) = xrest_core::request::send_request_with_context(
             &mock_http,
             &mock_fs,
             &mock_secrets,
             &settings_path,
+            None,
             None,
             tab,
         ).await.unwrap();
@@ -374,11 +378,12 @@ mod tests {
         let mut tab = create_mock_tab("GET", "https://api.com/{{secret:DIRECT_SECRET}}/{{secret.DIRECT_SECRET}}");
         tab.service_id = Some("s1".to_string());
 
-        let (_response, history) = crate::core::request::send_request_with_context(
+        let (_response, history) = xrest_core::request::send_request_with_context(
             &mock_http,
             &mock_fs,
             &mock_secrets,
             &settings_path,
+            None,
             None,
             tab,
         ).await.unwrap();

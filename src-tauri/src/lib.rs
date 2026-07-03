@@ -1,6 +1,6 @@
+#![allow(deprecated)]
+use tauri::Manager;
 mod commands;
-pub mod core;
-pub mod infra;
 #[cfg(test)]
 mod tests;
 
@@ -26,18 +26,21 @@ pub fn run() {
 
             // Init history database
             {
-                use core::traits::PathProvider;
-                let paths = infra::paths::TauriPathProvider::new(app.handle())?;
+                use xrest_core::traits::PathProvider;
+                let paths = xrest_infra::paths::TauriPathProvider::new(app.handle())?;
                 let db_path = paths.history_db_path()?;
                 let conn = rusqlite::Connection::open(db_path).map_err(|e| e.to_string())?;
-                let history_repo = infra::history::SqliteHistoryRepository::new(conn);
-                use core::traits::HistoryRepository;
-                history_repo.init().map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+                let history_repo = xrest_infra::history::SqliteHistoryRepository::new(conn);
+                use xrest_core::traits::HistoryRepository;
+                history_repo.init().map_err(|e| Box::new(std::io::Error::other(e)))?;
 
                 // Load token cache
+                let token_store = std::sync::Arc::new(xrest_core::auth::cache::MemoryTokenStore::new());
                 if let Ok(cache_path) = paths.token_cache_path() {
-                    let _ = core::auth::cache::load_cache_from_file(&cache_path, &infra::fs::RealFileSystem);
+                    use xrest_core::auth::cache::TokenStore;
+                    let _ = token_store.load_from_file(&cache_path, &xrest_infra::fs::RealFileSystem);
                 }
+                app.manage(token_store);
             }
 
             Ok(())

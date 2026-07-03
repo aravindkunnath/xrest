@@ -1,5 +1,5 @@
-use crate::core::git::GitStatus;
-use crate::core::traits::GitRepository;
+use xrest_core::git::GitStatus;
+use xrest_core::traits::GitRepository;
 use git2::{IndexAddOption, PushOptions, Repository, Signature};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -80,7 +80,7 @@ impl Git2Repository {
                 return Err("Merge conflict detected. Please resolve manually.".to_string());
             }
 
-            let msg = format!("Merge branch 'main' of remote");
+            let msg = "Merge branch 'main' of remote".to_string();
             Self::commit_impl(directory, &msg)?;
         }
 

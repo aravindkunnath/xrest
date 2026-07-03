@@ -1,8 +1,8 @@
-use crate::core::secrets::SecretsDomain;
-use crate::core::traits::PathProvider;
-use crate::infra::fs::RealFileSystem;
-use crate::infra::keyring::KeyringSecretStore;
-use crate::infra::paths::TauriPathProvider;
+use xrest_core::secrets::SecretsDomain;
+use xrest_core::traits::PathProvider;
+use xrest_infra::fs::RealFileSystem;
+use xrest_infra::keyring::KeyringSecretStore;
+use xrest_infra::paths::TauriPathProvider;
 
 #[tauri::command]
 pub async fn get_secrets(app: tauri::AppHandle) -> Result<Vec<String>, String> {
@@ -53,7 +53,7 @@ pub async fn get_secret(key: String) -> Result<String, String> {
     println!("DEBUG: get_secret called for key: {}", key);
     tokio::task::spawn_blocking(move || {
         let store = KeyringSecretStore;
-        crate::core::traits::SecretStore::get(&store, &key)
+        xrest_core::traits::SecretStore::get(&store, &key)
     })
     .await
     .map_err(|e| e.to_string())?

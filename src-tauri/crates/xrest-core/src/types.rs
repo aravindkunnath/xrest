@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub use crate::core::auth::{AuthConfig, AuthType};
+pub use crate::auth::{AuthConfig, AuthType};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -27,12 +27,12 @@ pub type Variable = NameValue;
 pub type Param = NameValue;
 pub type Header = NameValue;
 
-pub use crate::core::service::environment::EnvironmentConfig;
+pub use crate::service::environment::EnvironmentConfig;
 
-pub use crate::core::service::endpoint::{Endpoint, EndpointMetadata, PreflightConfig};
-pub use crate::core::service::service::{Service, ServiceStub};
+pub use crate::service::endpoint::{Endpoint, EndpointMetadata, PreflightConfig};
+pub use crate::service::service::{Service, ServiceStub};
 
-pub use crate::core::git::GitStatus;
+pub use crate::git::GitStatus;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -117,7 +117,7 @@ pub struct TabState {
     pub tabs: Vec<Tab>,
 }
 
-pub use crate::core::settings::UserSettings;
+pub use crate::settings::UserSettings;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

@@ -1,5 +1,5 @@
-use crate::core::traits::HttpClient;
-use crate::core::types::QResponse;
+use xrest_core::traits::HttpClient;
+use xrest_core::types::QResponse;
 use async_trait::async_trait;
 
 pub struct RealHttpClient;
@@ -64,7 +64,7 @@ impl HttpClient for RealHttpClient {
 
         let mut res_headers = Vec::new();
         for (name, value) in response.headers() {
-            res_headers.push(crate::core::types::Header {
+            res_headers.push(xrest_core::types::Header {
                 name: name.to_string(),
                 value: value.to_str().unwrap_or_default().to_string(),
                 enabled: true,

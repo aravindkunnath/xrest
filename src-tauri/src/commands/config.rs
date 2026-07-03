@@ -1,10 +1,10 @@
-use crate::core::service::service::ServiceDomain;
-use crate::core::settings::SettingsDomain;
-use crate::core::traits::PathProvider;
-use crate::core::types::{Service, UserSettings};
-use crate::infra::fs::RealFileSystem;
-use crate::infra::git::Git2Repository;
-use crate::infra::paths::TauriPathProvider;
+use xrest_core::service::service::ServiceDomain;
+use xrest_core::settings::SettingsDomain;
+use xrest_core::traits::PathProvider;
+use xrest_core::types::{Service, UserSettings};
+use xrest_infra::fs::RealFileSystem;
+use xrest_infra::git::Git2Repository;
+use xrest_infra::paths::TauriPathProvider;
 use tauri::AppHandle;
 
 #[tauri::command]
@@ -62,14 +62,14 @@ pub fn save_collections(app: AppHandle, collections: Vec<Service>) -> Result<Vec
 }
 
 #[tauri::command]
-pub fn get_tab_state(app: AppHandle) -> Result<Option<crate::core::types::TabState>, String> {
+pub fn get_tab_state(app: AppHandle) -> Result<Option<xrest_core::types::TabState>, String> {
     let paths = TauriPathProvider::new(&app)?;
     let domain = SettingsDomain::new(&RealFileSystem);
     domain.load_tab_state(&paths.tab_state_path()?)
 }
 
 #[tauri::command]
-pub fn save_tab_state(app: AppHandle, state: crate::core::types::TabState) -> Result<(), String> {
+pub fn save_tab_state(app: AppHandle, state: xrest_core::types::TabState) -> Result<(), String> {
     let paths = TauriPathProvider::new(&app)?;
     let domain = SettingsDomain::new(&RealFileSystem);
     domain.save_tab_state(&paths.tab_state_path()?, &state)

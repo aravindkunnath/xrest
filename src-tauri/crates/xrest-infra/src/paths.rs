@@ -1,4 +1,4 @@
-use crate::core::traits::PathProvider;
+use xrest_core::traits::PathProvider;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Runtime};
 

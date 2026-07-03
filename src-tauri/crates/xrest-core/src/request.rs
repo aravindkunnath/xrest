@@ -1,7 +1,7 @@
-use crate::core::service::service::ServiceDomain;
-use crate::core::settings::SettingsDomain;
-use crate::core::traits::{FileSystem, HttpClient, SecretStore};
-use crate::core::types::{HistoryEntry, PreflightConfig, QResponse, RequestTab};
+use crate::service::service::ServiceDomain;
+use crate::settings::SettingsDomain;
+use crate::traits::{FileSystem, HttpClient, SecretStore};
+use crate::types::{HistoryEntry, PreflightConfig, QResponse, RequestTab};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -10,6 +10,7 @@ pub struct RequestService<'a> {
     pub secret_store: &'a dyn SecretStore,
     pub fs: Option<&'a dyn FileSystem>,
     pub cache_path: Option<std::path::PathBuf>,
+    pub token_store: Option<&'a dyn crate::auth::cache::TokenStore>,
 }
 
 impl<'a> RequestService<'a> {
@@ -17,12 +18,14 @@ impl<'a> RequestService<'a> {
         http: &'a dyn HttpClient,
         secret_store: &'a dyn SecretStore,
         cache_path: Option<std::path::PathBuf>,
+        token_store: Option<&'a dyn crate::auth::cache::TokenStore>,
     ) -> Self {
         Self {
             http,
             secret_store,
             fs: None,
             cache_path,
+            token_store,
         }
     }
 
@@ -54,9 +57,11 @@ impl<'a> RequestService<'a> {
             );
         } else if !service_id_str.is_empty() {
             // Even if preflight is disabled for this tab, check if we have a cached token for this service
-            if let Some(cached) = crate::core::auth::cache::get_cached_token(service_id_str) {
-                if crate::core::auth::cache::is_token_valid(&cached) {
-                    token = Some(cached.token);
+            if let Some(store) = self.token_store {
+                if let Some(cached) = store.get(service_id_str) {
+                    if cached.is_valid() {
+                        token = Some(cached.token);
+                    }
                 }
             }
         }
@@ -73,7 +78,7 @@ impl<'a> RequestService<'a> {
                 tab.auth.bearer_token = token_val;
                 tab.auth.r#type = "bearer".to_string();
             } else {
-                tab.headers.push(crate::core::types::Header {
+                tab.headers.push(crate::types::Header {
                     name: token_header,
                     value: token_val,
                     enabled: true,
@@ -108,13 +113,11 @@ impl<'a> RequestService<'a> {
                 }
             }
             "apikey" => {
-                if !tab.auth.api_key_name.is_empty() {
-                    if tab.auth.api_key_location == "header" {
-                        headers.push((
-                            tab.auth.api_key_name.clone(),
-                            tab.auth.api_key_value.clone(),
-                        ));
-                    }
+                if !tab.auth.api_key_name.is_empty() && tab.auth.api_key_location == "header" {
+                    headers.push((
+                        tab.auth.api_key_name.clone(),
+                        tab.auth.api_key_value.clone(),
+                    ));
                 }
             }
             _ => {}
@@ -164,11 +167,12 @@ impl<'a> RequestService<'a> {
         config: &PreflightConfig,
         variables: &HashMap<String, String>,
     ) -> Result<String, String> {
-        crate::core::auth::preflight::execute_preflight(
+        crate::auth::preflight::execute_preflight(
             self.http,
             service_id,
             config,
             variables,
+            self.token_store,
             self.cache_path.as_ref(),
             self.fs,
         )
@@ -223,6 +227,7 @@ pub async fn send_request_with_context(
     secret_store: &dyn SecretStore,
     settings_path: &PathBuf,
     cache_path: Option<PathBuf>,
+    token_store: Option<&dyn crate::auth::cache::TokenStore>,
     mut tab: RequestTab,
 ) -> Result<(QResponse, HistoryEntry), String> {
     // Load service config and inherit auth/preflight if not overridden
@@ -245,7 +250,7 @@ pub async fn send_request_with_context(
 
                     if !env_name.is_empty() {
                         // 2. Load the .env file for this environment
-                        let dotenv_map = crate::core::service::dotenv::load_dotenv_vars(
+                        let dotenv_map = crate::service::dotenv::load_dotenv_vars(
                             &stub.directory,
                             env_name,
                             fs,
@@ -310,7 +315,7 @@ pub async fn send_request_with_context(
         }
     }
 
-    let request_service = RequestService::new(http, secret_store, cache_path.clone()).with_fs(fs);
+    let request_service = RequestService::new(http, secret_store, cache_path.clone(), token_store).with_fs(fs);
 
     // Resolve variables in URL and headers using the combined variable set
     let vars = tab.variables.clone().unwrap_or_default();
@@ -327,7 +332,7 @@ pub async fn send_request_with_context(
     let headers_clone = tab.headers.clone();
     let body_clone = tab.body.content.clone();
 
-    let request_service = RequestService::new(http, secret_store, cache_path).with_fs(fs);
+    let request_service = RequestService::new(http, secret_store, cache_path, token_store).with_fs(fs);
     let response = request_service.send_request(tab).await?;
 
     let history_entry = HistoryEntry {

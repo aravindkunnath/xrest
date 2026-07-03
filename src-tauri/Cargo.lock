@@ -6124,6 +6124,50 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+ "xrest-core",
+ "xrest-infra",
+]
+
+[[package]]
+name = "xrest-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "csscolorparser",
+ "curl-parser",
+ "mockall",
+ "mockito",
+ "once_cell",
+ "openapiv3",
+ "rand 0.8.5",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "url",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
+name = "xrest-infra"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "git2",
+ "keyring",
+ "mockall",
+ "reqwest 0.13.1",
+ "rusqlite",
+ "serde_json",
+ "tauri",
+ "tokio",
+ "url",
+ "uuid",
+ "xrest-core",
 ]
 
 [[package]]

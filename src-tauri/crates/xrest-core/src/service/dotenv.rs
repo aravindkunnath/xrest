@@ -1,4 +1,4 @@
-use crate::core::traits::FileSystem;
+use crate::traits::FileSystem;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

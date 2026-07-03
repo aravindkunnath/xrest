@@ -1,4 +1,4 @@
-use crate::core::types::{Endpoint, EndpointMetadata, NameValue, PreflightConfig};
+use crate::types::{Endpoint, EndpointMetadata, NameValue, PreflightConfig};
 use curl_parser::ParsedRequest;
 use std::time::{SystemTime, UNIX_EPOCH};
 use url::Url;
