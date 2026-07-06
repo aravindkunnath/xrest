@@ -17,6 +17,7 @@ export type {
     FormDataItem,
     GitStatus,
     Header,
+    HistoryEntry,
     NameValue,
     Param,
     PreflightConfig,

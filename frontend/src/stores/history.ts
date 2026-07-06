@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { AdapterFactory } from '@/infrastructure/adapter-factory'
 
 export interface HistoryEntry {
     id: string
@@ -22,17 +23,13 @@ export const useHistoryStore = defineStore('history', () => {
     const history = ref<HistoryEntry[]>([])
     const isLoading = ref(false)
     const error = ref<string | null>(null)
+    const gateway = AdapterFactory.getHistoryGateway()
 
     async function fetchHistory(limit: number = 50, offset: number = 0) {
         isLoading.value = true
         try {
-            const saved = localStorage.getItem('xrest_history')
-            if (saved) {
-                const allEntries = JSON.parse(saved) as HistoryEntry[]
-                history.value = allEntries.slice(offset, offset + limit)
-            } else {
-                history.value = []
-            }
+            const entries = await gateway.getHistory(limit, offset)
+            history.value = entries
         } catch (err: any) {
             error.value = err.toString()
             console.error('Failed to fetch history:', err)
@@ -43,19 +40,11 @@ export const useHistoryStore = defineStore('history', () => {
 
     async function addHistoryEntry(entry: Omit<HistoryEntry, 'id' | 'createdAt'>) {
         try {
-            const newEntry: HistoryEntry = {
-                ...entry,
-                id: `history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                createdAt: new Date().toISOString()
+            const newEntry = await gateway.addHistory(entry)
+            history.value = [newEntry, ...history.value]
+            if (history.value.length > 100) {
+                history.value = history.value.slice(0, 100)
             }
-            const saved = localStorage.getItem('xrest_history')
-            const allEntries = saved ? (JSON.parse(saved) as HistoryEntry[]) : []
-            allEntries.unshift(newEntry)
-            if (allEntries.length > 100) {
-                allEntries.length = 100
-            }
-            localStorage.setItem('xrest_history', JSON.stringify(allEntries))
-            history.value = allEntries
         } catch (err: any) {
             console.error('Failed to add history entry:', err)
         }
@@ -64,7 +53,7 @@ export const useHistoryStore = defineStore('history', () => {
     async function clearHistory() {
         isLoading.value = true
         try {
-            localStorage.removeItem('xrest_history')
+            await gateway.clearHistory()
             history.value = []
         } catch (err: any) {
             error.value = err.toString()

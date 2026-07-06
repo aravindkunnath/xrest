@@ -118,6 +118,23 @@ export interface GitStatus {
 
 export type Header = NameValue;
 
+export interface HistoryEntry {
+    "id": string;
+    "serviceId"?: string | null;
+    "endpointId"?: string | null;
+    "method": string;
+    "url": string;
+    "requestHeaders": Header[] | null;
+    "requestBody": string;
+    "responseStatus": number;
+    "responseStatusText": string;
+    "responseHeaders": Header[] | null;
+    "responseBody": string;
+    "timeElapsed": number;
+    "size": number;
+    "createdAt": string;
+}
+
 export interface NameValue {
     "name": string;
     "value": string;

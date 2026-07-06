@@ -17,9 +17,8 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  // Automatically spin up the Wails server mode for E2E testing
   webServer: {
-    command: 'cd .. && go build -tags server -o bin/xrest-webview-server ./cmd/wails && ./bin/xrest-webview-server',
+    command: 'cd .. && go build -tags server -o bin/xrest-webview-server ./cmd/wails && XREST_ENV=test ./bin/xrest-webview-server',
     url: 'http://localhost:8080',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
