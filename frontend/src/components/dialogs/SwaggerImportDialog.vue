@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { toast } from "vue-sonner";
 import { Dialogs } from "@wailsio/runtime";
-import { ServiceGateway } from "@/../bindings/xrest/cmd/wails";
+import { useServicesStore } from "@/stores/services";
 import { Folder } from "@lucide/vue";
 import {
     Dialog,
@@ -85,20 +85,23 @@ const handleImportSwagger = async () => {
     }
 
     try {
-        const service: any = await ServiceGateway.ImportSwagger(
+        const servicesStore = useServicesStore();
+        const service = await servicesStore.importSwagger(
             swaggerForm.value.name,
-            swaggerForm.value.file || swaggerForm.value.url || ""
+            swaggerForm.value.file || swaggerForm.value.url || "",
         );
 
-        emit("import-complete");
-        emit("update:open", false);
+        if (service) {
+            emit("import-complete");
+            emit("update:open", false);
 
-        toast.success("Swagger Imported", {
-            description: `Service "${service.name}" has been created from Swagger doc.`,
-        });
+            toast.success("Swagger Imported", {
+                description: `Service "${service.name}" has been created from Swagger doc.`,
+            });
 
-        // Reset form
-        swaggerForm.value = { url: "", file: "", name: "", directory: "" };
+            // Reset form
+            swaggerForm.value = { url: "", file: "", name: "", directory: "" };
+        }
     } catch (error) {
         console.error("Failed to import Swagger:", error);
         toast.error("Import Failed", {

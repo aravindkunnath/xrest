@@ -111,5 +111,22 @@ describe('Mock Gateways', () => {
             const service = await gateway.importCurl('s1', 'curl http://url')
             expect(service.id).toBe('s1')
         })
+
+        it('should import swagger and create a service with correct shape', async () => {
+            const gateway = new MockServiceGateway()
+            const service = await gateway.importSwagger('Swagger Service', '/path/to/spec.json')
+
+            expect(service.name).toBe('Swagger Service')
+            expect(service.directory).toBe('/path/to/spec.json')
+            expect(service.id).toBeTruthy()
+            expect(service.endpoints).toEqual([])
+            expect(service.environments).toEqual([])
+            expect(service.isAuthenticated).toBe(false)
+
+            // Persisted to localStorage / internal list
+            const loaded = await gateway.loadServices()
+            expect(loaded).toHaveLength(1)
+            expect(loaded[0].name).toBe('Swagger Service')
+        })
     })
 })

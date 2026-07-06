@@ -1,9 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"xrest/internal/adapters"
+	importlib "xrest/internal/import"
 	"xrest/internal/models"
+
+	"github.com/adrg/xdg"
 )
 
 // ServiceGateway handles service and Git repository management operations.
@@ -14,15 +20,66 @@ func NewServiceGateway() *ServiceGateway {
 	return &ServiceGateway{}
 }
 
+// settingsPath returns the path to the user settings YAML file.
+var settingsPath = func() string {
+	if os.Getenv("XREST_ENV") == "test" {
+		return filepath.Join(os.TempDir(), "xrest-test", "settings.yaml")
+	}
+	return filepath.Join(xdg.ConfigHome, "xrest", "settings.yaml")
+}
+
 // LoadServices returns all stored services.
 func (s *ServiceGateway) LoadServices() ([]models.Service, error) {
 	log.Println("[ServiceGateway] LoadServices called")
-	return []models.Service{}, nil
+	settings, err := importlib.LoadSettings(settingsPath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
+
+	svcManager := importlib.NewServiceManager()
+	var services []models.Service
+	for _, stub := range settings.Services {
+		svc, err := svcManager.LoadService(stub.Directory)
+		if err != nil {
+			log.Printf("[ServiceGateway] Warning: failed to load service %s (%s): %v\n", stub.Name, stub.Directory, err)
+			continue
+		}
+		services = append(services, svc)
+	}
+	return services, nil
 }
 
 // SaveServices persists services with an optional commit message.
 func (s *ServiceGateway) SaveServices(services []models.Service, commitMessage string) ([]models.Service, error) {
 	log.Printf("[ServiceGateway] SaveServices called with %d services, message: %q\n", len(services), commitMessage)
+
+	settings, err := importlib.LoadSettings(settingsPath())
+	if err != nil {
+		return nil, err
+	}
+
+	var stubs []models.ServiceStub
+	svcManager := importlib.NewServiceManager()
+	git := adapters.NewGitAdapter()
+
+	for i := range services {
+		svc := services[i]
+		if err := svcManager.SaveService(&svc, commitMessage, git); err != nil {
+			return nil, fmt.Errorf("failed to save service %s: %w", svc.Name, err)
+		}
+		stubs = append(stubs, models.ServiceStub{
+			ID:        svc.ID,
+			Name:      svc.Name,
+			Directory: svc.Directory,
+		})
+		services[i] = svc
+	}
+
+	settings.Services = stubs
+	if err := importlib.SaveSettings(settingsPath(), settings); err != nil {
+		return nil, fmt.Errorf("failed to save settings: %w", err)
+	}
+
 	return services, nil
 }
 
@@ -71,20 +128,17 @@ func (s *ServiceGateway) CommitGit(directory string, message string) error {
 // ImportService imports a service from the specified directory.
 func (s *ServiceGateway) ImportService(directory string) (models.Service, error) {
 	log.Printf("[ServiceGateway] ImportService called for: %s\n", directory)
-	return models.Service{
-		ID:        "s-imported",
-		Name:      "Imported Service",
-		Directory: directory,
-	}, nil
+	domain := importlib.NewImportDomain()
+	git := adapters.NewGitAdapter()
+	return domain.ImportFromDirectory(settingsPath(), directory, git)
 }
 
 // ImportCurl imports endpoints into a service from a cURL command.
 func (s *ServiceGateway) ImportCurl(serviceId string, curlCommand string) (models.Service, error) {
 	log.Printf("[ServiceGateway] ImportCurl called for service %s: %s\n", serviceId, curlCommand)
-	return models.Service{
-		ID:   serviceId,
-		Name: "Imported Curl Service",
-	}, nil
+	domain := importlib.NewImportDomain()
+	git := adapters.NewGitAdapter()
+	return domain.ImportCurlEndpoint(settingsPath(), serviceId, curlCommand, git)
 }
 
 // TestPreflightConfig runs a test for the given preflight configuration.
@@ -95,10 +149,41 @@ func (s *ServiceGateway) TestPreflightConfig(config *models.PreflightConfig) (st
 }
 
 // ImportSwagger imports a service definition from a Swagger/OpenAPI file.
-func (s *ServiceGateway) ImportSwagger(serviceId string, filePath string) (models.Service, error) {
-	log.Printf("[ServiceGateway] ImportSwagger called for service %s, file: %s\n", serviceId, filePath)
-	return models.Service{
-		ID:   serviceId,
-		Name: "Imported Swagger Service",
-	}, nil
+// The frontend passes (name string, filePath string) where filePath may be a URL or file path.
+func (s *ServiceGateway) ImportSwagger(name string, filePath string) (models.Service, error) {
+	log.Printf("[ServiceGateway] ImportSwagger called for name: %s, file: %s\n", name, filePath)
+
+	var content string
+	var directory string
+
+	if isURL(filePath) {
+		// Fetch from URL
+		client := &adapters.Http{}
+		resp, err := client.Send(&models.Request{
+			Method: "GET",
+			URL:    filePath,
+		})
+		if err != nil {
+			return models.Service{}, fmt.Errorf("failed to fetch swagger URL: %w", err)
+		}
+		content = resp.Body
+		directory = filepath.Join(xdg.ConfigHome, "xrest", "services", name)
+	} else {
+		// Read local file
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return models.Service{}, fmt.Errorf("failed to read swagger file: %w", err)
+		}
+		content = string(data)
+		directory = filepath.Dir(filePath)
+	}
+
+	domain := importlib.NewImportDomain()
+	git := adapters.NewGitAdapter()
+	return domain.ImportFromSwagger(settingsPath(), name, directory, content, git)
+}
+
+// isURL checks if a string looks like a URL.
+func isURL(s string) bool {
+	return len(s) > 8 && (s[:7] == "http://" || s[:8] == "https://")
 }

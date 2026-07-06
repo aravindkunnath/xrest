@@ -2,6 +2,24 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Secrets Management E2E Suite", () => {
   test.beforeEach(async ({ page }) => {
+    // Intercept native Wails Dialogs.Question calls to /wails/runtime
+    await page.route("**/wails/runtime", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        const payload = request.postDataJSON();
+        // ObjectID 5 is Dialog, Method 3 is DialogQuestion
+        if (payload && payload.object === 5 && payload.method === 3) {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify("Yes"), // Simulate clicking "Yes" on the dialog
+          });
+          return;
+        }
+      }
+      await route.continue();
+    });
+
     // Set XREST_ENV to test to enable the in-memory keyring backend
     await page.goto("/");
     
@@ -51,14 +69,7 @@ test.describe("Secrets Management E2E Suite", () => {
     await expect(row.locator(`text=${testVal}`)).toBeVisible();
 
     // 4. Delete Secret
-    // Wails Dialogs.Question triggers a browser confirm/dialog or equivalent.
-    // Configure Playwright to automatically confirm it.
-    page.once('dialog', async dialog => {
-      expect(dialog.message()).toContain(`delete the secret "${testKey}"`);
-      await dialog.accept();
-    });
-
-    const deleteBtn = row.locator('button:has(svg.lucide-trash2)');
+    const deleteBtn = row.locator('button:has(svg.lucide-trash-2)');
     await deleteBtn.click();
 
     // Key should disappear from the table list

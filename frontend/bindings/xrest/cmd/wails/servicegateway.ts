@@ -44,9 +44,10 @@ export function ImportService(directory: string): $CancellablePromise<models$0.S
 
 /**
  * ImportSwagger imports a service definition from a Swagger/OpenAPI file.
+ * The frontend passes (name string, filePath string) where filePath may be a URL or file path.
  */
-export function ImportSwagger(serviceId: string, filePath: string): $CancellablePromise<models$0.Service> {
-    return $Call.ByID(2278652028, serviceId, filePath);
+export function ImportSwagger(name: string, filePath: string): $CancellablePromise<models$0.Service> {
+    return $Call.ByID(2278652028, name, filePath);
 }
 
 /**

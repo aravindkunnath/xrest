@@ -3,12 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGateway = {
     importCurl: vi.fn(),
+    importSwagger: vi.fn(),
+    importService: vi.fn(),
     loadServices: vi.fn(),
     saveServices: vi.fn(),
     getGitStatus: vi.fn(),
     initGit: vi.fn(),
     syncGit: vi.fn(),
-    importService: vi.fn(),
 }
 
 vi.mock('@/infrastructure/adapter-factory', () => ({
@@ -54,5 +55,37 @@ describe('Services Store', () => {
         const result = await store.importCurl('s1', 'invalid curl')
 
         expect(result).toBeNull()
+    })
+
+    it('should import swagger and refresh services in store', async () => {
+        const store = useServicesStore()
+        const createdService = {
+            id: 's2',
+            name: 'Swagger Service',
+            directory: '/spec/path',
+            endpoints: [{ id: 'e1', name: 'Endpoint' }],
+        }
+
+        // loadServices is called after importSwagger to refresh; return the created list
+        vi.mocked(mockGateway.importSwagger).mockResolvedValue(createdService)
+        vi.mocked(mockGateway.loadServices).mockResolvedValue([createdService])
+
+        const result = await store.importSwagger('Swagger Service', '/spec/path')
+
+        expect(mockGateway.importSwagger).toHaveBeenCalledWith('Swagger Service', '/spec/path')
+        expect(mockGateway.loadServices).toHaveBeenCalled()
+        expect(result).toEqual(createdService)
+        expect(store.services).toContainEqual(createdService)
+    })
+
+    it('should handle and surface swagger import error', async () => {
+        const store = useServicesStore()
+        vi.mocked(mockGateway.importSwagger).mockRejectedValue(new Error('Spec parse failed'))
+
+        const result = await store.importSwagger('Bad Service', '/bad/spec.json')
+
+        expect(result).toBeNull()
+        expect(mockGateway.loadServices).not.toHaveBeenCalled()
+        expect(store.services).toHaveLength(0)
     })
 })

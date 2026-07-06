@@ -57,19 +57,19 @@ async function handleSubmit() {
             <div class="grid gap-4 py-4">
                 <div class="grid grid-cols-4 items-center gap-4">
                     <Label for="key" class="text-right">Key Name</Label>
-                    <Input id="key" v-model="keyName" placeholder="MY_API_KEY" class="col-span-3"
+                    <Input id="key" v-model="keyName" placeholder="Secret Name (e.g. OPENAI_API_KEY)" class="col-span-3"
                         @keyup.enter="handleSubmit" />
                 </div>
                 <div class="grid grid-cols-4 items-center gap-4">
                     <Label for="value" class="text-right">Secret Value</Label>
-                    <Input id="value" v-model="secretValue" type="password" placeholder="••••••••••••"
+                    <Input id="value" v-model="secretValue" type="password" placeholder="Secret Value"
                         class="col-span-3" @keyup.enter="handleSubmit" />
                 </div>
             </div>
             <DialogFooter>
                 <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
                 <Button @click="handleSubmit" :disabled="isSubmitting || !keyName || !secretValue">
-                    {{ isSubmitting ? 'Adding...' : 'Add Secret' }}
+                    {{ isSubmitting ? 'Saving...' : 'Save Secret' }}
                 </Button>
             </DialogFooter>
         </DialogContent>
