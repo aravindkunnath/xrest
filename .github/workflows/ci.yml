@@ -57,5 +57,8 @@ jobs:
         with:
           go-version-file: 'go.mod'
           
+      - name: Create frontend placeholder for embed
+        run: mkdir -p frontend/dist && touch frontend/dist/placeholder
+          
       - name: Run Go tests
         run: go test ./...
