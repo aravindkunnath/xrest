@@ -29,39 +29,43 @@ func (s *ServiceGateway) SaveServices(services []models.Service, commitMessage s
 // GetGitStatus retrieves the Git status of the specified directory.
 func (s *ServiceGateway) GetGitStatus(directory string) (models.GitStatus, error) {
 	log.Printf("[ServiceGateway] GetGitStatus called for: %s\n", directory)
-	return models.GitStatus{
-		IsGit: true,
-	}, nil
+	git := adapters.NewGitAdapter()
+	return git.Status(directory)
 }
 
 // InitGit initializes a Git repository in the directory.
 func (s *ServiceGateway) InitGit(directory string, remoteUrl string) error {
 	log.Printf("[ServiceGateway] InitGit called for: %s, remote: %s\n", directory, remoteUrl)
-	return nil
+	git := adapters.NewGitAdapter()
+	return git.Init(directory, remoteUrl)
 }
 
 // SyncGit synchronizes the Git repository (pull then push).
 func (s *ServiceGateway) SyncGit(directory string) error {
 	log.Printf("[ServiceGateway] SyncGit called for: %s\n", directory)
-	return nil
+	git := adapters.NewGitAdapter()
+	return git.Sync(directory)
 }
 
 // PullGit pulls from the remote Git repository.
 func (s *ServiceGateway) PullGit(directory string) error {
 	log.Printf("[ServiceGateway] PullGit called for: %s\n", directory)
-	return nil
+	git := adapters.NewGitAdapter()
+	return git.Pull(directory)
 }
 
 // PushGit pushes commits to the remote Git repository.
 func (s *ServiceGateway) PushGit(directory string) error {
 	log.Printf("[ServiceGateway] PushGit called for: %s\n", directory)
-	return nil
+	git := adapters.NewGitAdapter()
+	return git.Push(directory)
 }
 
 // CommitGit commits uncommitted changes to the Git repository.
 func (s *ServiceGateway) CommitGit(directory string, message string) error {
 	log.Printf("[ServiceGateway] CommitGit called for: %s, message: %s\n", directory, message)
-	return nil
+	git := adapters.NewGitAdapter()
+	return git.Commit(directory, message)
 }
 
 // ImportService imports a service from the specified directory.

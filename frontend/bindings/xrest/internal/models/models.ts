@@ -3,12 +3,16 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import { Create as $Create } from "@wailsio/runtime";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as http$0 from "../../../net/http/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as time$0 from "../../../time/models.js";
 
-export interface Auth {
+export class Auth {
     "type": AuthType;
     "basicUsername"?: string;
     "basicPassword"?: string;
@@ -20,9 +24,26 @@ export interface Auth {
      * "header" or "query"
      */
     "apiKeyAddTo"?: string;
+
+    /** Creates a new Auth instance. */
+    constructor($$source: Partial<Auth> = {}) {
+        if (!("type" in $$source)) {
+            this["type"] = AuthType.$zero;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Auth instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Auth {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Auth($$parsedSource as Partial<Auth>);
+    }
 }
 
-export interface AuthConfig {
+export class AuthConfig {
     "type": string;
     "active": boolean;
     "basicUser": string;
@@ -31,6 +52,44 @@ export interface AuthConfig {
     "apiKeyName": string;
     "apiKeyValue": string;
     "apiKeyLocation": string;
+
+    /** Creates a new AuthConfig instance. */
+    constructor($$source: Partial<AuthConfig> = {}) {
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+        if (!("active" in $$source)) {
+            this["active"] = false;
+        }
+        if (!("basicUser" in $$source)) {
+            this["basicUser"] = "";
+        }
+        if (!("basicPass" in $$source)) {
+            this["basicPass"] = "";
+        }
+        if (!("bearerToken" in $$source)) {
+            this["bearerToken"] = "";
+        }
+        if (!("apiKeyName" in $$source)) {
+            this["apiKeyName"] = "";
+        }
+        if (!("apiKeyValue" in $$source)) {
+            this["apiKeyValue"] = "";
+        }
+        if (!("apiKeyLocation" in $$source)) {
+            this["apiKeyLocation"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new AuthConfig instance from a string or object.
+     */
+    static createFrom($$source: any = {}): AuthConfig {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new AuthConfig($$parsedSource as Partial<AuthConfig>);
+    }
 }
 
 export enum AuthType {
@@ -45,7 +104,7 @@ export enum AuthType {
     AuthAPIKey = "apikey",
 };
 
-export interface Cookie {
+export class Cookie {
     "name": string;
     "value": string;
     "path": string;
@@ -54,9 +113,47 @@ export interface Cookie {
     "maxAge": number;
     "secure": boolean;
     "httpOnly": boolean;
+
+    /** Creates a new Cookie instance. */
+    constructor($$source: Partial<Cookie> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("value" in $$source)) {
+            this["value"] = "";
+        }
+        if (!("path" in $$source)) {
+            this["path"] = "";
+        }
+        if (!("domain" in $$source)) {
+            this["domain"] = "";
+        }
+        if (!("expires" in $$source)) {
+            this["expires"] = "0001-01-01T00:00:00.000Z";
+        }
+        if (!("maxAge" in $$source)) {
+            this["maxAge"] = 0;
+        }
+        if (!("secure" in $$source)) {
+            this["secure"] = false;
+        }
+        if (!("httpOnly" in $$source)) {
+            this["httpOnly"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Cookie instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Cookie {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Cookie($$parsedSource as Partial<Cookie>);
+    }
 }
 
-export interface Endpoint {
+export class Endpoint {
     "id": string;
     "serviceId": string;
     "name": string;
@@ -65,36 +162,206 @@ export interface Endpoint {
     "authenticated": boolean;
     "authType": string;
     "metadata": EndpointMetadata;
-    "params": Param[] | null;
-    "headers": Header[] | null;
+    "params": Param[];
+    "headers": Header[];
     "body": string;
     "preflight"?: PreflightConfig | null;
     "lastVersion": number;
-    "versions": EndpointVersion[] | null;
+    "versions": EndpointVersion[];
+
+    /** Creates a new Endpoint instance. */
+    constructor($$source: Partial<Endpoint> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("serviceId" in $$source)) {
+            this["serviceId"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("method" in $$source)) {
+            this["method"] = "";
+        }
+        if (!("url" in $$source)) {
+            this["url"] = "";
+        }
+        if (!("authenticated" in $$source)) {
+            this["authenticated"] = false;
+        }
+        if (!("authType" in $$source)) {
+            this["authType"] = "";
+        }
+        if (!("metadata" in $$source)) {
+            this["metadata"] = (new EndpointMetadata());
+        }
+        if (!("params" in $$source)) {
+            this["params"] = [];
+        }
+        if (!("headers" in $$source)) {
+            this["headers"] = [];
+        }
+        if (!("body" in $$source)) {
+            this["body"] = "";
+        }
+        if (!("lastVersion" in $$source)) {
+            this["lastVersion"] = 0;
+        }
+        if (!("versions" in $$source)) {
+            this["versions"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Endpoint instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Endpoint {
+        const $$createField7_0 = $$createType0;
+        const $$createField8_0 = $$createType2;
+        const $$createField9_0 = $$createType2;
+        const $$createField11_0 = $$createType4;
+        const $$createField13_0 = $$createType6;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("metadata" in $$parsedSource) {
+            $$parsedSource["metadata"] = $$createField7_0($$parsedSource["metadata"]);
+        }
+        if ("params" in $$parsedSource) {
+            $$parsedSource["params"] = $$createField8_0($$parsedSource["params"]);
+        }
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField9_0($$parsedSource["headers"]);
+        }
+        if ("preflight" in $$parsedSource) {
+            $$parsedSource["preflight"] = $$createField11_0($$parsedSource["preflight"]);
+        }
+        if ("versions" in $$parsedSource) {
+            $$parsedSource["versions"] = $$createField13_0($$parsedSource["versions"]);
+        }
+        return new Endpoint($$parsedSource as Partial<Endpoint>);
+    }
 }
 
-export interface EndpointMetadata {
+export class EndpointMetadata {
     "version": string;
     "lastUpdated": number;
+
+    /** Creates a new EndpointMetadata instance. */
+    constructor($$source: Partial<EndpointMetadata> = {}) {
+        if (!("version" in $$source)) {
+            this["version"] = "";
+        }
+        if (!("lastUpdated" in $$source)) {
+            this["lastUpdated"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new EndpointMetadata instance from a string or object.
+     */
+    static createFrom($$source: any = {}): EndpointMetadata {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new EndpointMetadata($$parsedSource as Partial<EndpointMetadata>);
+    }
 }
 
-export interface EndpointVersion {
+export class EndpointVersion {
     "version": number;
     "config": RequestConfig;
     "lastUpdated": number;
+
+    /** Creates a new EndpointVersion instance. */
+    constructor($$source: Partial<EndpointVersion> = {}) {
+        if (!("version" in $$source)) {
+            this["version"] = 0;
+        }
+        if (!("config" in $$source)) {
+            this["config"] = (new RequestConfig());
+        }
+        if (!("lastUpdated" in $$source)) {
+            this["lastUpdated"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new EndpointVersion instance from a string or object.
+     */
+    static createFrom($$source: any = {}): EndpointVersion {
+        const $$createField1_0 = $$createType7;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("config" in $$parsedSource) {
+            $$parsedSource["config"] = $$createField1_0($$parsedSource["config"]);
+        }
+        return new EndpointVersion($$parsedSource as Partial<EndpointVersion>);
+    }
 }
 
-export interface EnvironmentConfig {
+export class EnvironmentConfig {
     "name": string;
     "isUnsafe": boolean;
-    "variables": Variable[] | null;
+    "variables": Variable[];
+
+    /** Creates a new EnvironmentConfig instance. */
+    constructor($$source: Partial<EnvironmentConfig> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("isUnsafe" in $$source)) {
+            this["isUnsafe"] = false;
+        }
+        if (!("variables" in $$source)) {
+            this["variables"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new EnvironmentConfig instance from a string or object.
+     */
+    static createFrom($$source: any = {}): EnvironmentConfig {
+        const $$createField2_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("variables" in $$parsedSource) {
+            $$parsedSource["variables"] = $$createField2_0($$parsedSource["variables"]);
+        }
+        return new EnvironmentConfig($$parsedSource as Partial<EnvironmentConfig>);
+    }
 }
 
-export interface FormDataItem {
+export class FormDataItem {
     "key": string;
     "value": string;
     "type": FormDataType;
     "filePath"?: string;
+
+    /** Creates a new FormDataItem instance. */
+    constructor($$source: Partial<FormDataItem> = {}) {
+        if (!("key" in $$source)) {
+            this["key"] = "";
+        }
+        if (!("value" in $$source)) {
+            this["value"] = "";
+        }
+        if (!("type" in $$source)) {
+            this["type"] = FormDataType.$zero;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FormDataItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): FormDataItem {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new FormDataItem($$parsedSource as Partial<FormDataItem>);
+    }
 }
 
 export enum FormDataType {
@@ -107,29 +374,88 @@ export enum FormDataType {
     FormDataTypeFile = "file",
 };
 
-export interface GitStatus {
+export class GitStatus {
     "isGit": boolean;
     "remoteUrl": string;
     "branch": string;
-    "IsDirty": boolean;
-    "doPull": boolean;
-    "doPush": boolean;
-    "lastSyncAt": string;
+    "hasUncommittedChanges": boolean;
+    "hasUnpushedCommits": boolean;
+    "lastSync": number;
+
+    /** Creates a new GitStatus instance. */
+    constructor($$source: Partial<GitStatus> = {}) {
+        if (!("isGit" in $$source)) {
+            this["isGit"] = false;
+        }
+        if (!("remoteUrl" in $$source)) {
+            this["remoteUrl"] = "";
+        }
+        if (!("branch" in $$source)) {
+            this["branch"] = "";
+        }
+        if (!("hasUncommittedChanges" in $$source)) {
+            this["hasUncommittedChanges"] = false;
+        }
+        if (!("hasUnpushedCommits" in $$source)) {
+            this["hasUnpushedCommits"] = false;
+        }
+        if (!("lastSync" in $$source)) {
+            this["lastSync"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GitStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): GitStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new GitStatus($$parsedSource as Partial<GitStatus>);
+    }
 }
 
-export type Header = NameValue;
-
-export interface NameValue {
+export class NameValue {
     "name": string;
     "value": string;
     "enabled": boolean;
     "secretKey"?: string;
     "type": string;
+
+    /** Creates a new NameValue instance. */
+    constructor($$source: Partial<NameValue> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("value" in $$source)) {
+            this["value"] = "";
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+        if (!("type" in $$source)) {
+            this["type"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new NameValue instance from a string or object.
+     */
+    static createFrom($$source: any = {}): NameValue {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new NameValue($$parsedSource as Partial<NameValue>);
+    }
 }
 
+export const Header = NameValue;
+export type Header = NameValue;
+
+export const Param = NameValue;
 export type Param = NameValue;
 
-export interface PreflightConfig {
+export class PreflightConfig {
     "request": Request | null;
 
     /**
@@ -163,14 +489,47 @@ export interface PreflightConfig {
      * "expires_in", "epoch", "epoch_ms", "iso8601"
      */
     "expiryType"?: string;
+
+    /** Creates a new PreflightConfig instance. */
+    constructor($$source: Partial<PreflightConfig> = {}) {
+        if (!("request" in $$source)) {
+            this["request"] = null;
+        }
+        if (!("tokenLocation" in $$source)) {
+            this["tokenLocation"] = "";
+        }
+        if (!("tokenPath" in $$source)) {
+            this["tokenPath"] = "";
+        }
+        if (!("tokenHeader" in $$source)) {
+            this["tokenHeader"] = "";
+        }
+        if (!("tokenPrefix" in $$source)) {
+            this["tokenPrefix"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PreflightConfig instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PreflightConfig {
+        const $$createField0_0 = $$createType9;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("request" in $$parsedSource) {
+            $$parsedSource["request"] = $$createField0_0($$parsedSource["request"]);
+        }
+        return new PreflightConfig($$parsedSource as Partial<PreflightConfig>);
+    }
 }
 
-export interface Request {
+export class Request {
     "method": string;
     "url": string;
-    "headers": { [_ in string]?: string } | null;
-    "queryParams": { [_ in string]?: string } | null;
-    "pathParams": { [_ in string]?: string } | null;
+    "headers": { [_ in string]?: string };
+    "queryParams": { [_ in string]?: string };
+    "pathParams": { [_ in string]?: string };
     "auth"?: Auth | null;
 
     /**
@@ -178,53 +537,330 @@ export interface Request {
      */
     "bodyType": string;
     "bodyRaw": string;
-    "bodyForm": { [_ in string]?: string } | null;
-    "bodyFormData": FormDataItem[] | null;
-    "bodyBinary": string | null;
+    "bodyForm": { [_ in string]?: string };
+    "bodyFormData": FormDataItem[];
+    "bodyBinary": string;
     "timeout": time$0.Duration;
     "followRedirects": boolean | null;
     "insecureSkipVerify": boolean;
     "proxyUrl": string;
     "preflight"?: PreflightConfig | null;
+
+    /** Creates a new Request instance. */
+    constructor($$source: Partial<Request> = {}) {
+        if (!("method" in $$source)) {
+            this["method"] = "";
+        }
+        if (!("url" in $$source)) {
+            this["url"] = "";
+        }
+        if (!("headers" in $$source)) {
+            this["headers"] = {};
+        }
+        if (!("queryParams" in $$source)) {
+            this["queryParams"] = {};
+        }
+        if (!("pathParams" in $$source)) {
+            this["pathParams"] = {};
+        }
+        if (!("bodyType" in $$source)) {
+            this["bodyType"] = "";
+        }
+        if (!("bodyRaw" in $$source)) {
+            this["bodyRaw"] = "";
+        }
+        if (!("bodyForm" in $$source)) {
+            this["bodyForm"] = {};
+        }
+        if (!("bodyFormData" in $$source)) {
+            this["bodyFormData"] = [];
+        }
+        if (!("bodyBinary" in $$source)) {
+            this["bodyBinary"] = "";
+        }
+        if (!("timeout" in $$source)) {
+            this["timeout"] = time$0.Duration.$zero;
+        }
+        if (!("followRedirects" in $$source)) {
+            this["followRedirects"] = null;
+        }
+        if (!("insecureSkipVerify" in $$source)) {
+            this["insecureSkipVerify"] = false;
+        }
+        if (!("proxyUrl" in $$source)) {
+            this["proxyUrl"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Request instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Request {
+        const $$createField2_0 = $$createType10;
+        const $$createField3_0 = $$createType10;
+        const $$createField4_0 = $$createType10;
+        const $$createField5_0 = $$createType12;
+        const $$createField8_0 = $$createType10;
+        const $$createField9_0 = $$createType14;
+        const $$createField10_0 = $Create.ByteSlice;
+        const $$createField15_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField2_0($$parsedSource["headers"]);
+        }
+        if ("queryParams" in $$parsedSource) {
+            $$parsedSource["queryParams"] = $$createField3_0($$parsedSource["queryParams"]);
+        }
+        if ("pathParams" in $$parsedSource) {
+            $$parsedSource["pathParams"] = $$createField4_0($$parsedSource["pathParams"]);
+        }
+        if ("auth" in $$parsedSource) {
+            $$parsedSource["auth"] = $$createField5_0($$parsedSource["auth"]);
+        }
+        if ("bodyForm" in $$parsedSource) {
+            $$parsedSource["bodyForm"] = $$createField8_0($$parsedSource["bodyForm"]);
+        }
+        if ("bodyFormData" in $$parsedSource) {
+            $$parsedSource["bodyFormData"] = $$createField9_0($$parsedSource["bodyFormData"]);
+        }
+        if ("bodyBinary" in $$parsedSource) {
+            $$parsedSource["bodyBinary"] = $$createField10_0($$parsedSource["bodyBinary"]);
+        }
+        if ("preflight" in $$parsedSource) {
+            $$parsedSource["preflight"] = $$createField15_0($$parsedSource["preflight"]);
+        }
+        return new Request($$parsedSource as Partial<Request>);
+    }
 }
 
-export interface RequestConfig {
+export class RequestConfig {
     "method": string;
     "url": string;
     "authenticated": boolean;
     "authType": string;
-    "params": Param[] | null;
-    "headers": Header[] | null;
+    "params": Param[];
+    "headers": Header[];
     "body": string;
     "preflight"?: PreflightConfig | null;
+
+    /** Creates a new RequestConfig instance. */
+    constructor($$source: Partial<RequestConfig> = {}) {
+        if (!("method" in $$source)) {
+            this["method"] = "";
+        }
+        if (!("url" in $$source)) {
+            this["url"] = "";
+        }
+        if (!("authenticated" in $$source)) {
+            this["authenticated"] = false;
+        }
+        if (!("authType" in $$source)) {
+            this["authType"] = "";
+        }
+        if (!("params" in $$source)) {
+            this["params"] = [];
+        }
+        if (!("headers" in $$source)) {
+            this["headers"] = [];
+        }
+        if (!("body" in $$source)) {
+            this["body"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RequestConfig instance from a string or object.
+     */
+    static createFrom($$source: any = {}): RequestConfig {
+        const $$createField4_0 = $$createType2;
+        const $$createField5_0 = $$createType2;
+        const $$createField7_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("params" in $$parsedSource) {
+            $$parsedSource["params"] = $$createField4_0($$parsedSource["params"]);
+        }
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField5_0($$parsedSource["headers"]);
+        }
+        if ("preflight" in $$parsedSource) {
+            $$parsedSource["preflight"] = $$createField7_0($$parsedSource["preflight"]);
+        }
+        return new RequestConfig($$parsedSource as Partial<RequestConfig>);
+    }
 }
 
-export interface Response {
+export class Response {
     "contentType": string;
     "timeTaken": time$0.Duration;
     "requestHeaders": http$0.Header;
     "responseHeaders": http$0.Header;
     "statusCode": number;
     "statusText": string;
-    "bodyBytes": string | null;
+    "bodyBytes": string;
     "size": number;
-    "cookies": Cookie[] | null;
+    "cookies": Cookie[];
     "body": string;
     "error"?: string | null;
+
+    /** Creates a new Response instance. */
+    constructor($$source: Partial<Response> = {}) {
+        if (!("contentType" in $$source)) {
+            this["contentType"] = "";
+        }
+        if (!("timeTaken" in $$source)) {
+            this["timeTaken"] = time$0.Duration.$zero;
+        }
+        if (!("requestHeaders" in $$source)) {
+            this["requestHeaders"] = {};
+        }
+        if (!("responseHeaders" in $$source)) {
+            this["responseHeaders"] = {};
+        }
+        if (!("statusCode" in $$source)) {
+            this["statusCode"] = 0;
+        }
+        if (!("statusText" in $$source)) {
+            this["statusText"] = "";
+        }
+        if (!("bodyBytes" in $$source)) {
+            this["bodyBytes"] = "";
+        }
+        if (!("size" in $$source)) {
+            this["size"] = 0;
+        }
+        if (!("cookies" in $$source)) {
+            this["cookies"] = [];
+        }
+        if (!("body" in $$source)) {
+            this["body"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Response instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Response {
+        const $$createField2_0 = $$createType15;
+        const $$createField3_0 = $$createType15;
+        const $$createField6_0 = $Create.ByteSlice;
+        const $$createField8_0 = $$createType19;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("requestHeaders" in $$parsedSource) {
+            $$parsedSource["requestHeaders"] = $$createField2_0($$parsedSource["requestHeaders"]);
+        }
+        if ("responseHeaders" in $$parsedSource) {
+            $$parsedSource["responseHeaders"] = $$createField3_0($$parsedSource["responseHeaders"]);
+        }
+        if ("bodyBytes" in $$parsedSource) {
+            $$parsedSource["bodyBytes"] = $$createField6_0($$parsedSource["bodyBytes"]);
+        }
+        if ("cookies" in $$parsedSource) {
+            $$parsedSource["cookies"] = $$createField8_0($$parsedSource["cookies"]);
+        }
+        return new Response($$parsedSource as Partial<Response>);
+    }
 }
 
-export interface Service {
+export class Service {
     "id": string;
     "name": string;
-    "environments": EnvironmentConfig[] | null;
+    "environments": EnvironmentConfig[];
     "isAuthenticated": boolean;
     "authType"?: AuthType | null;
     "auth"?: AuthConfig | null;
     "preflight"?: PreflightConfig | null;
-    "endpoints": Endpoint[] | null;
+    "endpoints": Endpoint[];
     "directory": string;
     "selectedEnvironment"?: string | null;
     "gitUrl"?: string | null;
+
+    /** Creates a new Service instance. */
+    constructor($$source: Partial<Service> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("environments" in $$source)) {
+            this["environments"] = [];
+        }
+        if (!("isAuthenticated" in $$source)) {
+            this["isAuthenticated"] = false;
+        }
+        if (!("endpoints" in $$source)) {
+            this["endpoints"] = [];
+        }
+        if (!("directory" in $$source)) {
+            this["directory"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Service instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Service {
+        const $$createField2_0 = $$createType21;
+        const $$createField5_0 = $$createType23;
+        const $$createField6_0 = $$createType4;
+        const $$createField7_0 = $$createType25;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("environments" in $$parsedSource) {
+            $$parsedSource["environments"] = $$createField2_0($$parsedSource["environments"]);
+        }
+        if ("auth" in $$parsedSource) {
+            $$parsedSource["auth"] = $$createField5_0($$parsedSource["auth"]);
+        }
+        if ("preflight" in $$parsedSource) {
+            $$parsedSource["preflight"] = $$createField6_0($$parsedSource["preflight"]);
+        }
+        if ("endpoints" in $$parsedSource) {
+            $$parsedSource["endpoints"] = $$createField7_0($$parsedSource["endpoints"]);
+        }
+        return new Service($$parsedSource as Partial<Service>);
+    }
 }
 
+export const Variable = NameValue;
 export type Variable = NameValue;
+
+// Private type creation functions
+const $$createType0 = EndpointMetadata.createFrom;
+const $$createType1 = NameValue.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = PreflightConfig.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
+const $$createType5 = EndpointVersion.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = RequestConfig.createFrom;
+const $$createType8 = Request.createFrom;
+const $$createType9 = $Create.Nullable($$createType8);
+const $$createType10 = $Create.Map($Create.Any, $Create.Any);
+const $$createType11 = Auth.createFrom;
+const $$createType12 = $Create.Nullable($$createType11);
+const $$createType13 = FormDataItem.createFrom;
+const $$createType14 = $Create.Array($$createType13);
+var $$createType15 = (function $$initCreateType15(...args: any[]): any {
+    if ($$createType15 === $$initCreateType15) {
+        $$createType15 = $$createType17;
+    }
+    return $$createType15(...args);
+});
+const $$createType16 = $Create.Array($Create.Any);
+const $$createType17 = $Create.Map($Create.Any, $$createType16);
+const $$createType18 = Cookie.createFrom;
+const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = EnvironmentConfig.createFrom;
+const $$createType21 = $Create.Array($$createType20);
+const $$createType22 = AuthConfig.createFrom;
+const $$createType23 = $Create.Nullable($$createType22);
+const $$createType24 = Endpoint.createFrom;
+const $$createType25 = $Create.Array($$createType24);

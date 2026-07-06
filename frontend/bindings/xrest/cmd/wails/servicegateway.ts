@@ -8,7 +8,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -25,28 +25,36 @@ export function CommitGit(directory: string, message: string): $CancellablePromi
  * GetGitStatus retrieves the Git status of the specified directory.
  */
 export function GetGitStatus(directory: string): $CancellablePromise<models$0.GitStatus> {
-    return $Call.ByID(3675291507, directory);
+    return $Call.ByID(3675291507, directory).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
 
 /**
  * ImportCurl imports endpoints into a service from a cURL command.
  */
 export function ImportCurl(serviceId: string, curlCommand: string): $CancellablePromise<models$0.Service> {
-    return $Call.ByID(2555662018, serviceId, curlCommand);
+    return $Call.ByID(2555662018, serviceId, curlCommand).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
  * ImportService imports a service from the specified directory.
  */
 export function ImportService(directory: string): $CancellablePromise<models$0.Service> {
-    return $Call.ByID(2809845691, directory);
+    return $Call.ByID(2809845691, directory).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
  * ImportSwagger imports a service definition from a Swagger/OpenAPI file.
  */
 export function ImportSwagger(serviceId: string, filePath: string): $CancellablePromise<models$0.Service> {
-    return $Call.ByID(2278652028, serviceId, filePath);
+    return $Call.ByID(2278652028, serviceId, filePath).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
@@ -59,8 +67,10 @@ export function InitGit(directory: string, remoteUrl: string): $CancellablePromi
 /**
  * LoadServices returns all stored services.
  */
-export function LoadServices(): $CancellablePromise<models$0.Service[] | null> {
-    return $Call.ByID(1936763405);
+export function LoadServices(): $CancellablePromise<models$0.Service[]> {
+    return $Call.ByID(1936763405).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
@@ -80,8 +90,10 @@ export function PushGit(directory: string): $CancellablePromise<void> {
 /**
  * SaveServices persists services with an optional commit message.
  */
-export function SaveServices(services: models$0.Service[] | null, commitMessage: string): $CancellablePromise<models$0.Service[] | null> {
-    return $Call.ByID(3981719628, services, commitMessage);
+export function SaveServices(services: models$0.Service[], commitMessage: string): $CancellablePromise<models$0.Service[]> {
+    return $Call.ByID(3981719628, services, commitMessage).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
@@ -97,3 +109,8 @@ export function SyncGit(directory: string): $CancellablePromise<void> {
 export function TestPreflightConfig(config: models$0.PreflightConfig | null): $CancellablePromise<string> {
     return $Call.ByID(1105996134, config);
 }
+
+// Private type creation functions
+const $$createType0 = models$0.GitStatus.createFrom;
+const $$createType1 = models$0.Service.createFrom;
+const $$createType2 = $Create.Array($$createType1);

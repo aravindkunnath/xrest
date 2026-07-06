@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"xrest/internal/models"
 )
@@ -27,7 +30,13 @@ func TestServiceGateway(t *testing.T) {
 		t.Errorf("expected saved services to match input, got %v", saved)
 	}
 
-	status, err := sg.GetGitStatus("some/dir")
+	tempDir := t.TempDir()
+
+	if err := sg.InitGit(tempDir, ""); err != nil {
+		t.Errorf("expected no error on InitGit, got %v", err)
+	}
+
+	status, err := sg.GetGitStatus(tempDir)
 	if err != nil {
 		t.Fatalf("expected no error getting git status, got %v", err)
 	}
@@ -35,27 +44,44 @@ func TestServiceGateway(t *testing.T) {
 		t.Errorf("expected IsGit to be true, got %t", status.IsGit)
 	}
 
-	if err := sg.InitGit("some/dir", "http://remote"); err != nil {
-		t.Errorf("expected no error on InitGit, got %v", err)
+	// Create a dummy file to commit/sync/pull/push
+	testFile := filepath.Join(tempDir, "dummy.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("expected no error writing dummy file, got %v", err)
 	}
 
-	if err := sg.SyncGit("some/dir"); err != nil {
-		t.Errorf("expected no error on SyncGit, got %v", err)
-	}
-
-	if err := sg.PullGit("some/dir"); err != nil {
-		t.Errorf("expected no error on PullGit, got %v", err)
-	}
-
-	if err := sg.PushGit("some/dir"); err != nil {
-		t.Errorf("expected no error on PushGit, got %v", err)
-	}
-
-	if err := sg.CommitGit("some/dir", "message"); err != nil {
+	if err := sg.CommitGit(tempDir, "message"); err != nil {
 		t.Errorf("expected no error on CommitGit, got %v", err)
 	}
 
-	imported, err := sg.ImportService("some/dir")
+	// Set up a bare remote repo to test Sync/Pull/Push
+	remoteDir := t.TempDir()
+	c := exec.Command("git", "init", "--bare")
+	c.Dir = remoteDir
+	if err := c.Run(); err != nil {
+		t.Fatalf("failed to init bare remote repository: %v", err)
+	}
+
+	// Add remote
+	cmdAdd := exec.Command("git", "remote", "add", "origin", remoteDir)
+	cmdAdd.Dir = tempDir
+	if err := cmdAdd.Run(); err != nil {
+		t.Fatalf("failed to add remote: %v", err)
+	}
+
+	if err := sg.PushGit(tempDir); err != nil {
+		t.Errorf("expected no error on PushGit, got %v", err)
+	}
+
+	if err := sg.PullGit(tempDir); err != nil {
+		t.Errorf("expected no error on PullGit, got %v", err)
+	}
+
+	if err := sg.SyncGit(tempDir); err != nil {
+		t.Errorf("expected no error on SyncGit, got %v", err)
+	}
+
+	imported, err := sg.ImportService(tempDir)
 	if err != nil {
 		t.Fatalf("expected no error importing service, got %v", err)
 	}
