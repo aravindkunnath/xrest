@@ -4,10 +4,12 @@
 import * as CollectionGateway from "./collectiongateway.js";
 import * as GreetService from "./greetservice.js";
 import * as RequestGateway from "./requestgateway.js";
+import * as SecretsGateway from "./secretsgateway.js";
 import * as ServiceGateway from "./servicegateway.js";
 export {
     CollectionGateway,
     GreetService,
     RequestGateway,
+    SecretsGateway,
     ServiceGateway
 };

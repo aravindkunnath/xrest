@@ -1,22 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { GetSecrets, GetSecret, AddSecret, DeleteSecret } from '../../bindings/xrest/cmd/wails/secretsgateway'
 
 export const useSecretsStore = defineStore('secrets', () => {
     const secrets = ref<string[]>([])
     const isLoading = ref(false)
     const error = ref<string | null>(null)
 
-    function getSecretsObject(): Record<string, string> {
-        const saved = localStorage.getItem('xrest_secrets')
-        return saved ? JSON.parse(saved) : {}
-    }
-
     async function fetchSecrets() {
         isLoading.value = true
         error.value = null
         try {
-            const secretsObj = getSecretsObject()
-            secrets.value = Object.keys(secretsObj)
+            secrets.value = (await GetSecrets()) || []
         } catch (e) {
             error.value = String(e)
             console.error('Failed to fetch secrets:', e)
@@ -26,18 +21,19 @@ export const useSecretsStore = defineStore('secrets', () => {
     }
 
     async function getSecret(key: string): Promise<string> {
-        const secretsObj = getSecretsObject()
-        return secretsObj[key] || ''
+        try {
+            return await GetSecret(key)
+        } catch (e) {
+            console.error(`Failed to get secret for key ${key}:`, e)
+            return ''
+        }
     }
 
     async function addSecret(key: string, value: string) {
         isLoading.value = true
         error.value = null
         try {
-            const secretsObj = getSecretsObject()
-            secretsObj[key] = value
-            localStorage.setItem('xrest_secrets', JSON.stringify(secretsObj))
-            secrets.value = Object.keys(secretsObj)
+            secrets.value = (await AddSecret(key, value)) || []
         } catch (e) {
             error.value = String(e)
             console.error('Failed to add secret:', e)
@@ -51,10 +47,7 @@ export const useSecretsStore = defineStore('secrets', () => {
         isLoading.value = true
         error.value = null
         try {
-            const secretsObj = getSecretsObject()
-            delete secretsObj[key]
-            localStorage.setItem('xrest_secrets', JSON.stringify(secretsObj))
-            secrets.value = Object.keys(secretsObj)
+            secrets.value = (await DeleteSecret(key)) || []
         } catch (e) {
             error.value = String(e)
             console.error('Failed to delete secret:', e)

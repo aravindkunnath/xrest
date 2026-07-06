@@ -8,7 +8,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -17,21 +17,13 @@ import * as models$0 from "../../internal/models/models.js";
 /**
  * LoadCollections returns all stored collections.
  */
-export function LoadCollections(): $CancellablePromise<models$0.Service[]> {
-    return $Call.ByID(3045186535).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function LoadCollections(): $CancellablePromise<models$0.Service[] | null> {
+    return $Call.ByID(3045186535);
 }
 
 /**
  * SaveCollections persists collections.
  */
-export function SaveCollections(collections: models$0.Service[]): $CancellablePromise<models$0.Service[]> {
-    return $Call.ByID(3769559432, collections).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function SaveCollections(collections: models$0.Service[] | null): $CancellablePromise<models$0.Service[] | null> {
+    return $Call.ByID(3769559432, collections);
 }
-
-// Private type creation functions
-const $$createType0 = models$0.Service.createFrom;
-const $$createType1 = $Create.Array($$createType0);
