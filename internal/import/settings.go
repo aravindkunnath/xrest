@@ -15,7 +15,7 @@ func TabStatePath() string {
 	if os.Getenv("XREST_ENV") == "test" {
 		return filepath.Join(os.TempDir(), "xrest-test", "tab_state.yaml")
 	}
-	return filepath.Join(os.Getenv("HOME"), ".config", "xrest", "tab_state.yaml")
+	return filepath.Join(os.Getenv("HOME"), ".xrest", "tab_state.yaml")
 }
 
 // LoadTabState reads TabState from the YAML file. Returns nil, nil if the file does not exist.

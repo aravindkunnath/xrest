@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 	"xrest/internal/adapters"
-
-	"github.com/adrg/xdg"
 )
 
 // SecretsGateway handles secure storing, listing, and removing of workspace secrets.
@@ -26,7 +24,7 @@ func NewSecretsGateway() *SecretsGateway {
 	if os.Getenv("XREST_ENV") == "test" {
 		configPath = filepath.Join(os.TempDir(), "xrest-test", "secrets.json")
 	} else {
-		configPath = filepath.Join(xdg.ConfigHome, "xrest", "secrets.json")
+		configPath = filepath.Join(os.Getenv("HOME"), ".xrest", "secrets.json")
 	}
 
 	return &SecretsGateway{

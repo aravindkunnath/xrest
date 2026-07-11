@@ -8,8 +8,6 @@ import (
 	"xrest/internal/adapters"
 	importlib "xrest/internal/import"
 	"xrest/internal/models"
-
-	"github.com/adrg/xdg"
 )
 
 // ServiceGateway handles service and Git repository management operations.
@@ -22,10 +20,7 @@ func NewServiceGateway() *ServiceGateway {
 
 // settingsPath returns the path to the user settings YAML file.
 var settingsPath = func() string {
-	if os.Getenv("XREST_ENV") == "test" {
-		return filepath.Join(os.TempDir(), "xrest-test", "settings.yaml")
-	}
-	return filepath.Join(xdg.ConfigHome, "xrest", "settings.yaml")
+	return importlib.SettingsPath()
 }
 
 // LoadServices returns all stored services.
@@ -167,7 +162,7 @@ func (s *ServiceGateway) ImportSwagger(name string, filePath string) (models.Ser
 			return models.Service{}, fmt.Errorf("failed to fetch swagger URL: %w", err)
 		}
 		content = resp.Body
-		directory = filepath.Join(xdg.ConfigHome, "xrest", "services", name)
+		directory = filepath.Join(os.Getenv("HOME"), ".xrest", "services", name)
 	} else {
 		// Read local file
 		data, err := os.ReadFile(filePath)

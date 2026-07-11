@@ -11,8 +11,6 @@ import (
 	"time"
 	"xrest/internal/adapters"
 	"xrest/internal/models"
-
-	"github.com/adrg/xdg"
 )
 
 type HistoryGateway struct {
@@ -26,7 +24,7 @@ func NewHistoryGateway() *HistoryGateway {
 	if os.Getenv("XREST_ENV") == "test" {
 		dbPath = filepath.Join(os.TempDir(), "xrest-test", "history.db")
 	} else {
-		dbPath = filepath.Join(xdg.ConfigHome, "xrest", "history.db")
+		dbPath = filepath.Join(os.Getenv("HOME"), ".xrest", "history.db")
 	}
 
 	return &HistoryGateway{

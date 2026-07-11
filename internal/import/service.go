@@ -19,7 +19,7 @@ func SettingsPath() string {
 	if os.Getenv("XREST_ENV") == "test" {
 		return filepath.Join(os.TempDir(), "xrest-test", "settings.yaml")
 	}
-	return filepath.Join(os.Getenv("HOME"), ".config", "xrest", "settings.yaml")
+	return filepath.Join(os.Getenv("HOME"), ".xrest", "settings.yaml")
 }
 
 // UserSettings matches the Rust UserSettings YAML format.
