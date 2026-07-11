@@ -25,6 +25,7 @@ func main() {
 	requestGateway := NewRequestGateway()
 	secretsGateway := NewSecretsGateway()
 	historyGateway := NewHistoryGateway()
+	settingsGateway := NewSettingsGateway()
 
 	// 3. Create Wails application
 	app := application.New(application.Options{
@@ -37,6 +38,7 @@ func main() {
 			application.NewService(requestGateway),
 			application.NewService(secretsGateway),
 			application.NewService(historyGateway),
+			application.NewService(settingsGateway),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(frontend.Assets),

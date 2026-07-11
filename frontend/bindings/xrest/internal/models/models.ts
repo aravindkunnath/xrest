@@ -243,4 +243,17 @@ export interface Service {
     "gitUrl"?: string | null;
 }
 
+export interface ServiceStub {
+    "id": string;
+    "name": string;
+    "directory": string;
+}
+
+export type Tab = any;
+
+export interface TabState {
+    "activeTabId": string;
+    "tabs": Tab[] | null;
+}
+
 export type Variable = NameValue;

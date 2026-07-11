@@ -25,5 +25,8 @@ export type {
     RequestConfig,
     Response,
     Service,
+    ServiceStub,
+    Tab,
+    TabState,
     Variable
 } from "./models.js";
