@@ -8,15 +8,15 @@ XRest organizes APIs as versioned "services" with built-in environment managemen
 ## 🚀 Key Features
 
 - **Service‑First Hierarchy**: Organize APIs as first-class Services instead of loose collections. Each service carries its own environments and authentication logic.
-- **Git‑Native Collaboration**: All data (services, environments, endpoints) is stored in human-readable YAML. Sync changes across your team using GitHub/GitLab as your source of truth.
+- **Git‑Native Collaboration**: All data (services, environments, endpoints) is stored in human-readable YAML. Sync changes across your team using git as your source of truth.
 - **Guardrails for Production**: Mark environments (like `PROD`) as **Unsafe**. XRest enforces visual cues (red UI) and mandatory confirmation dialogs before executing destructive requests.
-- **Automated Pre‑flight Auth**: Stop copy-pasting tokens. Define auth endpoints that automatically acquire, cache, and inject Bearer tokens into your requests.
+- **Pre‑flight Auth**: Stop copy-pasting tokens. Define auth endpoints that automatically acquire, cache, and inject Bearer tokens into your requests.
 - **Request Versioning**: Track the evolution of your API contracts with built-in versioning for every endpoint.
 - **Zero-Cloud Privacy**: XRest is local-first. Your API keys, internal URLs, and payloads never leave your machine or your private Git repository.
 
 ## 🛠 Tech Stack
 
-- **Core**: [Tauri](https://tauri.app/) & [Rust](https://www.rust-lang.org/)
+- **Core**: [Wails v3](https://wails.io/) & [Go](https://go.dev/)
 - **Frontend**: [Vue 3](https://vuejs.org/), [TypeScript](https://www.typescriptlang.org/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/), [Shadcn UI Vue](https://www.shadcn-vue.com/)
 - **State Management**: [Pinia](https://pinia.vuejs.org/)
@@ -27,10 +27,8 @@ XRest organizes APIs as versioned "services" with built-in environment managemen
 XRest follows a "Configuration as Code" philosophy.
 
 ### Global Settings
-Stored in the application directory:
-- **macOS**: `~/Library/Application Support/io.ak.xrest/`
-- **Windows**: `%APPDATA%/io.ak.xrest/`
-- **Linux**: `~/.config/io.ak.xrest/`
+Stored in the user's home directory:
+- `~/.xrest/settings.yaml` (all operating systems)
 
 ### Service Data
 Each service stores its data in a dedicated directory of your choice:
@@ -44,26 +42,38 @@ your-service-directory/
 ## 🛠 Development
 
 ### Prerequisites
+- Go (v1.25+)
+- Wails v3 CLI
 - Node.js (v18+)
-- Rust (latest stable)
 - pnpm
+- [go-task](https://taskfile.dev/) (recommended build tool)
 
 ### Setup
+Using [go-task](https://taskfile.dev/) (Recommended):
 ```bash
 # Install dependencies
-pnpm install
+pnpm --filter frontend install
 
 # Run in development mode
-pnpm tauri dev
+task dev
 
 # Build production bundle
-pnpm tauri build
+task build
+```
+
+Using Wails v3 CLI directly:
+```bash
+# Run in development mode
+wails3 dev -config ./build/config.yml
+
+# Build production bundle (via Go build with tags)
+go build -tags production -o bin/xrest ./cmd/wails
 ```
 
 ## 📦 Release (macOS)
 ```bash
-codesign --force --sign - --options runtime --timestamp src-tauri/target/release/bundle/dmg/xrest_*.dmg
-codesign --verify --deep --strict --verbose src-tauri/target/release/bundle/dmg/xrest_*.dmg
+# Package the application into a .dmg installer
+task package:dmg
 ```
 
 ---
