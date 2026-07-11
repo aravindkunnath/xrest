@@ -4,14 +4,15 @@
 # Linux: Native GCC when host matches target, Zig for cross-arch
 # Windows: Zig + bundled mingw
 #
-# Usage:
-#   docker build -t wails-cross -f Dockerfile.cross .
+# Usage (run from the repository root):
+#   docker build -t wails-cross -f build/docker/Dockerfile.cross build/docker/
 #   docker run --rm -v $(pwd):/app wails-cross darwin arm64
 #   docker run --rm -v $(pwd):/app wails-cross darwin amd64
 #   docker run --rm -v $(pwd):/app wails-cross linux amd64
 #   docker run --rm -v $(pwd):/app wails-cross linux arm64
 #   docker run --rm -v $(pwd):/app wails-cross windows amd64
 #   docker run --rm -v $(pwd):/app wails-cross windows arm64
+
 
 FROM golang:1.26-bookworm
 
@@ -210,9 +211,10 @@ if [ "$OBFUSCATED" = "true" ]; then
     TAGS="${TAGS},wails_obfuscated"
 fi
 
-${COMPILER} -tags "$TAGS" -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o bin/${APP}-${GOOS}-${GOARCH}${EXT} .
+${COMPILER} -tags "$TAGS" -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o bin/${APP}-${GOOS}-${GOARCH}${EXT} ./cmd/wails
 echo "Built: bin/${APP}-${GOOS}-${GOARCH}${EXT}"
 SCRIPT
+
 RUN chmod +x /usr/local/bin/build.sh
 
 WORKDIR /app
