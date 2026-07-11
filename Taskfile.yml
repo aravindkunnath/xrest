@@ -1,0 +1,126 @@
+version: "3"
+
+vars:
+  APP_NAME: "xrest"
+  BIN_DIR: "bin"
+  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "pnpm"}}'
+  VITE_PORT: "{{.WAILS_VITE_PORT | default 9245}}"
+  # Target OS for build/package/run. Defaults to the host OS, and is overridden
+  # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
+  # tasks below dispatch to the matching platform Taskfile via this variable.
+  GOOS: "{{.GOOS | default OS}}"
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+
+tasks:
+  build:
+    summary: Builds the application
+    cmds:
+      - task: "{{.GOOS}}:build"
+
+  package:
+    summary: Packages a production build of the application
+    cmds:
+      - task: "{{.GOOS}}:package"
+
+  package:dmg:
+    summary: Packages a production build into a `.dmg` installer (macOS only)
+    cmds:
+      - task: "darwin:package:dmg"
+
+  run:
+    summary: Runs the application
+    cmds:
+      - task: "{{.GOOS}}:run"
+
+  dev:
+    summary: Runs the application in development mode
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  setup:docker:
+    summary: Builds Docker image for cross-compilation (~800MB download)
+    cmds:
+      - task: common:setup:docker
+
+  build:server:
+    summary: Builds the application in server mode (no GUI, HTTP server only)
+    cmds:
+      - task: common:build:server
+
+  run:server:
+    summary: Runs the application in server mode
+    cmds:
+      - task: common:run:server
+
+  build:docker:
+    summary: Builds a Docker image for server mode deployment
+    cmds:
+      - task: common:build:docker
+
+  run:docker:
+    summary: Builds and runs the Docker image
+    cmds:
+      - task: common:run:docker
+
+  build:cli:
+    summary: Builds the CLI client
+    cmds:
+      - CGO_ENABLED=0 go build -o {{.BIN_DIR}}/xrest{{exeExt}} ./cmd/xrest
+
+  run:cli:
+    summary: Runs the CLI client
+    cmds:
+      - ./{{.BIN_DIR}}/xrest{{exeExt}} {{.CLI_ARGS}}
+
+  test:backend:
+    summary: Runs Go backend unit tests
+    cmds:
+      - go test ./...
+
+  test:coverage:
+    summary: Runs all tests and generates a coverage HTML report
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report generated at coverage.html"
+
+  test:frontend:
+    summary: Runs frontend unit and component tests
+    dir: frontend
+    cmds:
+      - pnpm test run
+
+  test:frontend:watch:
+    summary: Runs frontend unit and component tests in watch mode
+    dir: frontend
+    cmds:
+      - pnpm test
+
+  test:
+    summary: Runs both backend and frontend unit tests
+    cmds:
+      - task: test:backend
+      - task: test:frontend
+
+  test:e2e:
+    summary: Runs Playwright E2E tests (starts server mode automatically)
+    dir: frontend
+    cmds:
+      - pnpm exec playwright test
+
+  test:e2e:ui:
+    summary: Runs Playwright E2E tests with the Playwright UI mode
+    dir: frontend
+    cmds:
+      - pnpm exec playwright test --ui
+
+  test:e2e:debug:
+    summary: Runs Playwright E2E tests in debug mode
+    dir: frontend
+    cmds:
+      - pnpm exec playwright test --debug

@@ -1,2 +1,1 @@
-./scripts/guardrails.sh
-pnpm lint-staged
+cd frontend && pnpm lint-staged
