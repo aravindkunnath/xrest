@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/tooltip";
 
 const route = useRoute();
-const { t, locale } = useI18n();
+const { t } = useI18n();
 
 const navItems = [
     {
@@ -30,9 +30,7 @@ const navItems = [
     },
 ];
 
-const toggleLocale = () => {
-    locale.value = locale.value === "en" ? "fr" : "en";
-};
+// No more local locale toggler logic here
 </script>
 
 <template>
@@ -68,17 +66,6 @@ const toggleLocale = () => {
                         {{ t(item.tooltipKey) }}
                     </TooltipContent>
                 </Tooltip>
-            </div>
-
-            <!-- Lower Section (Locale Switcher Button) -->
-            <div class="w-full flex items-center justify-center">
-                <button
-                    @click="toggleLocale"
-                    class="w-8 h-8 rounded text-xs font-bold border border-border transition-all uppercase"
-                    title="Switch Language"
-                >
-                    {{ locale }}
-                </button>
             </div>
         </div>
     </TooltipProvider>
