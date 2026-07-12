@@ -173,4 +173,35 @@ describe('ServiceSettingsView - isUnsafe Flag', () => {
         const prodWarnLabels = wrapper.findAll('span').filter(s => s.text().includes('Unsafe'))
         expect(prodWarnLabels.length).toBeGreaterThanOrEqual(3)
     })
+
+    it('should render VS Code-like section buttons in LHS', async () => {
+        const tab = createMockTab()
+        const wrapper = mount(ServiceSettingsView, {
+            props: { tab, gitStatus: null },
+            ...mountOptions
+        })
+
+        const buttons = wrapper.findAll('button')
+        const generalBtn = buttons.find(b => b.text().includes('General'))
+        const authBtn = buttons.find(b => b.text().includes('Authentication'))
+        const varsBtn = buttons.find(b => b.text().includes('Environments & Variables'))
+
+        expect(generalBtn?.exists()).toBe(true)
+        expect(authBtn?.exists()).toBe(true)
+        expect(varsBtn?.exists()).toBe(true)
+    })
+
+    it('should filter variables based on search input', async () => {
+        const tab = createMockTab()
+        const wrapper = mount(ServiceSettingsView, {
+            props: { tab, gitStatus: null },
+            ...mountOptions
+        })
+
+        const searchInput = wrapper.find('input[placeholder="Search settings..."]')
+        expect(searchInput.exists()).toBe(true)
+
+        await searchInput.setValue('base')
+        expect((wrapper.vm as any).filteredVariables).toContain('BASE_URL')
+    })
 })

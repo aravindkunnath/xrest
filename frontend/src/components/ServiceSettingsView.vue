@@ -42,10 +42,11 @@ import {
     ShieldCheck,
     Trash2,
     Unlock,
+    Search,
 } from "@lucide/vue";
 import { useGitIntegration } from "@/composables/useGitIntegration";
 import { useServiceSettings } from "@/composables/useServiceSettings";
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import Switch from "./ui/switch/Switch.vue";
 
 const props = defineProps<{
@@ -65,6 +66,21 @@ const secretsStore = useSecretsStore();
 const { fetchGitStatus, handleCommitGit, handlePullGit, handlePushGit } =
     useGitIntegration();
 const { saveSettings, deleteItem, reloadAll, initGit } = useServiceSettings();
+
+const searchQuery = ref("");
+const activeSection = ref("general");
+
+const sections = computed(() => {
+    const list = [
+        { id: "general", label: "General", icon: Settings2 },
+        { id: "auth", label: "Authentication", icon: ShieldCheck },
+    ];
+    if (tab.value.serviceData.directory) {
+        list.push({ id: "git", label: "Git Status", icon: GitBranch });
+    }
+    list.push({ id: "variables", label: "Environments & Variables", icon: Globe });
+    return list;
+});
 
 onMounted(async () => {
     secretsStore.fetchSecrets();
@@ -94,29 +110,74 @@ const handleGitCommit = async () => {
         );
     }
 };
+
+const filteredVariables = computed(() => {
+    const allVars = getUniqueVariableNames(tab.value.serviceData.environments || []);
+    if (!searchQuery.value) return allVars;
+    const query = searchQuery.value.toLowerCase();
+    return allVars.filter((name: string) => name.toLowerCase().includes(query));
+});
+
+const isSectionVisible = (sectionId: string) => {
+    if (!searchQuery.value) {
+        return activeSection.value === sectionId;
+    }
+    const query = searchQuery.value.toLowerCase();
+    if (sectionId === "general") {
+        return (
+            "general".includes(query) ||
+            "name".includes(query) ||
+            "directory".includes(query) ||
+            "base".includes(query) ||
+            (tab.value.serviceData.name && tab.value.serviceData.name.toLowerCase().includes(query))
+        );
+    }
+    if (sectionId === "auth") {
+        return (
+            "authentication".includes(query) ||
+            "auth".includes(query) ||
+            "security".includes(query) ||
+            "token".includes(query)
+        );
+    }
+    if (sectionId === "git") {
+        return (
+            tab.value.serviceData.directory &&
+            ("git".includes(query) ||
+                "branch".includes(query) ||
+                "remote".includes(query) ||
+                "commit".includes(query) ||
+                "pull".includes(query) ||
+                "push".includes(query))
+        );
+    }
+    if (sectionId === "variables") {
+        return (
+            "environments".includes(query) ||
+            "variables".includes(query) ||
+            "shared".includes(query) ||
+            filteredVariables.value.length > 0
+        );
+    }
+    return false;
+};
+
+const hasAnyVisibleSection = computed(() => {
+    return sections.value.some((sec) => isSectionVisible(sec.id));
+});
 </script>
 
-<template>
-    <div class="h-full overflow-auto p-6 max-w-5xl mx-auto space-y-8 pb-32">
-        <!-- Header Area -->
-        <div class="flex items-center justify-between border-b pb-4">
-            <div class="space-y-1">
-                <h2 class="text-xl font-bold tracking-tight">
-                    {{
-                        tab.serviceData.directory
-                            ? "Service Settings"
-                            : "Collection Settings"
-                    }}
-                </h2>
-                <p class="text-muted-foreground">
-                    Manage environments, variables, and
-                    {{
-                        tab.serviceData.directory
-                            ? "project integration"
-                            : "settings"
-                    }}
-                    for {{ tab.serviceData.name }}.
-                </p>
+<<template>
+    <div class="h-full flex flex-col bg-background text-foreground overflow-hidden">
+        <!-- Top Search Bar & Actions Header (VS Code Style) -->
+        <div class="flex items-center justify-between border-b px-6 py-3 shrink-0 gap-4">
+            <div class="relative w-full max-w-md">
+                <Search class="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                    v-model="searchQuery"
+                    placeholder="Search settings..."
+                    class="pl-9 h-9 w-full bg-muted/20"
+                />
             </div>
             <div class="flex items-center gap-2">
                 <Button
@@ -152,499 +213,561 @@ const handleGitCommit = async () => {
             </div>
         </div>
 
-        <!-- Main Content Stack -->
-        <div class="space-y-6">
-            <!-- General Settings Section -->
-            <div class="bg-card rounded-lg border shadow-sm p-5 space-y-4">
-                <div class="flex items-center gap-2 mb-2">
-                    <Settings2 class="h-4 w-4 text-primary" />
-                    <h3 class="font-semibold uppercase tracking-wider">
-                        General Information
-                    </h3>
+        <!-- Main Workspace Split Panel -->
+        <div class="flex-1 flex overflow-hidden">
+            <!-- Left Hand Side Sidebar (LHS Navigation) -->
+            <div class="w-64 border-r bg-muted/15 p-4 space-y-1 overflow-y-auto select-none shrink-0">
+                <div class="text-[11px] font-bold tracking-wider text-muted-foreground/60 uppercase px-2 mb-2">
+                    {{
+                        tab.serviceData.directory
+                            ? "Service Settings"
+                            : "Collection Settings"
+                    }}
                 </div>
-                <div class="grid gap-4">
-                    <div class="space-y-2">
-                        <Label class="">Service Name</Label>
-                        <Input
-                            v-model="tab.serviceData.name"
-                            class="h-9"
-                            placeholder="Enter service name"
-                        />
+                <button
+                    v-for="section in sections"
+                    :key="section.id"
+                    @click="activeSection = section.id"
+                    :class="[
+                        'w-full text-left px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-2',
+                        (!searchQuery && activeSection === section.id)
+                            ? 'bg-accent text-accent-foreground font-semibold'
+                            : 'text-muted-foreground hover:bg-accent/40'
+                    ]"
+                >
+                    <component :is="section.icon" class="h-4 w-4 shrink-0" />
+                    {{ section.label }}
+                </button>
+            </div>
+
+            <!-- Right Hand Side Settings Content Pane -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-8 pb-32">
+                <!-- If Search Query is active and no section matches -->
+                <div
+                    v-if="searchQuery && !hasAnyVisibleSection"
+                    class="flex flex-col items-center justify-center py-20 text-muted-foreground text-center space-y-3"
+                >
+                    <AlertCircle class="h-10 w-10 opacity-30" />
+                    <div>
+                        <h4 class="font-semibold text-lg text-foreground">No settings found</h4>
+                        <p class="text-sm">No settings matching "{{ searchQuery }}" were found.</p>
                     </div>
-                    <div v-if="tab.serviceData.directory" class="space-y-2">
-                        <Label class="">Base Directory</Label>
-                        <div class="flex gap-2">
+                    <Button variant="outline" size="sm" @click="searchQuery = ''">
+                        Clear Search
+                    </Button>
+                </div>
+
+                <!-- General Settings Section -->
+                <div
+                    v-show="isSectionVisible('general')"
+                    class="bg-card rounded-lg border shadow-sm p-5 space-y-4"
+                >
+                    <div class="flex items-center gap-2 mb-2">
+                        <Settings2 class="h-4 w-4 text-primary" />
+                        <h3 class="font-semibold uppercase tracking-wider">
+                            General Information
+                        </h3>
+                    </div>
+                    <div class="grid gap-4">
+                        <div class="space-y-2">
+                            <Label class="">Service Name</Label>
                             <Input
-                                :model-value="tab.serviceData.directory"
-                                readonly
-                                class="h-9 bg-muted/30 flex-1"
+                                v-model="tab.serviceData.name"
+                                class="h-9"
+                                placeholder="Enter service name"
                             />
                         </div>
-                        <p class="text-muted-foreground">
-                            All service configuration is stored in this
-                            directory as YAML files.
-                        </p>
+                        <div v-if="tab.serviceData.directory" class="space-y-2">
+                            <Label class="">Base Directory</Label>
+                            <div class="flex gap-2">
+                                <Input
+                                    :model-value="tab.serviceData.directory"
+                                    readonly
+                                    class="h-9 bg-muted/30 flex-1"
+                                />
+                            </div>
+                            <p class="text-muted-foreground">
+                                All service configuration is stored in this
+                                directory as YAML files.
+                            </p>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Authentication Settings -->
-            <div class="bg-card rounded-lg border shadow-sm p-5 space-y-4">
-                <div class="flex items-center gap-2 mb-2">
-                    <ShieldCheck class="h-4 w-4 text-primary" />
-                    <h3 class="font-semibold uppercase tracking-wider">
-                        Service Authentication
-                    </h3>
+                <!-- Authentication Settings -->
+                <div
+                    v-show="isSectionVisible('auth')"
+                    class="bg-card rounded-lg border shadow-sm p-5 space-y-4"
+                >
+                    <div class="flex items-center gap-2 mb-2">
+                        <ShieldCheck class="h-4 w-4 text-primary" />
+                        <h3 class="font-semibold uppercase tracking-wider">
+                            Service Authentication
+                        </h3>
+                    </div>
+                    <p class="text-sm text-muted-foreground">
+                        Configure authentication that will be used by default for
+                        all requests in this service.
+                    </p>
+                    <RequestAuth
+                        v-if="tab.serviceData.auth && tab.serviceData.preflight"
+                        v-model:auth="tab.serviceData.auth"
+                        v-model:preflight="tab.serviceData.preflight"
+                        :variables="{}"
+                        :environment-name="''"
+                        :service-id="tab.serviceId"
+                    />
                 </div>
-                <p class="text-sm text-muted-foreground">
-                    Configure authentication that will be used by default for
-                    all requests in this service.
-                </p>
-                <RequestAuth
-                    v-if="tab.serviceData.auth && tab.serviceData.preflight"
-                    v-model:auth="tab.serviceData.auth"
-                    v-model:preflight="tab.serviceData.preflight"
-                    :variables="{}"
-                    :environment-name="''"
-                    :service-id="tab.serviceId"
-                />
-            </div>
 
-            <!-- Git Status Section -->
-            <div
-                v-if="tab.serviceData.directory"
-                class="bg-card rounded-lg border shadow-sm p-5 space-y-4"
-            >
-                <div class="flex items-center gap-2 mb-4">
-                    <GitBranch class="h-4 w-4 text-primary" />
-                    <h3 class="font-semibold uppercase tracking-wider">
-                        Git Status
-                    </h3>
-                </div>
-                <div v-if="gitStatus" class="space-y-4 mt-2">
-                    <div class="flex items-center justify-between">
-                        <span class="text-muted-foreground">Status</span>
-                        <div
-                            v-if="gitStatus.isGit"
-                            class="flex items-center gap-1.5 font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-100"
-                        >
-                            <CheckCircle2 class="h-3 w-3" /> TRACKED
+                <!-- Git Status Section -->
+                <div
+                    v-if="tab.serviceData.directory"
+                    v-show="isSectionVisible('git')"
+                    class="bg-card rounded-lg border shadow-sm p-5 space-y-4"
+                >
+                    <div class="flex items-center gap-2 mb-4">
+                        <GitBranch class="h-4 w-4 text-primary" />
+                        <h3 class="font-semibold uppercase tracking-wider">
+                            Git Status
+                        </h3>
+                    </div>
+                    <div v-if="gitStatus" class="space-y-4 mt-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-muted-foreground">Status</span>
+                            <div
+                                v-if="gitStatus.isGit"
+                                class="flex items-center gap-1.5 font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-100"
+                            >
+                                <CheckCircle2 class="h-3 w-3" /> TRACKED
+                            </div>
+                            <div
+                                v-else
+                                class="flex items-center gap-1.5 font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full border"
+                            >
+                                UNTRACKED
+                            </div>
+                        </div>
+                        <div v-if="gitStatus.isGit" class="space-y-4">
+                            <div class="flex flex-col gap-3">
+                                <div
+                                    class="flex items-center justify-between border-b border-dashed pb-2"
+                                >
+                                    <span class="text-muted-foreground"
+                                        >Branch</span
+                                    >
+                                    <span class="font-bold">{{
+                                        gitStatus.branch || "main"
+                                    }}</span>
+                                </div>
+                                <div
+                                    class="flex items-center justify-between border-b border-dashed pb-2"
+                                >
+                                    <span class="text-muted-foreground"
+                                        >Remote</span
+                                    >
+                                    <span
+                                        class="font-mono text-[10px] truncate max-w-[250px]"
+                                        :title="gitStatus.remoteUrl"
+                                    >
+                                        {{
+                                            gitStatus.remoteUrl ||
+                                            "No remote configured"
+                                        }}
+                                    </span>
+                                </div>
+                                <div
+                                    class="flex items-center justify-between border-b border-dashed pb-2"
+                                >
+                                    <span class="text-muted-foreground">Stage</span>
+                                    <span
+                                        :class="[
+                                            'font-bold',
+                                            gitStatus.hasUncommittedChanges
+                                                ? 'text-orange-500'
+                                                : 'text-green-600',
+                                        ]"
+                                    >
+                                        {{
+                                            gitStatus.hasUncommittedChanges
+                                                ? "Changes Detected"
+                                                : "Clean"
+                                        }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Git Action Buttons -->
+                            <div class="grid grid-cols-3 gap-2 mt-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    class="h-8 gap-2"
+                                    :disabled="!gitStatus.hasUncommittedChanges"
+                                    @click="handleGitCommit"
+                                >
+                                    <Plus class="h-3 w-3" /> Commit
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    class="h-8 gap-2"
+                                    :disabled="!gitStatus.remoteUrl"
+                                    @click="
+                                        handlePullGit(
+                                            tab.serviceId,
+                                            tab.serviceData.directory,
+                                        )
+                                    "
+                                >
+                                    <RefreshCw class="h-3 w-3" /> Pull
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    class="h-8 gap-2"
+                                    :disabled="!gitStatus.remoteUrl"
+                                    @click="
+                                        handlePushGit(
+                                            tab.serviceId,
+                                            tab.serviceData.directory,
+                                        )
+                                    "
+                                >
+                                    <Save class="h-3 w-3" /> Push
+                                </Button>
+                            </div>
                         </div>
                         <div
                             v-else
-                            class="flex items-center gap-1.5 font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full border"
+                            class="p-3 bg-muted/20 rounded border border-dashed text-center space-y-2"
                         >
-                            UNTRACKED
+                            <p class="text-muted-foreground">
+                                This service directory is not a git repository.
+                                Initialize git for automatic change tracking.
+                            </p>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                class="h-7 gap-1.5"
+                                @click="
+                                    initGit(
+                                        tab.serviceId,
+                                        tab.serviceData.directory,
+                                    )
+                                "
+                            >
+                                <GitBranch class="h-3 w-3" /> Initialize Git
+                            </Button>
                         </div>
                     </div>
-                    <div v-if="gitStatus.isGit" class="space-y-4">
-                        <div class="flex flex-col gap-3">
-                            <div
-                                class="flex items-center justify-between border-b border-dashed pb-2"
-                            >
-                                <span class="text-muted-foreground"
-                                    >Branch</span
-                                >
-                                <span class="font-bold">{{
-                                    gitStatus.branch || "main"
-                                }}</span>
-                            </div>
-                            <div
-                                class="flex items-center justify-between border-b border-dashed pb-2"
-                            >
-                                <span class="text-muted-foreground"
-                                    >Remote</span
-                                >
-                                <span
-                                    class="font-mono text-[10px] truncate max-w-[250px]"
-                                    :title="gitStatus.remoteUrl"
-                                >
-                                    {{
-                                        gitStatus.remoteUrl ||
-                                        "No remote configured"
-                                    }}
-                                </span>
-                            </div>
-                            <div
-                                class="flex items-center justify-between border-b border-dashed pb-2"
-                            >
-                                <span class="text-muted-foreground">Stage</span>
-                                <span
-                                    :class="[
-                                        'font-bold',
-                                        gitStatus.hasUncommittedChanges
-                                            ? 'text-orange-500'
-                                            : 'text-green-600',
-                                    ]"
-                                >
-                                    {{
-                                        gitStatus.hasUncommittedChanges
-                                            ? "Changes Detected"
-                                            : "Clean"
-                                    }}
-                                </span>
-                            </div>
-                        </div>
+                </div>
 
-                        <!-- Git Action Buttons -->
-                        <div class="grid grid-cols-3 gap-2 mt-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="h-8 gap-2"
-                                :disabled="!gitStatus.hasUncommittedChanges"
-                                @click="handleGitCommit"
-                            >
-                                <Plus class="h-3 w-3" /> Commit
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="h-8 gap-2"
-                                :disabled="!gitStatus.remoteUrl"
-                                @click="
-                                    handlePullGit(
-                                        tab.serviceId,
-                                        tab.serviceData.directory,
-                                    )
-                                "
-                            >
-                                <RefreshCw class="h-3 w-3" /> Pull
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                class="h-8 gap-2"
-                                :disabled="!gitStatus.remoteUrl"
-                                @click="
-                                    handlePushGit(
-                                        tab.serviceId,
-                                        tab.serviceData.directory,
-                                    )
-                                "
-                            >
-                                <Save class="h-3 w-3" /> Push
-                            </Button>
+                <!-- Environments & Variables Section -->
+                <div
+                    v-show="isSectionVisible('variables')"
+                    class="bg-card rounded-lg border shadow-sm p-6 overflow-hidden space-y-6"
+                >
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <Globe class="h-4 w-4 text-primary" />
+                            <h3 class="font-semibold uppercase tracking-wider">
+                                Shared Environments & Variables
+                            </h3>
                         </div>
-                    </div>
-                    <div
-                        v-else
-                        class="p-3 bg-muted/20 rounded border border-dashed text-center space-y-2"
-                    >
-                        <p class="text-muted-foreground">
-                            This service directory is not a git repository.
-                            Initialize git for automatic change tracking.
-                        </p>
                         <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            class="h-7 gap-1.5"
-                            @click="
-                                initGit(
-                                    tab.serviceId,
-                                    tab.serviceData.directory,
-                                )
-                            "
+                            class="h-8 gap-2 text-primary hover:bg-primary/5"
+                            @click="addVariableToAll(tab.serviceData.environments)"
                         >
-                            <GitBranch class="h-3 w-3" /> Initialize Git
+                            <Plus class="h-3.5 w-3.5" /> Add New Variable
                         </Button>
                     </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Environments & Variables Section -->
-        <div class="bg-card rounded-lg border shadow-sm p-6 overflow-hidden">
-            <div class="flex items-center justify-between mb-6">
-                <div class="flex items-center gap-2">
-                    <Globe class="h-4 w-4 text-primary" />
-                    <h3 class="font-semibold uppercase tracking-wider">
-                        Shared Environments & Variables
-                    </h3>
-                </div>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    class="h-8 gap-2 text-primary hover:bg-primary/5"
-                    @click="addVariableToAll(tab.serviceData.environments)"
-                >
-                    <Plus class="h-3.5 w-3.5" /> Add New Variable
-                </Button>
-            </div>
-
-            <div
-                class="relative border rounded-md overflow-hidden bg-background"
-            >
-                <Table>
-                    <TableHeader>
-                        <TableRow class="hover:bg-transparent bg-muted/30">
-                            <TableHead class="w-[180px] font-bold"
-                                >Variable Name</TableHead
-                            >
-                            <TableHead
-                                v-for="env in tab.serviceData.environments"
-                                :key="env.name"
-                                class="min-w-[150px] border-l"
-                            >
-                                <div
-                                    class="flex flex-col gap-1 items-start py-2"
-                                >
-                                    <div class="flex items-center gap-1.5">
-                                        <span
-                                            :class="[
-                                                'w-1.5 h-1.5 rounded-full',
-                                                env.isUnsafe
-                                                    ? 'bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]'
-                                                    : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]',
-                                            ]"
-                                        ></span>
-                                        <span class="font-bold">{{
-                                            env.name
-                                        }}</span>
-                                    </div>
-                                    <div class="flex items-center gap-1.5 mt-1">
-                                        <Switch
-                                            v-if="env.isUnsafe"
-                                            v-model="env.isUnsafe"
-                                            class="bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]"
-                                        />
-                                        <Switch
-                                            v-else
-                                            v-model="env.isUnsafe"
-                                            class="bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
-                                        />
-                                        <span
-                                            class="uppercase tracking-tighter font-bold text-muted-foreground opacity-70"
-                                            >Unsafe</span
-                                        >
-                                    </div>
-                                </div>
-                            </TableHead>
-                            <TableHead class="w-12 border-l"></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow
-                            v-for="varName in getUniqueVariableNames(
-                                tab.serviceData.environments,
-                            )"
-                            :key="varName"
-                            class="group h-11 hover:bg-muted/10 transition-colors"
-                        >
-                            <TableCell class="p-0 font-medium">
-                                <input
-                                    :value="varName"
-                                    @blur="
-                                        (e) =>
-                                            syncVariableName(
-                                                tab.serviceData.environments,
-                                                varName,
-                                                (e.target as HTMLInputElement)
-                                                    .value,
-                                            )
-                                    "
-                                    class="w-full h-11 bg-transparent border-none px-3 focus:outline-none focus:ring-0"
-                                />
-                            </TableCell>
-                            <TableCell
-                                v-for="env in tab.serviceData.environments"
-                                :key="env.name"
-                                class="p-0 border-l group/cell align-top"
-                            >
-                                <div
-                                    class="flex items-center h-full w-full relative"
-                                >
-                                    <!-- Secret Linked Mode -->
-                                    <div
-                                        v-if="
-                                            getVariable(env, varName)?.secretKey
-                                        "
-                                        class="flex-1 h-11 flex items-center px-4 gap-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono text-xs"
+                    <div
+                        v-if="filteredVariables.length > 0"
+                        class="relative border rounded-md overflow-hidden bg-background"
+                    >
+                        <Table>
+                            <TableHeader>
+                                <TableRow class="hover:bg-transparent bg-muted/30">
+                                    <TableHead class="w-[180px] font-bold"
+                                        >Variable Name</TableHead
                                     >
-                                        <Lock class="h-3 w-3" />
-                                        <span class="truncate">{{
-                                            getVariable(env, varName)?.secretKey
-                                        }}</span>
-                                    </div>
+                                    <TableHead
+                                        v-for="env in tab.serviceData.environments"
+                                        :key="env.name"
+                                        class="min-w-[150px] border-l"
+                                    >
+                                        <div
+                                            class="flex flex-col gap-1 items-start py-2"
+                                        >
+                                            <div class="flex items-center gap-1.5">
+                                                <span
+                                                    :class="[
+                                                        'w-1.5 h-1.5 rounded-full',
+                                                        env.isUnsafe
+                                                            ? 'bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                                                            : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]',
+                                                    ]"
+                                                ></span>
+                                                <span class="font-bold">{{
+                                                    env.name
+                                                }}</span>
+                                            </div>
+                                            <div class="flex items-center gap-1.5 mt-1">
+                                                <Switch
+                                                    v-if="env.isUnsafe"
+                                                    v-model="env.isUnsafe"
+                                                    class="bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                                                />
+                                                <Switch
+                                                    v-else
+                                                    v-model="env.isUnsafe"
+                                                    class="bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
+                                                />
+                                                <span
+                                                    class="uppercase tracking-tighter font-bold text-muted-foreground opacity-70"
+                                                    >Unsafe</span
+                                                >
+                                            </div>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead class="w-12 border-l"></TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                <TableRow
+                                    v-for="varName in filteredVariables"
+                                    :key="varName"
+                                    class="group h-11 hover:bg-muted/10 transition-colors"
+                                >
+                                    <TableCell class="p-0 font-medium">
+                                        <input
+                                            :value="varName"
+                                            @blur="
+                                                (e) =>
+                                                    syncVariableName(
+                                                        tab.serviceData.environments,
+                                                        varName,
+                                                        (e.target as HTMLInputElement)
+                                                            .value,
+                                                    )
+                                            "
+                                            class="w-full h-11 bg-transparent border-none px-3 focus:outline-none focus:ring-0"
+                                        />
+                                    </TableCell>
+                                    <TableCell
+                                        v-for="env in tab.serviceData.environments"
+                                        :key="env.name"
+                                        class="p-0 border-l group/cell align-top"
+                                    >
+                                        <div
+                                            class="flex items-center h-full w-full relative"
+                                        >
+                                            <!-- Secret Linked Mode -->
+                                            <div
+                                                v-if="
+                                                    getVariable(env, varName)?.secretKey
+                                                "
+                                                class="flex-1 h-11 flex items-center px-4 gap-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono text-xs"
+                                            >
+                                                <Lock class="h-3 w-3" />
+                                                <span class="truncate">{{
+                                                    getVariable(env, varName)?.secretKey
+                                                }}</span>
+                                            </div>
 
-                                    <!-- Value Input Mode -->
-                                    <input
-                                        v-else
-                                        :value="
-                                            getVariable(env, varName)?.value ||
-                                            ''
-                                        "
-                                        @input="
-                                            (e) =>
-                                                syncVariableValue(
-                                                    env,
-                                                    varName,
-                                                    (
-                                                        e.target as HTMLInputElement
-                                                    ).value,
-                                                )
-                                        "
-                                        class="w-full h-11 bg-transparent border-none px-4 focus:outline-none focus:ring-0 group-hover/cell:bg-muted/20 transition-all font-mono text-xs"
-                                        :placeholder="`Value for ${env.name}`"
-                                    />
-
-                                    <!-- Secret Linker Trigger -->
-                                    <Popover>
-                                        <PopoverTrigger as-child>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                class="h-6 w-6 absolute right-1 opacity-0 group-hover/cell:opacity-100 transition-opacity"
-                                                :class="{
-                                                    'opacity-100 text-amber-500':
-                                                        getVariable(
+                                            <!-- Value Input Mode -->
+                                            <input
+                                                v-else
+                                                :value="
+                                                    getVariable(env, varName)?.value ||
+                                                    ''
+                                                "
+                                                @input="
+                                                    (e) =>
+                                                        syncVariableValue(
                                                             env,
                                                             varName,
-                                                        )?.secretKey,
-                                                }"
-                                            >
-                                                <Key class="h-3.5 w-3.5" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent
-                                            class="w-64 p-2"
-                                            align="end"
-                                        >
-                                            <div class="space-y-2">
-                                                <div
-                                                    class="flex items-center justify-between pb-2 border-b"
-                                                >
-                                                    <span
-                                                        class="text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-                                                        >Link Secret</span
-                                                    >
-                                                    <span
-                                                        class="text-[10px] text-muted-foreground"
-                                                        >{{
-                                                            secretsStore.secrets
-                                                                .length
-                                                        }}
-                                                        available</span
-                                                    >
-                                                </div>
+                                                            (
+                                                                e.target as HTMLInputElement
+                                                            ).value,
+                                                        )
+                                                "
+                                                class="w-full h-11 bg-transparent border-none px-4 focus:outline-none focus:ring-0 group-hover/cell:bg-muted/20 transition-all font-mono text-xs"
+                                                :placeholder="`Value for ${env.name}`"
+                                            />
 
-                                                <div
-                                                    class="max-h-[200px] overflow-y-auto space-y-1"
-                                                >
-                                                    <button
-                                                        v-for="secret in secretsStore.secrets"
-                                                        :key="secret"
-                                                        class="w-full flex items-center justify-between px-2 py-1.5 text-xs rounded-sm hover:bg-muted text-left"
+                                            <!-- Secret Linker Trigger -->
+                                            <Popover>
+                                                <PopoverTrigger as-child>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        class="h-6 w-6 absolute right-1 opacity-0 group-hover/cell:opacity-100 transition-opacity"
                                                         :class="{
-                                                            'bg-primary/10 text-primary':
+                                                            'opacity-100 text-amber-500':
                                                                 getVariable(
                                                                     env,
                                                                     varName,
-                                                                )?.secretKey ===
-                                                                secret,
+                                                                )?.secretKey,
                                                         }"
-                                                        @click="
-                                                            syncVariableSecret(
-                                                                env,
-                                                                varName,
-                                                                secret,
-                                                            )
-                                                        "
                                                     >
-                                                        <span
-                                                            class="truncate font-mono"
-                                                            >{{ secret }}</span
+                                                        <Key class="h-3.5 w-3.5" />
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent
+                                                    class="w-64 p-2"
+                                                    align="end"
+                                                >
+                                                    <div class="space-y-2">
+                                                        <div
+                                                            class="flex items-center justify-between pb-2 border-b"
                                                         >
-                                                        <Check
+                                                            <span
+                                                                class="text-xs font-semibold text-muted-foreground uppercase tracking-wider"
+                                                                >Link Secret</span
+                                                            >
+                                                            <span
+                                                                class="text-[10px] text-muted-foreground"
+                                                                >{{
+                                                                    secretsStore.secrets
+                                                                        .length
+                                                                }}
+                                                                available</span
+                                                            >
+                                                        </div>
+
+                                                        <div
+                                                            class="max-h-[200px] overflow-y-auto space-y-1"
+                                                        >
+                                                            <button
+                                                                v-for="secret in secretsStore.secrets"
+                                                                :key="secret"
+                                                                class="w-full flex items-center justify-between px-2 py-1.5 text-xs rounded-sm hover:bg-muted text-left"
+                                                                :class="{
+                                                                    'bg-primary/10 text-primary':
+                                                                        getVariable(
+                                                                            env,
+                                                                            varName,
+                                                                        )?.secretKey ===
+                                                                        secret,
+                                                                }"
+                                                                @click="
+                                                                    syncVariableSecret(
+                                                                        env,
+                                                                        varName,
+                                                                        secret,
+                                                                    )
+                                                                "
+                                                            >
+                                                                <span
+                                                                    class="truncate font-mono"
+                                                                    >{{ secret }}</span
+                                                                >
+                                                                <Check
+                                                                    v-if="
+                                                                        getVariable(
+                                                                            env,
+                                                                            varName,
+                                                                        )?.secretKey ===
+                                                                        secret
+                                                                    "
+                                                                    class="h-3 w-3"
+                                                                />
+                                                            </button>
+                                                            <div
+                                                                v-if="
+                                                                    secretsStore.secrets
+                                                                        .length === 0
+                                                                "
+                                                                class="text-xs text-muted-foreground p-2 text-center"
+                                                            >
+                                                                No secrets found
+                                                            </div>
+                                                        </div>
+
+                                                        <div
                                                             v-if="
                                                                 getVariable(
                                                                     env,
                                                                     varName,
-                                                                )?.secretKey ===
-                                                                secret
+                                                                )?.secretKey
                                                             "
-                                                            class="h-3 w-3"
-                                                        />
-                                                    </button>
-                                                    <div
-                                                        v-if="
-                                                            secretsStore.secrets
-                                                                .length === 0
-                                                        "
-                                                        class="text-xs text-muted-foreground p-2 text-center"
-                                                    >
-                                                        No secrets found
+                                                            class="pt-2 border-t"
+                                                        >
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                class="w-full h-7 text-destructive hover:text-destructive hover:bg-destructive/10 gap-2"
+                                                                @click="
+                                                                    syncVariableSecret(
+                                                                        env,
+                                                                        varName,
+                                                                        undefined,
+                                                                    )
+                                                                "
+                                                            >
+                                                                <Unlock
+                                                                    class="h-3 w-3"
+                                                                />
+                                                                Unlink Secret
+                                                            </Button>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                </PopoverContent>
+                                            </Popover>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell class="p-0 border-l text-center">
+                                        <button
+                                            @click="
+                                                removeVariable(
+                                                    tab.serviceData.environments,
+                                                    varName,
+                                                )
+                                            "
+                                            class="p-1 text-muted-foreground hover:text-destructive opacity-20 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <Trash2 class="h-3.5 w-3.5" />
+                                        </button>
+                                    </TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    </div>
 
-                                                <div
-                                                    v-if="
-                                                        getVariable(
-                                                            env,
-                                                            varName,
-                                                        )?.secretKey
-                                                    "
-                                                    class="pt-2 border-t"
-                                                >
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        class="w-full h-7 text-destructive hover:text-destructive hover:bg-destructive/10 gap-2"
-                                                        @click="
-                                                            syncVariableSecret(
-                                                                env,
-                                                                varName,
-                                                                undefined,
-                                                            )
-                                                        "
-                                                    >
-                                                        <Unlock
-                                                            class="h-3 w-3"
-                                                        />
-                                                        Unlink Secret
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-                            </TableCell>
-                            <TableCell class="p-0 border-l text-center">
-                                <button
-                                    @click="
-                                        removeVariable(
-                                            tab.serviceData.environments,
-                                            varName,
-                                        )
-                                    "
-                                    class="p-1 text-muted-foreground hover:text-destructive opacity-20 group-hover:opacity-100 transition-opacity"
-                                >
-                                    <Trash2 class="h-3.5 w-3.5" />
-                                </button>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-            </div>
-            <div
-                v-if="
-                    tab.serviceData.environments &&
-                    getUniqueVariableNames(tab.serviceData.environments)
-                        .length === 0
-                "
-                class="flex flex-col items-center justify-center py-12 text-muted-foreground border border-t-0 rounded-b-md bg-muted/5"
-            >
-                <AlertCircle class="h-8 w-8 opacity-20 mb-2" />
-                <p class="">
-                    No variables defined for this
-                    {{ tab.serviceData.directory ? "service" : "collection" }}.
-                </p>
-                <button
-                    class="text-primary hover:underline mt-1"
-                    @click="addVariableToAll(tab.serviceData.environments)"
-                >
-                    Add your first variable
-                </button>
+                    <!-- Empty Variables State -->
+                    <div
+                        v-if="
+                            (!tab.serviceData.environments ||
+                            getUniqueVariableNames(tab.serviceData.environments).length === 0)
+                        "
+                        class="flex flex-col items-center justify-center py-12 text-muted-foreground border rounded-md bg-muted/5"
+                    >
+                        <AlertCircle class="h-8 w-8 opacity-20 mb-2" />
+                        <p class="">
+                            No variables defined for this
+                            {{ tab.serviceData.directory ? "service" : "collection" }}.
+                        </p>
+                        <button
+                            class="text-primary hover:underline mt-1 font-semibold"
+                            @click="addVariableToAll(tab.serviceData.environments)"
+                        >
+                            Add your first variable
+                        </button>
+                    </div>
+
+                    <!-- Search has no variables matched state -->
+                    <div
+                        v-else-if="filteredVariables.length === 0"
+                        class="flex flex-col items-center justify-center py-12 text-muted-foreground border rounded-md bg-muted/5"
+                    >
+                        <Search class="h-8 w-8 opacity-20 mb-2" />
+                        <p class="">No variables matched your search query.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
