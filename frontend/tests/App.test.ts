@@ -54,10 +54,10 @@ describe('App', () => {
         }
     }
 
-    it('renders navigation links and main layout', () => {
+    it('renders TitleBar and main layout', () => {
         const wrapper = mount(App, globalOptions)
         expect(wrapper.find('.app-container').exists()).toBe(true)
-        expect(wrapper.find('nav').exists()).toBe(true)
+        expect(wrapper.find('header.titlebar').exists()).toBe(true)
     })
 
     it('loads settings on mount', () => {

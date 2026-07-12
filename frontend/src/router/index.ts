@@ -14,6 +14,11 @@ const router = createRouter({
             component: ServicesView
         },
         {
+            path: '/environments',
+            name: 'environments',
+            component: () => import('../views/EnvironmentsView.vue')
+        },
+        {
             path: '/collections',
             name: 'collections',
             component: () => import('../views/CollectionsView.vue')

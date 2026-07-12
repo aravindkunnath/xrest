@@ -20,6 +20,9 @@ importers:
       '@lucide/vue':
         specifier: ^1.22.0
         version: 1.22.0(vue@3.5.39(typescript@5.6.3))
+      '@remixicon/vue':
+        specifier: ^4.9.0
+        version: 4.9.0(vue@3.5.39(typescript@5.6.3))
       '@tailwindcss/vite':
         specifier: ^4.3.1
         version: 4.3.1(vite@6.4.3(@types/node@26.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))
@@ -493,6 +496,11 @@ packages:
 
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
+
+  '@remixicon/vue@4.9.0':
+    resolution: {integrity: sha512-4P0MY5ScL+MRLnHu1iT3xHAsliBwOGDIgSgHCZhSj2wkLa5NzqiQ4SGD/04VoHM+BRr8+xjmF7ZemkOUlMDJ3A==}
+    peerDependencies:
+      vue: '>= 3'
 
   '@rollup/rollup-android-arm-eabi@4.62.2':
     resolution: {integrity: sha512-6o7ZLZK+BeenkZCFNDXqpbjw9bD6nuWonvS/lwQJp7NoVVxm6p3qE7qQ5jGuBjiFsgvqjD8mZAU5oWxTmbOeOg==}
@@ -2362,6 +2370,10 @@ snapshots:
       playwright: 1.61.1
 
   '@polka/url@1.0.0-next.29': {}
+
+  '@remixicon/vue@4.9.0(vue@3.5.39(typescript@5.6.3))':
+    dependencies:
+      vue: 3.5.39(typescript@5.6.3)
 
   '@rollup/rollup-android-arm-eabi@4.62.2':
     optional: true
