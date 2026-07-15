@@ -8,9 +8,15 @@ import {
   RiSettings4Line
 } from '@remixicon/vue'
 import { Button } from '@/components/ui/button'
+import { useDialogState } from '@/composables/useDialogState'
+import { useRouter } from 'vue-router'
+import { useTabsStore } from '@/stores/tabs'
 
 const isDropdownOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
+const router = useRouter()
+const dialogState = useDialogState()
+const tabsStore = useTabsStore()
 
 const toggleDropdown = () => {
   isDropdownOpen.value = !isDropdownOpen.value
@@ -40,8 +46,22 @@ const actions = [
 const handleAction = (actionId: string) => {
   console.log(`Action triggered: ${actionId}`)
   isDropdownOpen.value = false
+
+  if (actionId === 'new-request') {
+    tabsStore.addTab()
+    router.push('/services')
+  } else if (actionId === 'new-collection') {
+    dialogState.openCollectionDialog()
+    router.push('/services')
+  } else if (actionId === 'import') {
+    dialogState.openSwaggerDialog()
+    router.push('/services')
+  } else if (actionId === 'settings') {
+    router.push('/settings')
+  }
 }
 </script>
+
 
 <template>
   <div ref="menuRef" class="relative">

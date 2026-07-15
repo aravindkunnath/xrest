@@ -122,15 +122,15 @@
   }
 
   html {
-    font-size: 12px;
+    font-size: 14px;
   }
 
   body {
     @apply bg-background text-foreground font-sans;
-    font-size: 12px;
+    font-size: 14px;
   }
 
   .font-mono {
-    font-size: 12px !important;
+    font-size: 14px !important;
   }
 }

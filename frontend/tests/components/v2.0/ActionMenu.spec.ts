@@ -1,10 +1,21 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
 import ActionMenu from '@/components/v2.0/ActionMenu.vue'
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}))
 
 describe('ActionMenu.vue', () => {
   it('toggles dropdown visibility when button is clicked', async () => {
-    const wrapper = mount(ActionMenu)
+    const wrapper = mount(ActionMenu, {
+      global: {
+        plugins: [createTestingPinia()],
+      },
+    })
     expect(wrapper.find('[role="menu"]').exists()).toBe(false)
 
     // Click trigger button
@@ -17,7 +28,11 @@ describe('ActionMenu.vue', () => {
   })
 
   it('closes dropdown when clicking an action', async () => {
-    const wrapper = mount(ActionMenu)
+    const wrapper = mount(ActionMenu, {
+      global: {
+        plugins: [createTestingPinia()],
+      },
+    })
     
     // Open dropdown
     await wrapper.find('button[aria-label="Add new item"]').trigger('click')
@@ -31,3 +46,4 @@ describe('ActionMenu.vue', () => {
     expect(wrapper.find('[role="menu"]').exists()).toBe(false)
   })
 })
+

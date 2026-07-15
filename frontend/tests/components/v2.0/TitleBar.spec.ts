@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createTestingPinia } from '@pinia/testing'
 import TitleBar from '@/components/v2.0/TitleBar.vue'
 import { Window } from '@wailsio/runtime'
 
@@ -10,13 +11,23 @@ vi.mock('@wailsio/runtime', () => ({
   }
 }))
 
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}))
+
 describe('TitleBar.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('renders all sections and sub-components', () => {
-    const wrapper = mount(TitleBar)
+    const wrapper = mount(TitleBar, {
+      global: {
+        plugins: [createTestingPinia()],
+      },
+    })
     console.log("HTML:", wrapper.html())
     
     // Header
@@ -30,8 +41,13 @@ describe('TitleBar.vue', () => {
   })
 
   it('calls Wails ToggleMaximise on double-click', async () => {
-    const wrapper = mount(TitleBar)
+    const wrapper = mount(TitleBar, {
+      global: {
+        plugins: [createTestingPinia()],
+      },
+    })
     await wrapper.find('header.titlebar').trigger('dblclick')
     expect(Window.ToggleMaximise).toHaveBeenCalled()
   })
 })
+
