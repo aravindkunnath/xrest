@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"xrest/internal/models"
@@ -95,6 +96,52 @@ func resolvePathParams(url string, params map[string]string) string {
 	return url
 }
 
+var secretPattern = regexp.MustCompile(`\{\{secret\.([^}]+)\}\}`)
+
+// resolveSecrets replaces {{secret.KEY}} patterns with values from SecretStore
+// Returns (resolvedString, missingKeys)
+func resolveSecrets(input string, store SecretStore) (string, []string) {
+	if input == "" {
+		return input, nil
+	}
+
+	var missingKeys []string
+	result := secretPattern.ReplaceAllStringFunc(input, func(match string) string {
+		// Extract key from {{secret.KEY}}
+		matches := secretPattern.FindStringSubmatch(match)
+		if len(matches) < 2 {
+			return match
+		}
+		key := matches[1]
+		value, err := store.Get(key)
+		if err != nil {
+			missingKeys = append(missingKeys, key)
+			return match // Keep placeholder if secret not found
+		}
+		return value
+	})
+
+	return result, missingKeys
+}
+
+// resolveSecretsInMap resolves secrets in all values of a map
+func resolveSecretsInMap(m map[string]string, store SecretStore) (map[string]string, []string) {
+	if len(m) == 0 {
+		return m, nil
+	}
+
+	var allMissing []string
+	resolved := make(map[string]string, len(m))
+	for k, v := range m {
+		resolvedVal, missing := resolveSecrets(v, store)
+		if len(missing) > 0 {
+			allMissing = append(allMissing, missing...)
+		}
+		resolved[k] = resolvedVal
+	}
+	return resolved, allMissing
+}
+
 func (h *Http) Send(req *models.Request) (*models.Response, error) {
 	return h.sendInternal(req, false)
 }
@@ -104,6 +151,67 @@ func (h *Http) sendInternal(req *models.Request, bypassPreflight bool) (*models.
 		h.build()
 	}
 	client := h.client
+
+	// Resolve secrets in request fields
+	store := GetSecretStore()
+	var allMissingKeys []string
+
+	// Resolve URL
+	resolvedURL, missing := resolveSecrets(req.URL, store)
+	if len(missing) > 0 {
+		allMissingKeys = append(allMissingKeys, missing...)
+	}
+
+	// Resolve Headers
+	resolvedHeaders, missing := resolveSecretsInMap(req.Headers, store)
+	if len(missing) > 0 {
+		allMissingKeys = append(allMissingKeys, missing...)
+	}
+
+	// Resolve QueryParams
+	resolvedQueryParams, missing := resolveSecretsInMap(req.QueryParams, store)
+	if len(missing) > 0 {
+		allMissingKeys = append(allMissingKeys, missing...)
+	}
+
+	// Resolve PathParams
+	resolvedPathParams, missing := resolveSecretsInMap(req.PathParams, store)
+	if len(missing) > 0 {
+		allMissingKeys = append(allMissingKeys, missing...)
+	}
+
+	// Resolve BodyRaw
+	resolvedBodyRaw, missing := resolveSecrets(req.BodyRaw, store)
+	if len(missing) > 0 {
+		allMissingKeys = append(allMissingKeys, missing...)
+	}
+
+	// Resolve BodyForm
+	resolvedBodyForm, missing := resolveSecretsInMap(req.BodyForm, store)
+	if len(missing) > 0 {
+		allMissingKeys = append(allMissingKeys, missing...)
+	}
+
+	// Resolve BodyFormData text values
+	resolvedBodyFormData := req.BodyFormData
+	if len(resolvedBodyFormData) > 0 {
+		resolvedBodyFormData = make([]models.FormDataItem, len(req.BodyFormData))
+		copy(resolvedBodyFormData, req.BodyFormData)
+		for i, item := range resolvedBodyFormData {
+			if item.Type == models.FormDataTypeText {
+				resolvedVal, missing := resolveSecrets(item.Value, store)
+				if len(missing) > 0 {
+					allMissingKeys = append(allMissingKeys, missing...)
+				}
+				resolvedBodyFormData[i].Value = resolvedVal
+			}
+		}
+	}
+
+	// Return error if any secrets are missing
+	if len(allMissingKeys) > 0 {
+		return nil, fmt.Errorf("missing secrets: %v", allMissingKeys)
+	}
 
 	// Apply client-level configurations
 	if req.Timeout > 0 {
@@ -123,17 +231,16 @@ func (h *Http) sendInternal(req *models.Request, bypassPreflight bool) (*models.
 	r := client.R()
 
 	// Apply request-level configurations
-	if len(req.Headers) > 0 {
-		r.SetHeaders(req.Headers)
+	if len(resolvedHeaders) > 0 {
+		r.SetHeaders(resolvedHeaders)
 	}
-	if len(req.QueryParams) > 0 {
-		r.SetQueryParams(req.QueryParams)
+	if len(resolvedQueryParams) > 0 {
+		r.SetQueryParams(resolvedQueryParams)
 	}
 
-	// Resolve path parameters
-	resolvedURL := req.URL
-	if len(req.PathParams) > 0 {
-		resolvedURL = resolvePathParams(req.URL, req.PathParams)
+	// Resolve path parameters (using already secret-resolved path params)
+	if len(resolvedPathParams) > 0 {
+		resolvedURL = resolvePathParams(resolvedURL, resolvedPathParams)
 	}
 
 	// Apply preflight authentication
@@ -175,12 +282,12 @@ func (h *Http) sendInternal(req *models.Request, bypassPreflight bool) (*models.
 	// Apply body based on type
 	switch req.BodyType {
 	case "raw":
-		r.SetBody(req.BodyRaw)
+		r.SetBody(resolvedBodyRaw)
 	case "urlencoded":
-		r.SetFormData(req.BodyForm)
+		r.SetFormData(resolvedBodyForm)
 	case "form-data":
 		var fields []*resty.MultipartField
-		for _, item := range req.BodyFormData {
+		for _, item := range resolvedBodyFormData {
 			if item.Type == models.FormDataTypeFile {
 				fields = append(fields, &resty.MultipartField{
 					Name:     item.Key,
