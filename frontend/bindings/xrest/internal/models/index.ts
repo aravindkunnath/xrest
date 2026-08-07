@@ -15,6 +15,7 @@ export type {
     EndpointVersion,
     EnvironmentConfig,
     FormDataItem,
+    GitFileStatus,
     GitStatus,
     Header,
     HistoryEntry,

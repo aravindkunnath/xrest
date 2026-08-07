@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ServiceManager } from '@/domains/service/manager'
-import type { IServiceGateway } from '@/domains/service/ports'
-import type { Service } from '@/types'
+import { ServiceManager } from "@/domains/service/manager"
+import type { IServiceGateway } from "@/domains/service/ports"
+import type { Service } from "@/types"
 
 function createMockGateway(): { gateway: IServiceGateway; mocks: Record<string, ReturnType<typeof vi.fn>> } {
     const mocks = {

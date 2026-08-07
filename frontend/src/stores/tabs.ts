@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, watch, nextTick } from 'vue'
-import { defaultTabState } from '@/lib/request-utils'
+import { defaultTabState } from "@/core/utils/request-utils"
 
 export interface Tab {
     id: string
     title: string
     method?: string
     url?: string
-    type: 'request' | 'settings'
+    type: 'request' | 'settings' | 'app-settings'
     isEdited?: boolean
     [key: string]: any
 }

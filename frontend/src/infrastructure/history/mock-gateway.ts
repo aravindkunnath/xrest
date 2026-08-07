@@ -1,5 +1,5 @@
-import type { IHistoryGateway } from '@/domains/history/ports'
-import type { HistoryEntry } from '@/stores/history'
+import type { IHistoryGateway } from "@/domains/history/ports"
+import type { HistoryEntry } from "@/stores/history"
 
 export class MockHistoryGateway implements IHistoryGateway {
     async getHistory(limit: number, offset: number): Promise<HistoryEntry[]> {

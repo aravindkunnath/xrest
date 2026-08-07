@@ -6,6 +6,7 @@
  */
 
 import { ref } from 'vue'
+import { useTabsStore } from '@/stores/tabs'
 
 /**
  * Hook to manage dialog open/close state
@@ -20,6 +21,8 @@ const isSwaggerDialogOpen = ref(false)
 const isShareDialogOpen = ref(false)
 const isUnsafeDialogOpen = ref(false)
 const isCurlDialogOpen = ref(false)
+const isSettingsDialogOpen = ref(false)
+const isHistoryOverlayOpen = ref(false)
 
 /**
  * Hook to manage dialog open/close state
@@ -92,6 +95,35 @@ export const useDialogState = () => {
     isCurlDialogOpen.value = false
   }
 
+  const openSettingsDialog = (initialSection: string = 'general') => {
+    const tabsStore = useTabsStore()
+    const existingTab = tabsStore.tabs.find(t => t.id === 'app-settings')
+    if (existingTab) {
+      existingTab.initialSection = initialSection
+      tabsStore.activeTab = 'app-settings'
+    } else {
+      tabsStore.addTab({
+        id: 'app-settings',
+        title: 'App Settings',
+        type: 'app-settings',
+        initialSection,
+      })
+    }
+  }
+
+  const closeSettingsDialog = () => {
+    const tabsStore = useTabsStore()
+    tabsStore.closeTab('app-settings')
+  }
+
+  const openHistoryOverlay = () => {
+    isHistoryOverlayOpen.value = true
+  }
+
+  const closeHistoryOverlay = () => {
+    isHistoryOverlayOpen.value = false
+  }
+
   return {
     // State
     isServiceDialogOpen,
@@ -101,6 +133,8 @@ export const useDialogState = () => {
     isSwaggerDialogOpen,
     isShareDialogOpen,
     isUnsafeDialogOpen,
+    isSettingsDialogOpen,
+    isHistoryOverlayOpen,
 
     // Actions
     openServiceDialog,
@@ -119,6 +153,10 @@ export const useDialogState = () => {
     closeUnsafeDialog,
     isCurlDialogOpen,
     openCurlDialog,
-    closeCurlDialog
+    closeCurlDialog,
+    openSettingsDialog,
+    closeSettingsDialog,
+    openHistoryOverlay,
+    closeHistoryOverlay
   }
 }

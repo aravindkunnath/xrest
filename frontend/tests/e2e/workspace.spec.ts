@@ -84,7 +84,7 @@ test.describe("Request Workspace E2E Suite", () => {
     await expect(page.locator("text=200 OK")).toBeVisible({ timeout: 10000 });
 
     // Verify response body contains data
-    const responseViewer = page.locator("pre");
+    const responseViewer = page.locator('.cm-content, pre').first();
     await expect(responseViewer).toContainText('"userId": 1');
   });
 });

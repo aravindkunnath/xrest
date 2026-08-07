@@ -21,20 +21,20 @@ test.describe("Import from cURL E2E Suite", () => {
   });
 
   test("should open cURL import dialog, paste a command, and import an endpoint", async ({ page }) => {
-    // Wait for services to load and render in the explorer
-    await expect(page.locator("text=cURL Target Service")).toBeVisible({
+    // Wait for services to load and render in the explorer dropdown
+    await expect(page.locator('option[value="curl-service"]')).toBeAttached({
       timeout: 10000,
     });
 
     // Open the Import popover via the Download icon button
-    const importTrigger = page.locator('button[title="Import options"]');
+    const importTrigger = page.locator('button[title="Import"]');
     await importTrigger.click();
 
-    // Click the "cURL Command" option
-    await page.locator('button:has-text("cURL Command")').click();
+    // Click the "Import from cURL" option
+    await page.locator('button:has-text("Import from cURL")').click();
 
     // Dialog should be visible
-    await expect(page.locator("text=Import from cURL")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Import from cURL" })).toBeVisible();
 
     // Select the target service from the dropdown
     const serviceSelect = page.locator("#service-select");

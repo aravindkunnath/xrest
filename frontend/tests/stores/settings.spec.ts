@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useSettingsStore } from '@/stores/settings'
+import { useSettingsStore } from "@/stores/settings"
 
 describe('Settings Store', () => {
     beforeEach(() => {
@@ -27,6 +27,6 @@ describe('Settings Store', () => {
         await new Promise(resolve => setTimeout(resolve, 0))
 
         const saved = localStorage.getItem('xrest_settings')
-        expect(saved).toBe(JSON.stringify({ theme: 'light' }))
+        expect(saved).toBe(JSON.stringify({ theme: 'light', layout: 'horizontal' }))
     })
 })

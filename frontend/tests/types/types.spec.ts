@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AuthType, type Service } from '@/types/index'
+import { AuthType, type Service } from "@/types/index"
 
 describe('Types Validation', () => {
     it('should create a valid service object', () => {

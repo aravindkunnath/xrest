@@ -6,7 +6,7 @@ import {
   type TabsRootProps,
   useForwardPropsEmits,
 } from "reka-ui";
-import { cn } from "@/lib/utils";
+import { cn } from "@/core/utils/utils";
 
 const props = defineProps<
   TabsRootProps & { class?: HTMLAttributes["class"] }

@@ -64,12 +64,29 @@ func (g *GitAdapter) Status(directory string) (models.GitStatus, error) {
 		branch = head.Name().Short()
 	}
 
+	var uncommittedFiles []models.GitFileStatus
 	hasUncommittedChanges := false
 	w, err := repo.Worktree()
 	if err == nil {
 		status, err := w.Status()
 		if err == nil && !status.IsClean() {
 			hasUncommittedChanges = true
+			for path, fileStatus := range status {
+				if fileStatus.Worktree != git.Unmodified || fileStatus.Staging != git.Unmodified {
+					statusCode := "modified"
+					if fileStatus.Worktree == git.Untracked {
+						statusCode = "untracked"
+					} else if fileStatus.Worktree == git.Added || fileStatus.Staging == git.Added {
+						statusCode = "added"
+					} else if fileStatus.Worktree == git.Deleted || fileStatus.Staging == git.Deleted {
+						statusCode = "deleted"
+					}
+					uncommittedFiles = append(uncommittedFiles, models.GitFileStatus{
+						Path:   path,
+						Status: statusCode,
+					})
+				}
+			}
 		}
 	}
 
@@ -99,6 +116,7 @@ func (g *GitAdapter) Status(directory string) (models.GitStatus, error) {
 		HasUncommittedChanges: hasUncommittedChanges,
 		HasUnpushedCommits:    hasUnpushedCommits,
 		LastSync:              time.Now().Unix(),
+		UncommittedFiles:      uncommittedFiles,
 	}, nil
 }
 

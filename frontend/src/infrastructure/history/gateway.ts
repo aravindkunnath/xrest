@@ -1,6 +1,6 @@
 import { HistoryGateway as WailsHistoryGateway } from '../../../bindings/xrest/cmd/wails'
-import type { IHistoryGateway } from '@/domains/history/ports'
-import type { HistoryEntry } from '@/stores/history'
+import type { IHistoryGateway } from "@/domains/history/ports"
+import type { HistoryEntry } from "@/stores/history"
 
 export class HistoryGateway implements IHistoryGateway {
     async getHistory(limit: number, offset: number): Promise<HistoryEntry[]> {

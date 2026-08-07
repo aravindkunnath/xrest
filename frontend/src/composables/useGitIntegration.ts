@@ -8,7 +8,7 @@
  */
 
 import { ref } from 'vue'
-import { useServicesStore } from '@/stores/services'
+import { useServicesStore } from "@/stores/services"
 
 const gitStatuses = ref<Record<string, any>>({})
 

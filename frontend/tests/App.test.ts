@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import App from '@/App.vue'
+import App from "@/app/App.vue"
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 
@@ -25,7 +25,7 @@ const router = createRouter({
 
 const mockLoadSettings = vi.fn()
 
-vi.mock('@/stores/settings', () => ({
+vi.mock("@/stores/settings", () => ({
     useSettingsStore: vi.fn(() => ({
         loadSettings: mockLoadSettings
     }))
@@ -54,10 +54,10 @@ describe('App', () => {
         }
     }
 
-    it('renders navigation links and main layout', () => {
+    it('renders TitleBar and main layout', () => {
         const wrapper = mount(App, globalOptions)
         expect(wrapper.find('.app-container').exists()).toBe(true)
-        expect(wrapper.find('nav').exists()).toBe(true)
+        expect(wrapper.find('header.titlebar').exists()).toBe(true)
     })
 
     it('loads settings on mount', () => {

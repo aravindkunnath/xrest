@@ -1,4 +1,4 @@
-import type { HistoryEntry } from '@/stores/history'
+import type { HistoryEntry } from "@/stores/history"
 
 export interface IHistoryGateway {
     getHistory(limit: number, offset: number): Promise<HistoryEntry[]>

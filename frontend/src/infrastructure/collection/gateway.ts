@@ -1,6 +1,6 @@
 import { CollectionGateway as WailsCollectionGateway } from '../../../bindings/xrest/cmd/wails'
-import type { ICollectionGateway } from '@/domains/collection/ports'
-import type { Service } from '@/types'
+import type { ICollectionGateway } from "@/domains/collection/ports"
+import type { Service } from "@/types"
 
 export class CollectionGateway implements ICollectionGateway {
     async loadCollections(): Promise<Service[]> {

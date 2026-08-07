@@ -32,6 +32,13 @@ export function LoadTabState(): $CancellablePromise<models$0.TabState | null> {
 }
 
 /**
+ * LoadZoomLevel loads the zoom level configuration.
+ */
+export function LoadZoomLevel(): $CancellablePromise<number> {
+    return $Call.ByID(2772284770);
+}
+
+/**
  * SaveSettings saves the user settings.
  */
 export function SaveSettings(settings: importlib$0.UserSettings): $CancellablePromise<void> {
@@ -43,6 +50,13 @@ export function SaveSettings(settings: importlib$0.UserSettings): $CancellablePr
  */
 export function SaveTabState(state: models$0.TabState | null): $CancellablePromise<void> {
     return $Call.ByID(285348974, state);
+}
+
+/**
+ * SaveZoomLevel saves the zoom level configuration.
+ */
+export function SaveZoomLevel(level: number): $CancellablePromise<void> {
+    return $Call.ByID(1546322165, level);
 }
 
 /**

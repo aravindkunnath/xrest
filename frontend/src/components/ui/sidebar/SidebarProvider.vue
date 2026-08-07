@@ -8,7 +8,7 @@ import {
 } from "@vueuse/core";
 import { TooltipProvider } from "reka-ui";
 import { computed, ref } from "vue";
-import { cn } from "@/lib/utils";
+import { cn } from "@/core/utils/utils";
 import {
   provideSidebarContext,
   SIDEBAR_COOKIE_MAX_AGE,

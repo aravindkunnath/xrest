@@ -211,14 +211,7 @@ func (sm *ServiceManager) SaveService(service *models.Service, commitMsg string,
 		return fmt.Errorf("failed to write service.yaml: %w", err)
 	}
 
-	// Git auto-commit
-	if git != nil && git.IsRepo(service.Directory) {
-		msg := commitMsg
-		if msg == "" {
-			msg = "Update service configuration"
-		}
-		_ = git.Commit(service.Directory, msg)
-	}
+
 
 	return nil
 }

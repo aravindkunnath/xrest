@@ -12,8 +12,7 @@ test.describe("Settings and Theme E2E Suite", () => {
     await page.goto("/");
     
     // Navigate to Settings View via link
-    const settingsNavLink = page.locator('a[href="/settings"]');
-    await settingsNavLink.click();
+    await page.goto("/#/settings");
   });
 
   test("should load settings page correctly", async ({ page }) => {

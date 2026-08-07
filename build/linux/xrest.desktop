@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=xrest
+Exec=xrest
+Icon=xrest
+Categories=Development;
+Terminal=false
+Keywords=wails
+Version=1.0
+StartupNotify=false

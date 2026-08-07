@@ -43,13 +43,7 @@ test.describe("History E2E Suite", () => {
     await expect(page.locator("text=200 OK")).toBeVisible({ timeout: 10000 });
 
     // 3. Navigate to History View
-    const historyNavLink = page.locator('a[href="/history"]');
-    if (await historyNavLink.isVisible()) {
-      await historyNavLink.click();
-    } else {
-      await page.goto("/history");
-    }
-
+    await page.goto("/#/history");
     await expect(page.locator("h1:has-text('History')")).toBeVisible();
 
     // 4. Verify both entries exist

@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"maps"
 	"net/http"
@@ -66,6 +67,12 @@ func (h *Http) toResponse(resp *resty.Response) *models.Response {
 		}
 	}
 
+	bodyStr := resp.String()
+	ct := strings.ToLower(resp.Header().Get("Content-Type"))
+	if strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "audio/") || strings.HasPrefix(ct, "video/") || strings.HasPrefix(ct, "application/octet-stream") || strings.HasPrefix(ct, "application/pdf") {
+		bodyStr = base64.StdEncoding.EncodeToString(resp.Bytes())
+	}
+
 	return &models.Response{
 		ContentType:     resp.Header().Get("Content-Type"),
 		TimeTaken:       resp.Duration(),
@@ -76,7 +83,7 @@ func (h *Http) toResponse(resp *resty.Response) *models.Response {
 		BodyBytes:       resp.Bytes(),
 		Size:            resp.Size(),
 		Cookies:         cookies,
-		Body:            resp.String(),
+		Body:            bodyStr,
 	}
 }
 

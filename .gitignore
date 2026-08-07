@@ -52,3 +52,4 @@ Thumbs.db
 frontend/playwright-report
 frontend/test-results
 src-tauri/
+/test-results

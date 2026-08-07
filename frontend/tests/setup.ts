@@ -25,3 +25,10 @@ Object.defineProperty(window, 'localStorage', {
     value: localStorageMock,
     writable: true
 })
+
+vi.mock('@wailsio/runtime', () => ({
+    Window: {
+        ToggleMaximise: vi.fn(),
+        IsMaximised: vi.fn(() => Promise.resolve(false))
+    }
+}))

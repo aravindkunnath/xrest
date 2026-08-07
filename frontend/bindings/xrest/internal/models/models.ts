@@ -107,6 +107,11 @@ export enum FormDataType {
     FormDataTypeFile = "file",
 };
 
+export interface GitFileStatus {
+    "path": string;
+    "status": string;
+}
+
 export interface GitStatus {
     "isGit": boolean;
     "remoteUrl": string;
@@ -114,6 +119,7 @@ export interface GitStatus {
     "hasUncommittedChanges": boolean;
     "hasUnpushedCommits": boolean;
     "lastSync": number;
+    "uncommittedFiles": GitFileStatus[] | null;
 }
 
 export type Header = NameValue;

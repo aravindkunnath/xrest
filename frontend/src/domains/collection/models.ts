@@ -1,4 +1,4 @@
-import { type Service, type EnvironmentConfig, AuthType } from '@/types'
+import { type Service, type EnvironmentConfig, AuthType } from "@/types"
 
 export class CollectionFactory {
     static createDefault(name: string): Service {

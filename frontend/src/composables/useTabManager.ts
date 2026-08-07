@@ -9,7 +9,7 @@
  */
 
 import { storeToRefs } from 'pinia'
-import { useTabsStore } from '@/stores/tabs'
+import { useTabsStore } from "@/stores/tabs"
 
 export const useTabManager = () => {
   const tabsStore = useTabsStore()

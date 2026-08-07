@@ -17,4 +17,31 @@ export default defineConfig({
     },
   },
   plugins: [vue(), wails("./bindings"), tailwindcss()],
+  build: {
+    target: "es2022",
+    cssCodeSplit: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("@codemirror") || id.includes("codemirror")) {
+              return "codemirror";
+            }
+            if (id.includes("reka-ui") || id.includes("@tanstack")) {
+              return "ui-vendor";
+            }
+            if (id.includes("@remixicon") || id.includes("@lucide")) {
+              return "icons";
+            }
+            if (id.includes("@wailsio")) {
+              return "wails";
+            }
+            if (id.includes("vue") || id.includes("pinia")) {
+              return "vue-core";
+            }
+          }
+        },
+      },
+    },
+  },
 });

@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { type Service } from '@/types'
+import { type Service } from "@/types"
 import { toast } from 'vue-sonner'
-import { CollectionManager } from '@/domains/collection/manager'
-import { AdapterFactory } from '@/infrastructure/adapter-factory'
+import { CollectionManager } from "@/domains/collection/manager"
+import { AdapterFactory } from "@/infrastructure/adapter-factory"
 
 export const useCollectionsStore = defineStore('collections', () => {
     const collections = ref<Service[]>([])

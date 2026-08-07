@@ -31,17 +31,30 @@ test.describe("Import from Swagger/OpenAPI E2E Suite", () => {
     });
 
     await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      const mockServices = [
+        {
+          id: "swagger-service",
+          name: "Swagger Target Service",
+          directory: "/mock/swagger/dir",
+          isAuthenticated: false,
+          endpoints: [],
+          environments: [],
+        },
+      ];
+      localStorage.setItem("mock_services", JSON.stringify(mockServices));
+    });
     await page.goto("/");
   });
 
   test("should open Swagger import dialog and validate required fields", async ({ page }) => {
     // Open the Import popover
-    const importTrigger = page.locator('button[title="Import options"]');
+    const importTrigger = page.locator('button[title="Import"]');
     await importTrigger.click();
 
-    // Click the "Swagger / OpenAPI" option
-    await page.locator('button:has-text("Swagger / OpenAPI")').click();
+    // Click the "Import from Swagger" option
+    await page.locator('button:has-text("Import from Swagger")').click();
 
     // Dialog should be visible
     await expect(page.locator("text=Import from Swagger/OpenAPI")).toBeVisible();

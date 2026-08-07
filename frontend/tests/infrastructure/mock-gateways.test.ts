@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { MockCollectionGateway } from '@/infrastructure/collection/mock-gateway'
-import { MockServiceGateway } from '@/infrastructure/service/mock-gateway'
-import type { Service } from '@/types'
+import { MockCollectionGateway } from "@/infrastructure/collection/mock-gateway"
+import { MockServiceGateway } from "@/infrastructure/service/mock-gateway"
+import type { Service } from "@/types"
 
 describe('Mock Gateways', () => {
     beforeEach(() => {

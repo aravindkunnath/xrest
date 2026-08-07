@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { AdapterFactory } from '@/infrastructure/adapter-factory'
+import { AdapterFactory } from "@/infrastructure/adapter-factory"
 
 export interface HistoryEntry {
     id: string

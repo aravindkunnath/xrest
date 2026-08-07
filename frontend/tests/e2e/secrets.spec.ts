@@ -24,19 +24,13 @@ test.describe("Secrets Management E2E Suite", () => {
     await page.goto("/");
     
     // Navigate to Secrets Management View
-    const secretsNavLink = page.locator('a[href="/secrets"]');
-    if (await secretsNavLink.isVisible()) {
-      await secretsNavLink.click();
-    } else {
-      await page.goto("/secrets");
-    }
-    
-    await expect(page.locator("h1:has-text('Secrets Management')")).toBeVisible();
+    await page.goto("/#/secrets");
+    await expect(page.locator('button:has-text("Add Secret")')).toBeVisible();
   });
 
   test("should add, reveal, and delete secrets successfully", async ({ page }) => {
     // 1. Initial State: Check for empty state elements
-    const emptyState = page.locator("text=No secrets found");
+    const emptyState = page.locator("text=No secrets configured");
     
     // 2. Add Secret
     // Click either the main action button or the empty state action button

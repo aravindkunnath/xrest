@@ -30,23 +30,47 @@ test.describe("Import Service from Directory E2E Suite", () => {
     });
 
     await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => {
+      localStorage.clear();
+      const mockServices = [
+        {
+          id: "dir-service",
+          name: "Directory Target Service",
+          directory: "/mock/dir/service",
+          isAuthenticated: false,
+          endpoints: [],
+          environments: [],
+        },
+      ];
+      localStorage.setItem("mock_services", JSON.stringify(mockServices));
+    });
     await page.goto("/");
   });
 
-  test("should trigger directory import from the Import popover", async ({ page }) => {
-    // Open the Import popover
-    const importTrigger = page.locator('button[title="Import options"]');
-    await importTrigger.click();
+  test("should trigger directory import from Add Service dialog", async ({ page }) => {
+    // Click Add Service button
+    const addServiceBtn = page.locator('button[title="Add Service"]');
+    await addServiceBtn.click();
 
-    // Click "From Directory"
-    await page.locator('button:has-text("From Directory")').click();
+    // Verify Add New Service dialog opens
+    await expect(page.locator("text=Add New Service")).toBeVisible();
 
-    // The picker was intercepted; the import flow runs against the backend.
-    // Verify either a success toast or an error toast surfaces (depending on
-    // whether the canned directory resolves on the backend).
-    const successToast = page.locator("text=Service Imported");
-    const errorToast = page.locator("text=Import Failed");
-    await expect(successToast.or(errorToast)).toBeVisible({ timeout: 10000 });
+    // Fill service name
+    await page.fill("#service-name", "Imported Service");
+
+    // Click folder icon button next to service-dir to select directory (intercepted by Wails mock returning /mock/imported-service-dir)
+    await page.click('#service-dir + button');
+
+    // Verify directory path is populated
+    await expect(page.locator("#service-dir")).toHaveValue("/mock/imported-service-dir");
+
+    // Click Next
+    await page.click('button:has-text("Next")');
+
+    // Click Create Service
+    await page.click('button:has-text("Create Service")');
+
+    // Verify success toast
+    await expect(page.locator("text=Service Created")).toBeVisible({ timeout: 10000 });
   });
 });

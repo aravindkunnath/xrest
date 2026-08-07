@@ -1,5 +1,5 @@
-import type { ICollectionGateway } from '@/domains/collection/ports'
-import type { Service } from '@/types'
+import type { ICollectionGateway } from "@/domains/collection/ports"
+import type { Service } from "@/types"
 
 export class MockCollectionGateway implements ICollectionGateway {
     private collections: Service[] = []

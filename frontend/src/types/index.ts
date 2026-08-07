@@ -1,3 +1,8 @@
+export type GitFileStatus = {
+    path: string;
+    status: 'modified' | 'added' | 'deleted' | 'untracked';
+}
+
 export type GitStatus = {
     isGit: boolean;
     remoteUrl?: string;
@@ -5,6 +10,7 @@ export type GitStatus = {
     hasUncommittedChanges: boolean;
     hasUnpushedCommits: boolean;
     lastSync?: number;
+    uncommittedFiles?: GitFileStatus[];
 }
 
 export type Service = {

@@ -12,13 +12,13 @@ const mockGateway = {
     syncGit: vi.fn(),
 }
 
-vi.mock('@/infrastructure/adapter-factory', () => ({
+vi.mock("@/infrastructure/adapter-factory", () => ({
     AdapterFactory: {
         getServiceGateway: vi.fn(() => mockGateway)
     }
 }))
 
-import { useServicesStore } from '@/stores/services'
+import { useServicesStore } from "@/stores/services"
 
 describe('Services Store', () => {
     beforeEach(() => {

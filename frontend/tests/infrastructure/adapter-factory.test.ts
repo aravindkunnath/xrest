@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { AdapterFactory } from '@/infrastructure/adapter-factory'
-import { ServiceGateway } from '@/infrastructure/service/gateway'
-import { MockServiceGateway } from '@/infrastructure/service/mock-gateway'
-import { CollectionGateway } from '@/infrastructure/collection/gateway'
-import { MockCollectionGateway } from '@/infrastructure/collection/mock-gateway'
+import { AdapterFactory } from "@/infrastructure/adapter-factory"
+import { ServiceGateway } from "@/infrastructure/service/gateway"
+import { MockServiceGateway } from "@/infrastructure/service/mock-gateway"
+import { CollectionGateway } from "@/infrastructure/collection/gateway"
+import { MockCollectionGateway } from "@/infrastructure/collection/mock-gateway"
 
 describe('AdapterFactory', () => {
     const originalWails = (window as any).wails

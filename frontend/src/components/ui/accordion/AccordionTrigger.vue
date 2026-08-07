@@ -4,7 +4,7 @@ import type { HTMLAttributes } from "vue";
 import { reactiveOmit } from "@vueuse/core";
 import { ChevronDown } from "@lucide/vue";
 import { AccordionHeader, AccordionTrigger } from "reka-ui";
-import { cn } from "@/lib/utils";
+import { cn } from "@/core/utils/utils";
 
 const props = defineProps<
     AccordionTriggerProps & { class?: HTMLAttributes["class"] }
