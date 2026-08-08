@@ -26,8 +26,31 @@ const props = defineProps<{
 
 const showTestDialog = ref(false);
 
-const auth = computed(() => props.auth);
-const preflight = computed(() => props.preflight);
+const auth = computed(() => props.auth || {
+    type: "none",
+    active: true,
+    basicUser: "",
+    basicPass: "",
+    bearerToken: "",
+    apiKeyName: "",
+    apiKeyValue: "",
+    apiKeyLocation: "header",
+});
+const preflight = computed(() => props.preflight || {
+    enabled: false,
+    method: "POST",
+    url: "",
+    body: "",
+    bodyType: "application/json",
+    bodyParams: [{ enabled: true, name: "", value: "" }],
+    headers: [],
+    cacheToken: true,
+    cacheDuration: "derived",
+    cacheDurationKey: "expires_in",
+    cacheDurationUnit: "seconds",
+    tokenKey: "access_token",
+    tokenHeader: "Authorization",
+});
 const variables = computed(() => props.variables);
 const environmentName = computed(() => props.environmentName);
 const serviceId = computed(() => props.serviceId);
@@ -155,7 +178,7 @@ const serviceId = computed(() => props.serviceId);
             </template>
         </div>
 
-        <div class="space-y-4 pt-4">
+        <div v-if="auth.type === 'bearer'" class="space-y-4 pt-4">
             <div class="flex items-center gap-2 border-b pb-2">
                 <Switch v-model="preflight.enabled" />
                 <Globe class="h-4 w-4 text-primary" />

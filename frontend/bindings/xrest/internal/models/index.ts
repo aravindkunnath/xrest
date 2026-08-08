@@ -22,6 +22,7 @@ export type {
     NameValue,
     Param,
     PreflightConfig,
+    PreflightTestResult,
     Request,
     RequestConfig,
     Response,

@@ -95,6 +95,6 @@ export function SyncGit(directory: string): $CancellablePromise<void> {
 /**
  * TestPreflightConfig runs a test for the given preflight configuration.
  */
-export function TestPreflightConfig(config: models$0.PreflightConfig | null): $CancellablePromise<string> {
+export function TestPreflightConfig(config: models$0.PreflightConfig | null): $CancellablePromise<models$0.PreflightTestResult> {
     return $Call.ByID(1105996134, config);
 }

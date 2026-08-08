@@ -3,6 +3,7 @@ package adapters
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -67,21 +68,29 @@ func (h *Http) getPreflightToken(cfg *models.PreflightConfig) (string, error) {
 	return token, nil
 }
 
-func (h *Http) fetchPreflightToken(cfg *models.PreflightConfig) (string, time.Time, error) {
-	var expiresAt time.Time
-	if cfg.Request == nil {
-		return "", expiresAt, fmt.Errorf("preflight request is nil")
+// submitPreflight performs the configured preflight HTTP request, bypassing
+// the preflight check to avoid recursion, and validates the response status.
+func (h *Http) submitPreflight(cfg *models.PreflightConfig) (*models.Response, error) {
+	if cfg == nil || cfg.Request == nil {
+		return nil, fmt.Errorf("preflight request is nil")
 	}
 
-	// Send request bypassing preflight check to avoid recursion
 	resp, err := h.sendInternal(cfg.Request, true)
 	if err != nil {
-		return "", expiresAt, fmt.Errorf("preflight HTTP call failed: %w", err)
+		return nil, fmt.Errorf("preflight HTTP call failed: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", expiresAt, fmt.Errorf("preflight HTTP call returned status %d: %s", resp.StatusCode, resp.Body)
+		return resp, fmt.Errorf("preflight HTTP call returned status %d: %s", resp.StatusCode, resp.Body)
 	}
+
+	return resp, nil
+}
+
+// extractPreflightToken reads the bearer token (and its expiry) from the
+// preflight response according to the configured token location.
+func extractPreflightToken(resp *models.Response, cfg *models.PreflightConfig) (string, time.Time, error) {
+	var expiresAt time.Time
 
 	var bodyData any
 	var jsonParsed bool
@@ -192,7 +201,81 @@ func (h *Http) fetchPreflightToken(cfg *models.PreflightConfig) (string, time.Ti
 	return tokenStr, expiresAt, nil
 }
 
-// TestPreflightConfig tests a preflight configuration and returns the token.
-func (h *Http) TestPreflightConfig(cfg *models.PreflightConfig) (string, error) {
-	return h.getPreflightToken(cfg)
+// fetchPreflightToken submits the preflight request and extracts the token.
+func (h *Http) fetchPreflightToken(cfg *models.PreflightConfig) (string, time.Time, error) {
+	resp, err := h.submitPreflight(cfg)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return extractPreflightToken(resp, cfg)
+}
+
+// requestHeadersToModel converts a map[string]string of request headers into
+// a list of models.Header entries.
+func requestHeadersToModel(h map[string]string) []models.Header {
+	var out []models.Header
+	for k, v := range h {
+		out = append(out, models.Header{Name: k, Value: v, Enabled: true, Type: "plain"})
+	}
+	return out
+}
+
+// responseHeadersToModel converts an http.Header into models.Header entries.
+func responseHeadersToModel(h http.Header) []models.Header {
+	var out []models.Header
+	for k, vals := range h {
+		for _, v := range vals {
+			out = append(out, models.Header{Name: k, Value: v, Enabled: true, Type: "plain"})
+		}
+	}
+	return out
+}
+
+// TestPreflightConfig runs the configured preflight sequence and returns a
+// detailed result (success, token, and the full request/response) for the UI.
+func (h *Http) TestPreflightConfig(cfg *models.PreflightConfig) (models.PreflightTestResult, error) {
+	result := models.PreflightTestResult{}
+
+	if cfg == nil || cfg.Request == nil {
+		errMsg := "preflight request is nil"
+		result.Success = false
+		result.Error = &errMsg
+		return result, nil
+	}
+
+	result.RequestURL = cfg.Request.URL
+	result.RequestMethod = cfg.Request.Method
+	result.RequestBody = cfg.Request.BodyRaw
+	result.RequestHeaders = requestHeadersToModel(cfg.Request.Headers)
+
+	start := time.Now()
+	resp, err := h.submitPreflight(cfg)
+	result.TimeElapsed = uint64(time.Since(start).Milliseconds())
+	if err != nil {
+		result.Success = false
+		errMsg := err.Error()
+		result.Error = &errMsg
+		if resp != nil {
+			result.ResponseStatus = uint16(resp.StatusCode)
+			result.ResponseBody = resp.Body
+			result.ResponseHeaders = responseHeadersToModel(resp.ResponseHeaders)
+		}
+		return result, nil
+	}
+
+	result.ResponseStatus = uint16(resp.StatusCode)
+	result.ResponseBody = resp.Body
+	result.ResponseHeaders = responseHeadersToModel(resp.ResponseHeaders)
+
+	token, _, err := extractPreflightToken(resp, cfg)
+	if err != nil {
+		result.Success = false
+		errMsg := err.Error()
+		result.Error = &errMsg
+		return result, nil
+	}
+
+	result.Success = true
+	result.Token = &token
+	return result, nil
 }

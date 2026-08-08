@@ -1361,6 +1361,111 @@ func TestPreflight_Expiry(t *testing.T) {
 	})
 }
 
+func TestTestPreflightConfig_Result(t *testing.T) {
+	t.Run("happy/returns full result with token", func(t *testing.T) {
+		authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"access_token":"jwt-test","expires_in":3600}`))
+		}))
+		defer authServer.Close()
+
+		h := &Http{}
+		defer h.Close()
+
+		cfg := &models.PreflightConfig{
+			Request: &models.Request{
+				Method:  "POST",
+				URL:     authServer.URL,
+				BodyRaw: `{"grant_type":"client_credentials"}`,
+				Headers: map[string]string{"Content-Type": "application/json"},
+			},
+			TokenLocation: "body",
+			TokenPath:     "access_token",
+			TokenHeader:   "Authorization",
+			TokenPrefix:   "Bearer ",
+		}
+
+		res, err := h.TestPreflightConfig(cfg)
+		if err != nil {
+			t.Fatalf("TestPreflightConfig returned error: %v", err)
+		}
+		if !res.Success {
+			t.Fatalf("expected success, got error: %v", derefStr(res.Error))
+		}
+		if res.Token == nil || *res.Token != "jwt-test" {
+			t.Errorf("expected token 'jwt-test', got %v", res.Token)
+		}
+		if res.RequestMethod != "POST" {
+			t.Errorf("expected request method POST, got %q", res.RequestMethod)
+		}
+		if res.RequestURL != authServer.URL {
+			t.Errorf("expected request URL %q, got %q", authServer.URL, res.RequestURL)
+		}
+		if res.ResponseStatus != http.StatusOK {
+			t.Errorf("expected response status 200, got %d", res.ResponseStatus)
+		}
+		if !strings.Contains(res.ResponseBody, "access_token") {
+			t.Errorf("expected response body to contain token, got %q", res.ResponseBody)
+		}
+	})
+
+	t.Run("error/http failure includes status and body", func(t *testing.T) {
+		authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("server exploded"))
+		}))
+		defer authServer.Close()
+
+		h := &Http{}
+		defer h.Close()
+
+		res, err := h.TestPreflightConfig(&models.PreflightConfig{
+			Request:       &models.Request{Method: "GET", URL: authServer.URL},
+			TokenLocation: "body",
+			TokenPath:     "access_token",
+		})
+		if err != nil {
+			t.Fatalf("TestPreflightConfig returned error: %v", err)
+		}
+		if res.Success {
+			t.Error("expected failure result")
+		}
+		if res.Error == nil || !strings.Contains(*res.Error, "status 500") {
+			t.Errorf("expected error mentioning status 500, got %v", res.Error)
+		}
+		if res.ResponseStatus != http.StatusInternalServerError {
+			t.Errorf("expected response status 500, got %d", res.ResponseStatus)
+		}
+		if res.ResponseBody != "server exploded" {
+			t.Errorf("expected response body 'server exploded', got %q", res.ResponseBody)
+		}
+	})
+
+	t.Run("error/nil config", func(t *testing.T) {
+		h := &Http{}
+		defer h.Close()
+
+		res, err := h.TestPreflightConfig(nil)
+		if err != nil {
+			t.Fatalf("TestPreflightConfig returned error: %v", err)
+		}
+		if res.Success {
+			t.Error("expected failure result for nil config")
+		}
+		if res.Error == nil || *res.Error != "preflight request is nil" {
+			t.Errorf("expected 'preflight request is nil', got %v", res.Error)
+		}
+	})
+}
+
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 // --- Scenario: Secret resolution ---
 
 func TestSecrets_Resolution(t *testing.T) {

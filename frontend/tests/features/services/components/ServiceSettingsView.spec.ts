@@ -204,4 +204,19 @@ describe('ServiceSettingsView - isUnsafe Flag', () => {
         await searchInput.setValue('base')
         expect((wrapper.vm as any).filteredVariables).toContain('BASE_URL')
     })
+
+    it('should render the auth editor when serviceData has no auth/preflight', async () => {
+        const tab = createMockTab()
+        const wrapper = mount(ServiceSettingsView, {
+            props: { tab, gitStatus: null },
+            ...mountOptions
+        })
+
+        const requestAuth = wrapper.findComponent({ name: 'RequestAuth' })
+        expect(requestAuth.exists()).toBe(true)
+
+        // Defaults are injected so the editor can bind
+        expect(tab.serviceData.auth.type).toBe('none')
+        expect(tab.serviceData.preflight).toBeDefined()
+    })
 })

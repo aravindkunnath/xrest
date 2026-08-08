@@ -137,7 +137,7 @@ func (s *ServiceGateway) ImportCurl(serviceId string, curlCommand string) (model
 }
 
 // TestPreflightConfig runs a test for the given preflight configuration.
-func (s *ServiceGateway) TestPreflightConfig(config *models.PreflightConfig) (string, error) {
+func (s *ServiceGateway) TestPreflightConfig(config *models.PreflightConfig) (models.PreflightTestResult, error) {
 	log.Printf("[ServiceGateway] TestPreflightConfig called\n")
 	client := &adapters.Http{}
 	return client.TestPreflightConfig(config)

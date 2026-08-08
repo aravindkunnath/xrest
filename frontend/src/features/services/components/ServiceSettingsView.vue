@@ -82,6 +82,62 @@ const sections = computed(() => {
     return list;
 });
 
+const ensureAuthDefaults = () => {
+    const data = tab.value.serviceData;
+    if (!data.auth) {
+        const initialType =
+            (data.authType && String(data.authType).toLowerCase()) ||
+            (data.isAuthenticated ? "bearer" : "none");
+        data.auth = {
+            type: initialType,
+            active: true,
+            basicUser: "",
+            basicPass: "",
+            bearerToken: "",
+            apiKeyName: "",
+            apiKeyValue: "",
+            apiKeyLocation: "header",
+        };
+    }
+    if (!data.preflight) {
+        data.preflight = {
+            enabled: false,
+            method: "POST",
+            url: "",
+            body: "",
+            bodyType: "application/json",
+            bodyParams: [{ enabled: true, name: "", value: "" }],
+            headers: [],
+            cacheToken: true,
+            cacheDuration: "derived",
+            cacheDurationKey: "expires_in",
+            cacheDurationUnit: "seconds",
+            tokenKey: "access_token",
+            tokenHeader: "Authorization",
+        };
+    }
+};
+
+const handleSave = () => {
+    const data = tab.value.serviceData;
+    if (data.auth) {
+        const a = data.auth;
+        const inert =
+            a.type === "none" &&
+            !(a.bearerToken || a.basicUser || a.basicPass ||
+                a.apiKeyName || a.apiKeyValue);
+        if (inert) {
+            delete data.auth;
+        }
+    }
+    if (data.preflight && !data.preflight.enabled) {
+        delete data.preflight;
+    }
+    saveSettings(tab.value);
+};
+
+ensureAuthDefaults();
+
 onMounted(async () => {
     secretsStore.fetchSecrets();
     if (props.tab.serviceData.directory) {
@@ -206,7 +262,7 @@ const hasAnyVisibleSection = computed(() => {
                     variant="default"
                     size="sm"
                     class="h-8 gap-2 px-4"
-                    @click="saveSettings(tab)"
+                    @click="handleSave"
                 >
                     <Save class="h-3.5 w-3.5" /> Save Changes
                 </Button>
@@ -310,7 +366,6 @@ const hasAnyVisibleSection = computed(() => {
                         all requests in this service.
                     </p>
                     <RequestAuth
-                        v-if="tab.serviceData.auth && tab.serviceData.preflight"
                         v-model:auth="tab.serviceData.auth"
                         v-model:preflight="tab.serviceData.preflight"
                         :variables="{}"

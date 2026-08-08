@@ -187,6 +187,20 @@ export interface PreflightConfig {
     "expiryType"?: string;
 }
 
+export interface PreflightTestResult {
+    "success": boolean;
+    "token"?: string | null;
+    "error"?: string | null;
+    "requestUrl": string;
+    "requestMethod": string;
+    "requestHeaders": Header[] | null;
+    "requestBody": string;
+    "responseStatus": number;
+    "responseBody": string;
+    "responseHeaders": Header[] | null;
+    "timeElapsed": number;
+}
+
 export interface Request {
     "method": string;
     "url": string;

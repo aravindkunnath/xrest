@@ -31,6 +31,41 @@ const result = ref<any>(null);
 const error = ref<string | null>(null);
 const activeTab = ref("summary");
 
+const toModelPreflight = (cfg: any) => {
+    const headers: Record<string, string> = {};
+    for (const h of cfg?.headers || []) {
+        if (h && h.name && h.enabled !== false) {
+            headers[h.name] = h.value || "";
+        }
+    }
+    let bodyType = cfg?.bodyType || "";
+    if (bodyType === "application/x-www-form-urlencoded") {
+        bodyType = "urlencoded";
+    } else if (bodyType === "application/json") {
+        bodyType = "raw";
+    } else if (!bodyType) {
+        bodyType = "raw";
+    }
+    const method = cfg?.method || "POST";
+    const url = cfg?.url || "";
+    return {
+        request: {
+            method,
+            url,
+            bodyRaw: cfg?.body || "",
+            bodyType,
+            headers,
+        },
+        tokenLocation: "body",
+        tokenPath: cfg?.tokenKey || "access_token",
+        tokenHeader: cfg?.tokenHeader || "Authorization",
+        tokenPrefix: "Bearer ",
+        expiryPath: cfg?.cacheDurationKey || "",
+        expiryType: "expires_in",
+        cacheKey: `${method}:${url}`,
+    };
+};
+
 const runTest = async () => {
     if (!props.serviceId) {
         error.value = "Service ID is missing. Please save the service first.";
@@ -44,7 +79,7 @@ const runTest = async () => {
 
     try {
         const res = await ServiceGateway.TestPreflightConfig(
-            JSON.parse(JSON.stringify(props.config))
+            JSON.parse(JSON.stringify(toModelPreflight(props.config)))
         );
         result.value = res;
     } catch (err: any) {
