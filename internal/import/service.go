@@ -125,6 +125,7 @@ func (sm *ServiceManager) LoadService(directory string) (models.Service, error) 
 				if err := yaml.Unmarshal(epData, &storageEp); err != nil {
 					continue
 				}
+				sm.migrateLegacyVersions(&storageEp)
 				endpoints = append(endpoints, storageEp.ToModelEndpoint())
 			}
 		}
@@ -137,6 +138,7 @@ func (sm *ServiceManager) LoadService(directory string) (models.Service, error) 
 			if epData, err := os.ReadFile(epPath); err == nil {
 				var storageEp EndpointStorage
 				if err := yaml.Unmarshal(epData, &storageEp); err == nil {
+					sm.migrateLegacyVersions(&storageEp)
 					endpoints = append(endpoints, storageEp.ToModelEndpoint())
 				}
 			}
@@ -144,6 +146,25 @@ func (sm *ServiceManager) LoadService(directory string) (models.Service, error) 
 	}
 
 	return svcFile.ToModelService(environments, endpoints), nil
+}
+
+// migrateLegacyVersions seeds any inline version history from a legacy endpoint
+// YAML file into SQLite. Best-effort and non-blocking: older versions stored
+// `versions:` inline and are migrated once on first load, then never written
+// back to the YAML.
+func (sm *ServiceManager) migrateLegacyVersions(storage *EndpointStorage) {
+	if storage == nil || len(storage.Versions) == 0 {
+		return
+	}
+	repo, err := adapters.NewSqliteVersionRepository(adapters.HistoryDbPath())
+	if err != nil {
+		fmt.Printf("Warning: failed to open version repository for migration: %v\n", err)
+		return
+	}
+	defer repo.Close()
+	if err := repo.MigrateLegacy(storage.ID, storage.Versions); err != nil {
+		fmt.Printf("Warning: failed to migrate legacy versions for endpoint %s: %v\n", storage.ID, err)
+	}
 }
 
 // SaveService persists a service to its directory (service.yaml + environments.yaml + endpoints/*.yaml).
@@ -210,8 +231,6 @@ func (sm *ServiceManager) SaveService(service *models.Service, commitMsg string,
 	if err := os.WriteFile(svcPath, svcData, 0644); err != nil {
 		return fmt.Errorf("failed to write service.yaml: %w", err)
 	}
-
-
 
 	return nil
 }

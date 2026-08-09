@@ -6,9 +6,9 @@ import {
     AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { useServicesStore } from "@/stores/services";
-import { useCollectionsStore } from "@/stores/collections";
 import { useTabsStore } from "@/stores/tabs";
+import { useSettingsStore } from "@/stores/settings";
+import { useVersionsStore } from "@/stores/versions";
 import {
     AlertCircle,
     ArrowRight,
@@ -18,7 +18,7 @@ import {
     Plus,
     RefreshCw,
 } from "@lucide/vue";
-import { computed } from "vue";
+import { computed, onMounted, watch } from "vue";
 
 const props = defineProps<{
     tabId: string;
@@ -27,28 +27,21 @@ const props = defineProps<{
 }>();
 
 const tabsStore = useTabsStore();
-const servicesStore = useServicesStore();
-const collectionsStore = useCollectionsStore();
+const settingsStore = useSettingsStore();
+const versionsStore = useVersionsStore();
 
 const versions = computed(() => {
-    if (!props.serviceId || !props.endpointId) return [];
-
-    let endpoint = null;
-    const service = servicesStore.services.find(
-        (s) => s.id === props.serviceId,
-    );
-    if (service) {
-        endpoint = service.endpoints.find((e) => e.id === props.endpointId);
-    } else {
-        const collection = collectionsStore.collections.find(
-            (c) => c.id === props.serviceId,
-        );
-        if (collection) {
-            endpoint = collection.endpoints.find((e) => e.id === props.endpointId);
-        }
-    }
-    return endpoint?.versions || [];
+    if (!props.endpointId) return [];
+    return versionsStore.getEntries(props.endpointId);
 });
+
+const loadVersions = () => {
+    if (!props.serviceId || !props.endpointId) return;
+    versionsStore.loadVersions(props.serviceId, props.endpointId, settingsStore.versionsLimit);
+};
+
+onMounted(loadVersions);
+watch(() => props.endpointId, loadVersions);
 
 const sortedVersions = computed(() =>
     [...versions.value].sort((a, b) => {

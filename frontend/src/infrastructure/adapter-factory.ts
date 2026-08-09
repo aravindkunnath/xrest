@@ -4,9 +4,12 @@ import { CollectionGateway } from './collection/gateway'
 import { MockCollectionGateway } from './collection/mock-gateway'
 import { HistoryGateway } from './history/gateway'
 import { MockHistoryGateway } from './history/mock-gateway'
+import { VersionGateway } from './versions/gateway'
+import { MockVersionGateway } from './versions/mock-gateway'
 import type { IServiceGateway } from "@/domains/service/ports"
 import type { ICollectionGateway } from "@/domains/collection/ports"
 import type { IHistoryGateway } from "@/domains/history/ports"
+import type { IVersionGateway } from "@/domains/versions/ports"
 
 export class AdapterFactory {
     static getServiceGateway(): IServiceGateway {
@@ -31,5 +34,13 @@ export class AdapterFactory {
             return new HistoryGateway()
         }
         return new MockHistoryGateway()
+    }
+
+    static getVersionGateway(): IVersionGateway {
+        // @ts-ignore
+        if (window.wails) {
+            return new VersionGateway()
+        }
+        return new MockVersionGateway()
     }
 }

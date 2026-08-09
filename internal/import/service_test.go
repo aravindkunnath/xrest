@@ -3,6 +3,7 @@ package importlib
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"xrest/internal/adapters"
@@ -367,5 +368,175 @@ func TestPtrHelper(t *testing.T) {
 	v := ptr("hello")
 	if *v != "hello" {
 		t.Errorf("expected hello, got %s", *v)
+	}
+}
+
+func yamlVersionedEndpoint() models.Endpoint {
+	return models.Endpoint{
+		ID:          "e-ver",
+		ServiceID:   "s-ver",
+		Name:        "Versioned Endpoint",
+		Method:      "GET",
+		URL:         "/items",
+		LastVersion: 2,
+		Versions: []models.EndpointVersion{
+			{Version: 1, Config: models.RequestConfig{Method: "GET", URL: "/items"}, LastUpdated: 1000},
+			{Version: 2, Config: models.RequestConfig{Method: "GET", URL: "/items?page=2"}, LastUpdated: 2000},
+		},
+	}
+}
+
+func TestToStorageEndpoint_ExcludesVersions(t *testing.T) {
+	storage := ToStorageEndpoint(yamlVersionedEndpoint())
+	if storage.LastVersion != 2 {
+		t.Errorf("expected lastVersion preserved as 2, got %d", storage.LastVersion)
+	}
+	if len(storage.Versions) != 0 {
+		t.Errorf("expected ToStorageEndpoint to drop versions, got %d", len(storage.Versions))
+	}
+
+	data, err := yaml.Marshal(&storage)
+	if err != nil {
+		t.Fatalf("failed to marshal storage endpoint: %v", err)
+	}
+	if strings.Contains(string(data), "versions") {
+		t.Errorf("serialized YAML must not contain versions key:\n%s", string(data))
+	}
+	if !strings.Contains(string(data), "lastVersion: 2") {
+		t.Errorf("expected lastVersion counter in serialized YAML:\n%s", string(data))
+	}
+}
+
+func TestServiceManager_SaveService_WritesNoVersions(t *testing.T) {
+	sm := NewServiceManager()
+	dir := t.TempDir()
+
+	svc := models.Service{
+		ID:        "s-ver",
+		Name:      "Versioned",
+		Directory: dir,
+		Endpoints: []models.Endpoint{yamlVersionedEndpoint()},
+	}
+
+	if err := sm.SaveService(&svc, "", nil); err != nil {
+		t.Fatalf("expected no error saving service, got %v", err)
+	}
+
+	epData, err := os.ReadFile(filepath.Join(dir, "endpoints", "e-ver.yaml"))
+	if err != nil {
+		t.Fatalf("failed to read endpoint file: %v", err)
+	}
+	if strings.Contains(string(epData), "versions") {
+		t.Errorf("saved endpoint YAML must not contain versions key:\n%s", string(epData))
+	}
+	if !strings.Contains(string(epData), "lastVersion: 2") {
+		t.Errorf("expected lastVersion counter in saved endpoint YAML:\n%s", string(epData))
+	}
+
+	// Round trip: load the saved service and re-save it, still no versions.
+	loaded, err := sm.LoadService(dir)
+	if err != nil {
+		t.Fatalf("expected no error loading service, got %v", err)
+	}
+	if len(loaded.Endpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %d", len(loaded.Endpoints))
+	}
+	if len(loaded.Endpoints[0].Versions) != 0 {
+		t.Errorf("expected loaded endpoint to have no inline versions, got %d", len(loaded.Endpoints[0].Versions))
+	}
+	if err := sm.SaveService(&loaded, "", nil); err != nil {
+		t.Fatalf("expected no error re-saving service, got %v", err)
+	}
+	epData2, err := os.ReadFile(filepath.Join(dir, "endpoints", "e-ver.yaml"))
+	if err != nil {
+		t.Fatalf("failed to re-read endpoint file: %v", err)
+	}
+	if strings.Contains(string(epData2), "versions") {
+		t.Errorf("re-saved endpoint YAML must not contain versions key:\n%s", string(epData2))
+	}
+}
+
+// legacyEndpointYAML matches the historical format that stored versions inline.
+const legacyEndpointYAML = `id: e-legacy
+serviceId: s-legacy
+name: Legacy Endpoint
+method: GET
+url: /legacy
+params: []
+headers: []
+body: ""
+lastVersion: 2
+versions:
+  - version: 1
+    config:
+      method: GET
+      url: /legacy
+      params: []
+      headers: []
+      body: ""
+    lastUpdated: 1000
+  - version: 2
+    config:
+      method: POST
+      url: /legacy
+      params:
+        - name: page
+          value: "2"
+      headers: []
+      body: "{}"
+    lastUpdated: 2000
+`
+
+func TestLoadService_MigratesLegacyVersions(t *testing.T) {
+	os.Setenv("XREST_ENV", "test")
+	defer os.Unsetenv("XREST_ENV")
+
+	// Reset the shared test DB for this test.
+	dbPath := adapters.HistoryDbPath()
+	os.Remove(dbPath)
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "endpoints"), 0755); err != nil {
+		t.Fatalf("failed to create endpoints dir: %v", err)
+	}
+	svcFile := map[string]interface{}{"id": "s-legacy", "name": "Legacy"}
+	data, _ := yaml.Marshal(svcFile)
+	if err := os.WriteFile(filepath.Join(dir, "service.yaml"), data, 0644); err != nil {
+		t.Fatalf("failed to write service.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "endpoints", "e-legacy.yaml"), []byte(legacyEndpointYAML), 0644); err != nil {
+		t.Fatalf("failed to write legacy endpoint: %v", err)
+	}
+
+	sm := NewServiceManager()
+	svc, err := sm.LoadService(dir)
+	if err != nil {
+		t.Fatalf("expected no error loading legacy service, got %v", err)
+	}
+	if len(svc.Endpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %d", len(svc.Endpoints))
+	}
+	if len(svc.Endpoints[0].Versions) != 0 {
+		t.Errorf("expected endpoint model to carry no inline versions after migration, got %d", len(svc.Endpoints[0].Versions))
+	}
+	if svc.Endpoints[0].LastVersion != 2 {
+		t.Errorf("expected lastVersion 2, got %d", svc.Endpoints[0].LastVersion)
+	}
+
+	// Confirm the versions were seeded into SQLite, newest first.
+	repo, err := adapters.NewSqliteVersionRepository(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open version repo: %v", err)
+	}
+	defer repo.Close()
+	if n, err := repo.CountVersions("e-legacy"); err != nil || n != 2 {
+		t.Fatalf("expected 2 migrated versions, got %d (err=%v)", n, err)
+	}
+	versions, err := repo.GetVersions("e-legacy", 10)
+	if err != nil {
+		t.Fatalf("failed to get migrated versions: %v", err)
+	}
+	if versions[0].Version != 2 || versions[0].Config.Method != "POST" {
+		t.Errorf("expected newest version to be v2 POST, got %+v", versions[0])
 	}
 }

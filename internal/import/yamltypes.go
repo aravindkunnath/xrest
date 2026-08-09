@@ -1,10 +1,29 @@
 package importlib
 
-// Storage types that exactly mirror the Rust YAML serialization format.
+import "xrest/internal/models"
+
+// Storage types: mirror the Rust YAML serialization format.
 // The Go models (internal/models) use a different PreflightConfig shape,
 // so we need separate storage types for YAML round-tripping.
 
-import "xrest/internal/models"
+// endpointStorageSerializable is the YAML payload written to disk. It mirrors
+// EndpointStorage but intentionally omits `versions`: version history lives
+// permanently in SQLite and must never be serialized back into endpoint files.
+type endpointStorageSerializable struct {
+	ID            string                  `yaml:"id" json:"id"`
+	ServiceID     string                  `yaml:"serviceId" json:"serviceId"`
+	Name          string                  `yaml:"name" json:"name"`
+	Method        string                  `yaml:"method" json:"method"`
+	URL           string                  `yaml:"url" json:"url"`
+	Authenticated bool                    `yaml:"authenticated" json:"authenticated"`
+	AuthType      string                  `yaml:"authType" json:"authType"`
+	Metadata      models.EndpointMetadata `yaml:"metadata" json:"metadata"`
+	Params        []models.NameValue      `yaml:"params" json:"params"`
+	Headers       []models.NameValue      `yaml:"headers" json:"headers"`
+	Body          string                  `yaml:"body" json:"body"`
+	Preflight     *PreflightConfigStorage `yaml:"preflight,omitempty" json:"preflight,omitempty"`
+	LastVersion   int32                   `yaml:"lastVersion" json:"lastVersion"`
+}
 
 // ----- Storage (YAML) PreflightConfig -----
 // Mirrors the Rust `PreflightConfig` in xrest-core/src/import/mod.rs.
@@ -46,6 +65,27 @@ type EndpointStorage struct {
 	Versions      []models.EndpointVersion `yaml:"versions" json:"versions"`
 }
 
+// MarshalYAML omits the inline version history. Versions are readable from
+// legacy files (for migration) but are never written back to the YAML — they
+// live permanently in SQLite. LastVersion stays as the live save counter.
+func (e *EndpointStorage) MarshalYAML() (interface{}, error) {
+	return endpointStorageSerializable{
+		ID:            e.ID,
+		ServiceID:     e.ServiceID,
+		Name:          e.Name,
+		Method:        e.Method,
+		URL:           e.URL,
+		Authenticated: e.Authenticated,
+		AuthType:      e.AuthType,
+		Metadata:      e.Metadata,
+		Params:        e.Params,
+		Headers:       e.Headers,
+		Body:          e.Body,
+		Preflight:     e.Preflight,
+		LastVersion:   e.LastVersion,
+	}, nil
+}
+
 // ----- Storage (YAML) ServiceFile -----
 // Mirrors the Rust `ServiceFile` written to service.yaml
 
@@ -64,7 +104,9 @@ type StorageServiceFile struct {
 
 // ----- Converters -----
 
-// ToModelEndpoint converts a storage Endpoint to a models.Endpoint.
+// ToModelEndpoint converts a storage Endpoint to a models.Endpoint. Inline
+// versions are deliberately NOT propagated: version history is managed by
+// SqliteVersionRepository, not the endpoint model.
 func (e *EndpointStorage) ToModelEndpoint() models.Endpoint {
 	return models.Endpoint{
 		ID:            e.ID,
@@ -80,7 +122,7 @@ func (e *EndpointStorage) ToModelEndpoint() models.Endpoint {
 		Body:          e.Body,
 		Preflight:     storageToModelPreflight(e.Preflight),
 		LastVersion:   e.LastVersion,
-		Versions:      e.Versions,
+		Versions:      nil,
 	}
 }
 
@@ -117,7 +159,8 @@ func ToStorageServiceFile(svc *models.Service) StorageServiceFile {
 	}
 }
 
-// ToStorageEndpoint converts a models.Endpoint to a storage Endpoint.
+// ToStorageEndpoint converts a models.Endpoint to a storage Endpoint. It never
+// carries version history; MarshalYAML also strips versions from the output.
 func ToStorageEndpoint(ep models.Endpoint) EndpointStorage {
 	return EndpointStorage{
 		ID:            ep.ID,
@@ -133,7 +176,7 @@ func ToStorageEndpoint(ep models.Endpoint) EndpointStorage {
 		Body:          ep.Body,
 		Preflight:     modelToStoragePreflight(ep.Preflight),
 		LastVersion:   ep.LastVersion,
-		Versions:      ep.Versions,
+		Versions:      nil,
 	}
 }
 

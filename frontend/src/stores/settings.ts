@@ -6,6 +6,19 @@ import { LoadZoomLevel, SaveZoomLevel } from '../../bindings/xrest/cmd/wails/set
 
 export type ThemeMode = 'auto' | 'light' | 'dark'
 
+export const MIN_VERSIONS_LIMIT = 5
+export const MAX_VERSIONS_LIMIT = 50
+export const VERSIONS_LIMIT_STEP = 5
+export const DEFAULT_VERSIONS_LIMIT = 50
+
+// Clamps to the 5..50 range and snaps to the nearest step of 5.
+export function normalizeVersionsLimit(value: unknown): number {
+    const n = Number(value)
+    if (!Number.isFinite(n)) return DEFAULT_VERSIONS_LIMIT
+    const clamped = Math.min(MAX_VERSIONS_LIMIT, Math.max(MIN_VERSIONS_LIMIT, n))
+    return Math.round(clamped / VERSIONS_LIMIT_STEP) * VERSIONS_LIMIT_STEP
+}
+
 export const useSettingsStore = defineStore('settings', () => {
     const mode = useColorMode({
         emitAuto: true,
@@ -14,6 +27,13 @@ export const useSettingsStore = defineStore('settings', () => {
 
     const layout = ref<'horizontal' | 'vertical'>('horizontal')
     const zoomLevel = ref(0)
+    const versionsLimit = ref(DEFAULT_VERSIONS_LIMIT)
+
+    const setVersionsLimit = (value: number) => {
+        if (!Number.isFinite(value)) return
+        versionsLimit.value = normalizeVersionsLimit(value)
+        saveSettings()
+    }
 
     const applyZoom = (level: number) => {
         // Base is 14px. Each zoom level adjusts by 1px (or custom factor like 1.5px)
@@ -35,6 +55,9 @@ export const useSettingsStore = defineStore('settings', () => {
                 }
                 if (settings?.layout) {
                     layout.value = settings.layout as any
+                }
+                if (settings?.versionsLimit !== undefined && settings?.versionsLimit !== null) {
+                    versionsLimit.value = normalizeVersionsLimit(settings.versionsLimit)
                 }
             }
 
@@ -70,7 +93,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const saveSettings = async () => {
         try {
             const themeToSave = mode.value === 'auto' ? 'system' : mode.value
-            localStorage.setItem('xrest_settings', JSON.stringify({ theme: themeToSave, layout: layout.value }))
+            localStorage.setItem('xrest_settings', JSON.stringify({ theme: themeToSave, layout: layout.value, versionsLimit: versionsLimit.value }))
         } catch (error) {
             console.error('Failed to save settings:', error)
         }
@@ -88,7 +111,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     // Watch for changes and save to disk
-    watch([mode, layout], () => {
+    watch([mode, layout, versionsLimit], () => {
         saveSettings()
     })
 
@@ -96,8 +119,10 @@ export const useSettingsStore = defineStore('settings', () => {
         mode,
         zoomLevel,
         layout,
+        versionsLimit,
         loadSettings,
         setZoomLevel,
+        setVersionsLimit,
     }
 })
 

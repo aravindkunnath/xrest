@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { useSettingsStore } from "@/stores/settings";
+import { computed, ref } from "vue";
+import { useSettingsStore, MIN_VERSIONS_LIMIT, MAX_VERSIONS_LIMIT, VERSIONS_LIMIT_STEP } from "@/stores/settings";
 import { Label } from "@/components/ui/label";
 import {
     Select,
@@ -43,6 +43,18 @@ const resetZoom = () => {
 
 // Define scale steps for Apple-like display rendering
 const zoomSteps = [-2, -1, 0, 1, 2, 3, 4, 5];
+
+// Version history retention: 5..50 in increments of 5.
+const versionsLimitOptions = Array.from(
+    { length: (MAX_VERSIONS_LIMIT - MIN_VERSIONS_LIMIT) / VERSIONS_LIMIT_STEP + 1 },
+    (_, i) => MIN_VERSIONS_LIMIT + i * VERSIONS_LIMIT_STEP,
+);
+
+// reka-ui selects match values as strings; drive them with the numeric setting.
+const versionsLimitModel = computed({
+    get: () => String(settingsStore.versionsLimit),
+    set: (value: any) => settingsStore.setVersionsLimit(Number(value)),
+});
 </script>
 
 <template>
@@ -202,6 +214,44 @@ const zoomSteps = [-2, -1, 0, 1, 2, 3, 4, 5];
                                     <span class="font-mono font-medium"
                                         >{{ 100 + settingsStore.zoomLevel * 10 }}%</span
                                     >
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Version History Section -->
+                    <section class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div>
+                            <h2 class="text-base font-semibold">Version History</h2>
+                            <p class="text-muted-foreground text-xs mt-1">
+                                Control how many request versions are kept per
+                                endpoint.
+                            </p>
+                        </div>
+
+                        <div class="md:col-span-2 space-y-6">
+                            <div class="space-y-3">
+                                <Label for="versions-limit-select" class="text-xs font-medium"
+                                    >Versions Kept per Endpoint</Label
+                                >
+                                <Select v-model="versionsLimitModel">
+                                    <SelectTrigger id="versions-limit-select" class="w-[240px]">
+                                        <SelectValue placeholder="Select version limit" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem
+                                            v-for="opt in versionsLimitOptions"
+                                            :key="opt"
+                                            :value="String(opt)"
+                                        >
+                                            {{ opt }} versions
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p class="text-xs text-muted-foreground">
+                                    When a new version is added, the oldest
+                                    versions beyond this limit are removed
+                                    (first-in, first-out).
                                 </p>
                             </div>
                         </div>

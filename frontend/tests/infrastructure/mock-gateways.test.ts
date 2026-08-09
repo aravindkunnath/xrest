@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { MockCollectionGateway } from "@/infrastructure/collection/mock-gateway"
 import { MockServiceGateway } from "@/infrastructure/service/mock-gateway"
+import { MockVersionGateway } from "@/infrastructure/versions/mock-gateway"
 import type { Service } from "@/types"
 
 describe('Mock Gateways', () => {
@@ -127,6 +128,97 @@ describe('Mock Gateways', () => {
             const loaded = await gateway.loadServices()
             expect(loaded).toHaveLength(1)
             expect(loaded[0].name).toBe('Swagger Service')
+        })
+    })
+
+    describe('MockVersionGateway', () => {
+        const config = (url: string) => ({
+            method: 'GET',
+            url,
+            authenticated: false,
+            authType: 'none',
+            params: [],
+            headers: [],
+            body: '',
+            preflight: null as any,
+        })
+
+        it('should return empty versions initially', async () => {
+            const gateway = new MockVersionGateway()
+            const versions = await gateway.getVersions('s1', 'e1', 50)
+            expect(versions).toEqual([])
+        })
+
+        it('should auto-increment versions per endpoint and return newest first', async () => {
+            const gateway = new MockVersionGateway()
+            await gateway.addVersion('s1', 'e1', config('/a'), 50)
+            const v2 = await gateway.addVersion('s1', 'e1', config('/b'), 50)
+            const other = await gateway.addVersion('s1', 'e2', config('/x'), 50)
+
+            expect(v2.version).toBe(2)
+            expect(other.version).toBe(1)
+
+            const versions = await gateway.getVersions('s1', 'e1', 50)
+            expect(versions.map(v => v.version)).toEqual([2, 1])
+        })
+
+        it('should preserve the config incl. preflight on round trip', async () => {
+            const gateway = new MockVersionGateway()
+            const cfg: any = {
+                method: 'POST',
+                url: '/auth',
+                authenticated: true,
+                authType: 'bearer',
+                params: [{ name: 'q', value: '1', enabled: true }],
+                headers: [{ name: 'X-Key', value: 'abc', enabled: true }],
+                body: '{"a":1}',
+                preflight: {
+                    method: 'POST',
+                    url: 'https://auth.example.com/token',
+                    body: '{}',
+                    tokenKey: 'access_token',
+                    tokenHeader: 'Authorization',
+                    enabled: true,
+                },
+            }
+            await gateway.addVersion('s1', 'e1', cfg, 50)
+            const versions = await gateway.getVersions('s1', 'e1', 50)
+            expect(versions[0]).toMatchObject({
+                version: 1,
+                config: cfg,
+            })
+            expect(versions[0].config.preflight.tokenKey).toBe('access_token')
+        })
+
+        it('should FIFO prune when exceeding maxVersions', async () => {
+            const gateway = new MockVersionGateway()
+            for (let i = 0; i < 6; i++) {
+                await gateway.addVersion('s1', 'e1', config(`/item-${i}`), 3)
+            }
+            const versions = await gateway.getVersions('s1', 'e1', 50)
+            expect(versions).toHaveLength(3)
+            expect(versions.map(v => v.version)).toEqual([6, 5, 4])
+        })
+
+        it('should respect the limit on reads', async () => {
+            const gateway = new MockVersionGateway()
+            for (let i = 0; i < 5; i++) {
+                await gateway.addVersion('s1', 'e1', config(`/item-${i}`), 50)
+            }
+            const limited = await gateway.getVersions('s1', 'e1', 2)
+            expect(limited.map(v => v.version)).toEqual([5, 4])
+        })
+
+        it('should clear only the targeted endpoint and persist across instances', async () => {
+            const gateway = new MockVersionGateway()
+            await gateway.addVersion('s1', 'e1', config('/a'), 50)
+            await gateway.addVersion('s1', 'e2', config('/b'), 50)
+
+            await gateway.clearVersions('s1', 'e1')
+
+            const reloaded = new MockVersionGateway()
+            expect(await reloaded.getVersions('s1', 'e1', 50)).toEqual([])
+            expect(await reloaded.getVersions('s1', 'e2', 50)).toHaveLength(1)
         })
     })
 })

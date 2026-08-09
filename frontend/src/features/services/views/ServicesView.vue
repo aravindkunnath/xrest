@@ -340,7 +340,6 @@ const handleSelectEndpoint = (endpoint: any, knownServiceId?: string) => {
         apiKeyLocation: "header",
       },
       preflight: preflightConfig,
-      versions: endpoint.versions || [],
     });
   }
 };
@@ -404,7 +403,7 @@ const handleSaveRequest = async (payload: {
       (e) => e.id === payload.tab.endpointId,
     );
     if (finalEndpoint) {
-      payload.tab.versions = finalEndpoint.versions || [];
+      payload.tab.lastVersion = finalEndpoint.lastVersion;
     }
 
     toast.success("Endpoint saved", {
