@@ -8,12 +8,23 @@ import { AdapterFactory } from "@/infrastructure/adapter-factory";
 export const useServicesStore = defineStore("services", () => {
   const services = ref<Service[]>([]);
   const isLoading = ref(false);
+  const selectedServiceId = ref<string>("");
   const serviceManager = new ServiceManager(AdapterFactory.getServiceGateway());
 
   const loadServices = async () => {
     isLoading.value = true;
     try {
       services.value = await serviceManager.getAllServices();
+      if (services.value.length > 0) {
+        const stillExists = services.value.some(
+          (s) => s.id === selectedServiceId.value,
+        );
+        if (!stillExists) {
+          selectedServiceId.value = services.value[0].id;
+        }
+      } else {
+        selectedServiceId.value = "";
+      }
     } catch (error) {
       console.error("Failed to load services:", error);
       toast.error("Failed to load services", {
@@ -46,6 +57,7 @@ export const useServicesStore = defineStore("services", () => {
         commitMessage,
       );
       services.value = updated;
+      selectedServiceId.value = service.id;
     } catch (error) {
       console.error("Failed to add service:", error);
       toast.error("Failed to add service");
@@ -75,10 +87,17 @@ export const useServicesStore = defineStore("services", () => {
     try {
       const updated = await serviceManager.deleteService(services.value, index);
       services.value = updated;
+      if (selectedServiceId.value && !services.value.some((s) => s.id === selectedServiceId.value)) {
+        selectedServiceId.value = services.value[0]?.id || "";
+      }
     } catch (error) {
       console.error("Failed to delete service:", error);
       toast.error("Failed to delete service");
     }
+  };
+
+  const setSelectedService = (serviceId: string) => {
+    selectedServiceId.value = serviceId;
   };
 
   const setSelectedEnvironment = async (serviceId: string, env: string) => {
@@ -216,11 +235,13 @@ export const useServicesStore = defineStore("services", () => {
   return {
     services,
     isLoading,
+    selectedServiceId,
     loadServices,
     saveServices,
     addService,
     updateService,
     deleteService,
+    setSelectedService,
     setSelectedEnvironment,
     getGitStatus,
     initGit,

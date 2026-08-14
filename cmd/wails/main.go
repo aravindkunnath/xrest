@@ -58,7 +58,7 @@ func main() {
 		Height:    618,
 		Frameless: false,
 		Mac: application.MacWindow{
-			InvisibleTitleBarHeight: 50,
+			InvisibleTitleBarHeight: 40,
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar: application.MacTitleBar{
 				AppearsTransparent: true,

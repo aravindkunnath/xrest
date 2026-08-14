@@ -14,7 +14,7 @@ const modelValue = defineModel<string>({ default: '' })
       v-model="modelValue"
       type="text" 
       placeholder="Search requests..." 
-      class="h-7.5 pl-8 pr-10 bg-muted/20 text-sm text-foreground placeholder:text-muted-foreground focus:bg-background"
+      class="h-6 pl-8 pr-10 bg-muted/20 text-sm text-foreground placeholder:text-muted-foreground focus:bg-background"
     />
     <div class="absolute inset-y-0 right-2.5 flex items-center pointer-events-none">
       <kbd class="hidden sm:inline-flex h-4 items-center gap-0.5 rounded border border-border bg-muted px-1 font-mono text-[11px] font-medium text-muted-foreground shadow-3xs">
