@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
 import ServiceSidebar from "@/features/services/components/ServiceSidebar.vue";
 import { createPinia, setActivePinia } from "pinia";
 import { useServicesStore } from "@/stores/services";
@@ -80,20 +81,24 @@ describe("ServiceSidebar.vue", () => {
         store.services = mockServices as any;
     });
 
-    it("should render all loaded services in the dropdown selector", () => {
+    it("should render the active service's endpoints based on the store selection", async () => {
+        const store = useServicesStore();
+        store.selectedServiceId = "service-1";
+
         const wrapper = mount(ServiceSidebar, {
             global: {
                 plugins: [pinia],
             },
         });
 
-        const select = wrapper.find("select");
-        expect(select.exists()).toBe(true);
+        expect(wrapper.text()).toContain("Get User");
+        expect(wrapper.text()).toContain("Create User");
 
-        const options = select.findAll("option");
-        expect(options.length).toBe(2);
-        expect(options[0].text()).toBe("User Microservice");
-        expect(options[1].text()).toBe("Payment Gateway");
+        store.setSelectedService("service-2");
+        await nextTick();
+
+        expect(wrapper.text()).not.toContain("Get User");
+        expect(wrapper.text()).toContain("No endpoints found");
     });
 
     it("should display endpoints with HTTP method tags and version badges on the right", () => {
@@ -144,10 +149,10 @@ describe("ServiceSidebar.vue", () => {
     });
 
     it("should render Git Init button when active service has no Git repo", async () => {
+        const store = useServicesStore();
+        store.setSelectedService("service-2");
+
         const wrapper = mount(ServiceSidebar, {
-            props: {
-                selectedServiceId: "service-2",
-            },
             global: {
                 plugins: [pinia],
             },
@@ -157,17 +162,17 @@ describe("ServiceSidebar.vue", () => {
         expect(wrapper.text()).toContain("No Git repository associated with this service directory.");
     });
 
-    it("should emit add-service event when add service button is clicked", async () => {
+    it("should emit add-endpoint event when add endpoint button is clicked", async () => {
         const wrapper = mount(ServiceSidebar, {
             global: {
                 plugins: [pinia],
             },
         });
 
-        const addServiceBtn = wrapper.find('[data-test="add-service-btn"]');
-        expect(addServiceBtn.exists()).toBe(true);
+        const addEndpointBtn = wrapper.find('button[title="Add Endpoint"]');
+        expect(addEndpointBtn.exists()).toBe(true);
 
-        await addServiceBtn.trigger("click");
-        expect(wrapper.emitted("add-service")).toBeTruthy();
+        await addEndpointBtn.trigger("click");
+        expect(wrapper.emitted("add-endpoint")).toBeTruthy();
     });
 });

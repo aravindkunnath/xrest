@@ -21,8 +21,8 @@ test.describe("Import from cURL E2E Suite", () => {
   });
 
   test("should open cURL import dialog, paste a command, and import an endpoint", async ({ page }) => {
-    // Wait for services to load and render in the explorer dropdown
-    await expect(page.locator('option[value="curl-service"]')).toBeAttached({
+    // Wait for services to load and the sidebar to render
+    await expect(page.locator('button[title="Import"]')).toBeAttached({
       timeout: 10000,
     });
 
