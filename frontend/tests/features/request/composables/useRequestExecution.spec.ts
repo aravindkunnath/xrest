@@ -211,24 +211,32 @@ describe('useRequestExecution - Unsafe Environment Flow', () => {
             expect(RequestGateway.Send).toHaveBeenCalledWith(expect.any(Object))
         })
 
-        it('should not allow proceed when countdown is active', async () => {
+        it('should proceed with request immediately when accepted during countdown', async () => {
             mockIsUnsafeEnv.mockReturnValue(true)
+            ; (RequestGateway.Send as any).mockResolvedValue({
+                statusCode: 200,
+                statusText: 'OK',
+                timeTaken: 120 * 1000000,
+                size: 1024,
+                body: '{"success":true}',
+                responseHeaders: {}
+            })
 
             const { handleSendRequest, proceedWithUnsafeRequest, unsafeCountdown } = useRequestExecution(isUnsafeDialogOpen)
 
             // Start request
             handleSendRequest(mockTab, false)
             expect(isUnsafeDialogOpen.value).toBe(true)
-
-            // Countdown is at 5
             expect(unsafeCountdown.value).toBe(5)
 
-            // Attempt to accept early
+            // Accept immediately (countdown still active)
             await proceedWithUnsafeRequest(handleSendRequest)
 
-            // Request should not be sent, dialog remains open
-            expect(RequestGateway.Send).not.toHaveBeenCalled()
-            expect(isUnsafeDialogOpen.value).toBe(true)
+            // Dialog should close
+            expect(isUnsafeDialogOpen.value).toBe(false)
+
+            // Request should be sent with skipWarning=true
+            expect(RequestGateway.Send).toHaveBeenCalledWith(expect.any(Object))
         })
 
         it('should clean up state when user cancels', async () => {

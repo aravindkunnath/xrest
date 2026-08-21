@@ -36,7 +36,6 @@ export const useRequestExecution = (isUnsafeDialogOpen: any) => {
    * @param handleSendRequestFn - The send request function to call
    */
   const proceedWithUnsafeRequest = (handleSendRequestFn: Function) => {
-    if (unsafeCountdown.value > 0) return
     if (unsafeTimer) clearInterval(unsafeTimer)
     isUnsafeDialogOpen.value = false
     if (unsafeTabToProceed.value) {
