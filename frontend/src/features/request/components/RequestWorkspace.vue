@@ -24,9 +24,11 @@ import { useRequestExecution } from "@/features/request/composables/useRequestEx
 import { useServiceSettings } from "@/features/services/composables/useServiceSettings";
 import { useTabManager } from "@/composables/useTabManager";
 import { useSettingsStore } from "@/stores/settings";
+import { useVersionsStore } from "@/stores/versions";
 import { toast } from "vue-sonner";
 
 const settingsStore = useSettingsStore();
+const versionsStore = useVersionsStore();
 
 const props = defineProps<{
     items: any[]; // Services or Collections
@@ -162,8 +164,9 @@ const handleSaveRequest = async (tab: any) => {
         body: tab.body.content,
         preflight: tab.preflight,
         lastVersion: endpoint.lastVersion,
-        versions: endpoint.versions ? [...endpoint.versions] : [],
     };
+    // Version history lives in SQLite — it must never travel in save payloads.
+    delete updatedEndpoint.versions;
 
     const isChanged =
         endpoint.method !== updatedEndpoint.method ||
@@ -175,21 +178,31 @@ const handleSaveRequest = async (tab: any) => {
 
     if (isChanged) {
         const nextVersionNum = (endpoint.lastVersion || 0) + 1;
-        const newVersion = {
-            version: nextVersionNum,
-            config: {
-                method: updatedEndpoint.method,
-                url: updatedEndpoint.url,
-                params: JSON.parse(JSON.stringify(updatedEndpoint.params)),
-                headers: JSON.parse(JSON.stringify(updatedEndpoint.headers)),
-                body: updatedEndpoint.body,
-                preflight: updatedEndpoint.preflight ? JSON.parse(JSON.stringify(updatedEndpoint.preflight)) : null,
-            },
-            lastUpdated: Date.now(),
+        const config = {
+            method: updatedEndpoint.method,
+            url: updatedEndpoint.url,
+            authenticated: Boolean(endpoint.authenticated),
+            authType: endpoint.authType || "none",
+            params: JSON.parse(JSON.stringify(updatedEndpoint.params)),
+            headers: JSON.parse(JSON.stringify(updatedEndpoint.headers)),
+            body: updatedEndpoint.body,
+            preflight: updatedEndpoint.preflight ? JSON.parse(JSON.stringify(updatedEndpoint.preflight)) : null,
         };
+        // Version history lives in SQLite — never in the endpoint YAML — and is
+        // recorded through the versions store. Collections (c-*) are deprecated.
+        if (!tab.serviceId?.startsWith("c-")) {
+            try {
+                await versionsStore.addVersion(
+                    tab.serviceId,
+                    tab.endpointId,
+                    config,
+                    settingsStore.versionsLimit,
+                );
+            } catch (err) {
+                console.error("Failed to record request version:", err);
+            }
+        }
         updatedEndpoint.lastVersion = nextVersionNum;
-        updatedEndpoint.versions.push(newVersion);
-        tab.versions = updatedEndpoint.versions;
     }
 
     const updatedItem = {
@@ -247,7 +260,7 @@ const isPreflightEnabled = (preflight: any) => {
 };
 
 const getVersionsCount = (tab: any) => {
-    return tab.versions?.length || 0;
+    return versionsStore.getCount(tab.endpointId);
 };
 </script>
 

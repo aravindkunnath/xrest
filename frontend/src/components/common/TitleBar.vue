@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { Button } from "@/components/ui/button"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -10,7 +18,7 @@ import { useDialogState } from "@/composables/useDialogState"
 import EnvironmentSelector from "@/features/environments/components/EnvironmentSelector.vue"
 import { useServicesStore } from "@/stores/services"
 import { useTabsStore } from "@/stores/tabs"
-import { RiSettings4Line } from '@remixicon/vue'
+import { RiArrowRightSLine, RiFolderLine, RiSettings4Line } from '@remixicon/vue'
 import { System, Window } from "@wailsio/runtime"
 import { computed, onMounted, ref } from 'vue'
 import SearchBar from './SearchBar.vue'
@@ -31,7 +39,7 @@ const checkIsMac = (): boolean => {
 const searchQuery = ref('')
 const isMaximized = ref(false)
 const isMac = ref(checkIsMac())
-const { openSettingsDialog } = useDialogState()
+const { openSettingsDialog, openServiceDialog } = useDialogState()
 
 const servicesStore = useServicesStore()
 const tabsStore = useTabsStore()
@@ -51,6 +59,25 @@ const isUnsafeEnv = computed(() => {
   const env = activeService.value.environments.find((e) => e.name === envName)
   return env?.isUnsafe ?? false
 })
+
+const currentServiceId = computed(() => {
+  if (servicesStore.selectedServiceId) return servicesStore.selectedServiceId
+  return servicesStore.services[0]?.id || ''
+})
+
+const selectedServiceName = computed(() => {
+  if (!servicesStore.services?.length) return ''
+  return servicesStore.services.find((s) => s.id === currentServiceId.value)?.name || servicesStore.services[0].name
+})
+
+const handleSelectService = (value: unknown) => {
+  if (typeof value !== 'string' || !value) return
+  if (value === '__new__') {
+    openServiceDialog()
+    return
+  }
+  servicesStore.setSelectedService(value)
+}
 
 const toggleMaximize = async () => {
   try {
@@ -100,37 +127,64 @@ onMounted(async () => {
     <div class="titlebar-section left-section flex-1 gap-2">
       <div v-if="isMac" class="mac-traffic-lights-spacer"></div>
 
-      <!-- 1. XRest Brand -->
-      <span class="font-bold text-xs tracking-tight text-foreground select-none px-1">
-        XRest
-      </span>
+      <!-- 1. Service Selector (replaces workspace selector) -->
+      <Select :model-value="currentServiceId" @update:model-value="handleSelectService">
+        <SelectTrigger
+          class="h-6 px-2 text-sm font-semibold border-0 focus-visible:ring-0 hover:bg-accent hover:text-accent-foreground flex items-center gap-1.5 rounded-md transition-colors text-foreground"
+        >
+          <SelectValue placeholder="Select Service">
+            <div class="flex items-center gap-1.5 truncate max-w-[200px]">
+              <RiFolderLine class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span class="truncate font-semibold">{{ selectedServiceName || 'No Service' }}</span>
+            </div>
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent class="z-[1100]">
+          <SelectItem
+            v-for="service in servicesStore.services"
+            :key="service.id"
+            :value="service.id"
+            class="text-sm cursor-pointer"
+          >
+            {{ service.name }}
+          </SelectItem>
+          <SelectSeparator />
+          <SelectItem value="__new__" class="text-sm text-primary font-medium cursor-pointer">
+            + New Service
+          </SelectItem>
+        </SelectContent>
+      </Select>
 
-      <!-- Divider -->
-      <div class="h-4 w-px bg-border shrink-0 my-auto"></div>
-
-      <!-- 2. SearchBar -->
-      <SearchBar v-model="searchQuery" class="!mr-0" />
-
-      <!-- Divider -->
-      <div class="h-4 w-px bg-border shrink-0 my-auto"></div>
+      <!-- 2. Breadcrumb Separator -->
+      <RiArrowRightSLine class="h-4 w-4 text-muted-foreground shrink-0" />
 
       <!-- 3. Environment Selector -->
       <EnvironmentSelector />
+    </div>
 
-      <!-- Divider -->
-      <div class="h-4 w-px bg-border shrink-0 my-auto"></div>
+    <!-- Center Display -->
+    <div class="center-section titlebar-section">
+      <span class="truncate text-sm font-medium text-foreground select-none">
+        XRest<span v-if="selectedServiceName" class="text-muted-foreground"> · {{ selectedServiceName }}</span>
+      </span>
+    </div>
 
-      <!-- 4. Settings Icon -->
+    <!-- Right Utility & Status Section -->
+    <div class="titlebar-section right-section flex-1 gap-2 justify-end">
+      <!-- 4. Quick Search -->
+      <SearchBar v-model="searchQuery" class="mr-0!" />
+
+      <!-- 5. Settings Icon -->
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
             <Button
               variant="ghost"
-              size="icon-lg"
-              class="h-7.5 w-7.5 cursor-pointer text-muted-foreground hover:text-foreground"
+              size="icon-sm"
+              class="h-6 w-6 cursor-pointer text-muted-foreground hover:text-foreground focus-visible:ring-0"
               @click="goToSettings"
             >
-              <RiSettings4Line class="h-4.5 w-4.5" />
+              <RiSettings4Line class="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent
@@ -141,6 +195,9 @@ onMounted(async () => {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
+
+      <!-- Mirrors the mac traffic-light spacer so the center label stays truly centered -->
+      <div v-if="!isMac" class="right-spacer"></div>
     </div>
   </header>
 </template>
@@ -151,7 +208,7 @@ onMounted(async () => {
   top: 0;
   left: 0;
   right: 0;
-  height: 44px;
+  height: 40px;
   background: var(--background);
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -188,6 +245,22 @@ onMounted(async () => {
 
 .right-section {
   gap: 12px;
+}
+
+/* Absolutely centered active view indicator */
+.center-section {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 40%;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.center-section span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mac-traffic-lights-spacer {

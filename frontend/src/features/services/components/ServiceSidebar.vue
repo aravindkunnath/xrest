@@ -21,12 +21,7 @@ import {
 } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-const props = defineProps<{
-    selectedServiceId?: string;
-}>();
-
 const emit = defineEmits<{
-    (e: "select-service", serviceId: string): void;
     (e: "select-endpoint", endpoint: Endpoint): void;
     (e: "select-service-settings", service: Service): void;
     (e: "import-curl", service: Service): void;
@@ -34,7 +29,6 @@ const emit = defineEmits<{
     (e: "add-endpoint", service: Service): void;
     (e: "endpoint-context", event: MouseEvent, endpoint: Endpoint): void;
     (e: "select-environments", serviceId: string): void;
-    (e: "add-service"): void;
 }>();
 
 const servicesStore = useServicesStore();
@@ -62,8 +56,8 @@ const isImportPopoverOpen = ref(false);
 
 const activeService = computed(() => {
     if (!servicesStore.services || servicesStore.services.length === 0) return null;
-    if (props.selectedServiceId) {
-        return servicesStore.services.find((s) => s.id === props.selectedServiceId) || servicesStore.services[0];
+    if (servicesStore.selectedServiceId) {
+        return servicesStore.services.find((s) => s.id === servicesStore.selectedServiceId) || servicesStore.services[0];
     }
     return servicesStore.services[0];
 });
@@ -97,41 +91,11 @@ const getMethodColor = (method: string) => {
             return "text-muted-foreground font-bold";
     }
 };
-
-const handleServiceChange = (event: Event) => {
-    const target = event.target as HTMLSelectElement;
-    if (target && target.value) {
-        emit("select-service", target.value);
-    }
-};
 </script>
 
 <template>
     <div
         class="flex flex-col h-full min-h-0 bg-sidebar border-r border-border select-none w-full text-sidebar-foreground">
-        <!-- Service Selector Dropdown Header -->
-        <div class="p-3 border-b border-border flex flex-col gap-1.5 shrink-0">
-            <div class="flex items-center justify-between">
-                <label class="text-[12px] text-primary font-bold uppercase tracking-wider">
-                    Service
-                </label>
-                <button @click="emit('add-service')"
-                    class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    title="Add Service" data-test="add-service-btn">
-                    <Plus class="h-3.5 w-3.5" />
-                </button>
-            </div>
-            <div class="relative flex items-center">
-                <select :value="activeService?.id || ''" @change="handleServiceChange"
-                    class="w-full bg-background border border-input text-foreground rounded-md py-1.5 pl-3 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring appearance-none cursor-pointer font-medium">
-                    <option v-for="service in servicesStore.services" :key="service.id" :value="service.id">
-                        {{ service.name }}
-                    </option>
-                </select>
-                <ChevronDown class="absolute right-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-            </div>
-        </div>
-
         <div v-if="activeService" class="flex-1 flex flex-col min-h-0 overflow-hidden">
             <!-- Scrollable Endpoints Area -->
             <div class="flex-1 overflow-y-auto p-2 space-y-4">

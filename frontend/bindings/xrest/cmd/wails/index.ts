@@ -8,6 +8,7 @@ import * as RequestGateway from "./requestgateway.js";
 import * as SecretsGateway from "./secretsgateway.js";
 import * as ServiceGateway from "./servicegateway.js";
 import * as SettingsGateway from "./settingsgateway.js";
+import * as VersionGateway from "./versiongateway.js";
 export {
     CollectionGateway,
     GreetService,
@@ -15,5 +16,6 @@ export {
     RequestGateway,
     SecretsGateway,
     ServiceGateway,
-    SettingsGateway
+    SettingsGateway,
+    VersionGateway
 };

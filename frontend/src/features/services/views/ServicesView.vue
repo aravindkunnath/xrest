@@ -23,7 +23,6 @@ import { ArrowRight } from "@lucide/vue";
 import { useRouter } from "vue-router";
 
 const router = useRouter();
-const selectedServiceId = ref<string>("");
 
 // Dialogs
 import AddServiceDialog from "@/features/dialogs/AddServiceDialog.vue";
@@ -340,7 +339,6 @@ const handleSelectEndpoint = (endpoint: any, knownServiceId?: string) => {
         apiKeyLocation: "header",
       },
       preflight: preflightConfig,
-      versions: endpoint.versions || [],
     });
   }
 };
@@ -404,7 +402,7 @@ const handleSaveRequest = async (payload: {
       (e) => e.id === payload.tab.endpointId,
     );
     if (finalEndpoint) {
-      payload.tab.versions = finalEndpoint.versions || [];
+      payload.tab.lastVersion = finalEndpoint.lastVersion;
     }
 
     toast.success("Endpoint saved", {
@@ -423,8 +421,6 @@ const handleSaveRequest = async (payload: {
       <!-- Resizable Service Sidebar -->
       <ResizablePanel :default-size="20" :min-size="15" :max-size="40">
         <ServiceSidebar
-          :selected-service-id="selectedServiceId"
-          @select-service="(id) => (selectedServiceId = id)"
           @select-endpoint="handleSelectEndpoint"
           @select-service-settings="handleSelectServiceSettings"
           @import-curl="handleImportCurl"
@@ -432,7 +428,6 @@ const handleSaveRequest = async (payload: {
           @add-endpoint="openEndpointDialog"
           @endpoint-context="handleEndpointContext"
           @select-environments="() => router.push('/environments')"
-          @add-service="isServiceDialogOpen = true"
         />
       </ResizablePanel>
 

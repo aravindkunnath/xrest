@@ -4,6 +4,8 @@ import { ServiceGateway } from "@/infrastructure/service/gateway"
 import { MockServiceGateway } from "@/infrastructure/service/mock-gateway"
 import { CollectionGateway } from "@/infrastructure/collection/gateway"
 import { MockCollectionGateway } from "@/infrastructure/collection/mock-gateway"
+import { VersionGateway } from "@/infrastructure/versions/gateway"
+import { MockVersionGateway } from "@/infrastructure/versions/mock-gateway"
 
 describe('AdapterFactory', () => {
     const originalWails = (window as any).wails
@@ -21,9 +23,11 @@ describe('AdapterFactory', () => {
 
         const serviceGateway = AdapterFactory.getServiceGateway()
         const collectionGateway = AdapterFactory.getCollectionGateway()
+        const versionGateway = AdapterFactory.getVersionGateway()
 
         expect(serviceGateway).toBeInstanceOf(MockServiceGateway)
         expect(collectionGateway).toBeInstanceOf(MockCollectionGateway)
+        expect(versionGateway).toBeInstanceOf(MockVersionGateway)
     })
 
     it('should return Wails gateways when window.wails is defined', () => {
@@ -31,8 +35,10 @@ describe('AdapterFactory', () => {
 
         const serviceGateway = AdapterFactory.getServiceGateway()
         const collectionGateway = AdapterFactory.getCollectionGateway()
+        const versionGateway = AdapterFactory.getVersionGateway()
 
         expect(serviceGateway).toBeInstanceOf(ServiceGateway)
         expect(collectionGateway).toBeInstanceOf(CollectionGateway)
+        expect(versionGateway).toBeInstanceOf(VersionGateway)
     })
 })

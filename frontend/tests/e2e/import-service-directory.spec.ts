@@ -48,9 +48,9 @@ test.describe("Import Service from Directory E2E Suite", () => {
   });
 
   test("should trigger directory import from Add Service dialog", async ({ page }) => {
-    // Click Add Service button
-    const addServiceBtn = page.locator('button[title="Add Service"]');
-    await addServiceBtn.click();
+    // Open the Add Service dialog via the titlebar service selector ("+ New Service")
+    await page.locator('[role="combobox"]').first().click();
+    await page.locator('[role="option"]', { hasText: "New Service" }).click();
 
     // Verify Add New Service dialog opens
     await expect(page.locator("text=Add New Service")).toBeVisible();

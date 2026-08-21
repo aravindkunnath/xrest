@@ -67,10 +67,10 @@ const handleSelectEnv = (envName: unknown) => {
       @update:model-value="handleSelectEnv"
     >
       <SelectTrigger
-        class="h-7.5 px-2 text-xs font-medium border-muted-foreground/20 hover:bg-accent hover:text-accent-foreground flex items-center gap-1.5 rounded-md transition-colors"
+        class="h-6 px-2 text-xs font-medium border-0 focus-visible:ring-0 hover:bg-accent hover:text-accent-foreground flex items-center gap-1.5 rounded-md transition-colors"
         :class="
           isCurrentEnvUnsafe
-            ? 'border-destructive/60 bg-destructive/15 text-destructive font-semibold hover:bg-destructive/20'
+            ? 'bg-destructive/15 text-destructive font-semibold hover:bg-destructive/20'
             : ''
         "
       >
@@ -98,7 +98,7 @@ const handleSelectEnv = (envName: unknown) => {
     </Select>
     <div
       v-else
-      class="h-7.5 px-2 flex items-center gap-1 text-xs text-muted-foreground border border-dashed rounded-md"
+      class="h-6 px-2 flex items-center gap-1 text-xs text-muted-foreground border border-dashed rounded-md"
     >
       <Globe class="h-3.5 w-3.5" />
       <span>No Env</span>
