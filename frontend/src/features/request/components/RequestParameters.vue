@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import { RequestParams, serializeForBulkEdit } from "@/core/utils/request-param-utils.ts";
 import { cn } from "@/core/utils/utils";
-import { Edit3, Plus, Table as TableIcon, Trash2, X } from "@lucide/vue";
+import { Edit3, Plus, Table as TableIcon, Trash2 } from "@lucide/vue";
 import { ref, watch } from "vue";
 import InterpolatedInput from "@/components/editor/InterpolatedInput.vue";
 
@@ -133,14 +133,14 @@ watch(
 <template>
     <div class="space-y-2 p-4">
         <!-- Header Toolbar -->
-        <div class="flex items-center justify-between pb-1">
+        <div class="flex items-center justify-between pb-1 w-[70%]">
             <div class="flex items-center gap-2">
                 <span class="text-xs font-semibold text-foreground/80 tracking-tight">
                     Parameters
                 </span>
             </div>
 
-            <div class="flex items-center gap-1">
+            <div class="flex gap-1">
                 <!-- <Button
                     variant="ghost"
                     size="sm"
@@ -177,59 +177,58 @@ watch(
             </div>
         </div>
 
-        <!-- Key-Value Table View -->
-        <div v-else class="rounded-md overflow-hidden ">
+        <div v-else class="overflow-hidden w-[70%]">
             <Table>
                 <TableHeader class="bg-muted/30">
-                    <TableRow class="hover:bg-transparent border-b">
+                    <TableRow>
                         <TableHead class="w-9 px-2 text-center h-8">
                             <span class="sr-only">Status</span>
                         </TableHead>
                         <TableHead
-                            class="text-[10px] uppercase font-bold text-muted-foreground tracking-wider h-8 px-3">
+                            class="text-[10px] uppercase font-bold text-muted-foreground tracking-wider h-8 px-3 text-center">
                             Key
                         </TableHead>
                         <TableHead
-                            class="text-[10px] uppercase font-bold text-muted-foreground tracking-wider h-8 border-l px-3">
+                            class="text-[10px] uppercase font-bold text-muted-foreground tracking-wider h-8  px-3 text-center">
                             Value
                         </TableHead>
-                        <TableHead class="w-9 px-0 text-center border-l h-8">
+                        <TableHead class="text-[10px] uppercase font-bold text-muted-foreground tracking-wider w-9 px-0 text-center h-8">
                             <span class="sr-only">Actions</span>
+                            Actions
                         </TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     <TableRow v-for="(row, rIdx) in items" :key="rIdx" :class="[
-                        'group h-8 transition-colors border-b last:border-b-0',
+                        'group h-8 transition-colors ',
                         !(row.isEnabled ?? row.enabled) ? 'bg-muted/10 text-muted-foreground/60' : 'hover:bg-muted/20'
                     ]">
-                        <TableCell class="p-0 text-center w-9 align-middle">
+                        <TableCell class="p-0 text-center w-[5%] align-middle">
                             <div class="flex items-center justify-center h-8">
                                 <Checkbox :checked="Boolean(row.isEnabled ?? row.enabled)" @update:checked="(val: any) => { if (row.isEnabled !== undefined) row.isEnabled = Boolean(val); if (row.enabled !== undefined) row.enabled = Boolean(val); }" class="scale-75" />
                             </div>
                         </TableCell>
-                        <TableCell class="p-0 align-middle">
+                        <TableCell class="p-2 w-[40%] align-middle">
                             <InterpolatedInput :model-value="(row.key ?? row.name) || ''" @update:model-value="(val: string) => { if (row.key !== undefined) row.key = val; if (row.name !== undefined) row.name = val; }" :variables="variables"
                                 :environment-name="environmentName" :class="cn(
-                                    'h-8 border-none focus-visible:ring-0 shadow-none px-3 font-mono text-xs bg-transparent',
+                                    'h-8 border-none focus-visible:ring-0 shadow-none px-3 text-xs bg-transparent',
                                     !(row.isEnabled ?? row.enabled) && 'opacity-50 line-through'
                                 )" placeholder="Key" />
                         </TableCell>
-                        <TableCell class="p-0 border-l align-middle">
+                        <TableCell class="p-2 w-[40%]  align-middle">
                             <InterpolatedInput v-model="row.value" :variables="variables"
                                 :environment-name="environmentName" :class="cn(
-                                    'h-8 border-none focus-visible:ring-0 shadow-none px-3 font-mono text-xs bg-transparent',
+                                    'h-8 border-none focus-visible:ring-0 shadow-none px-3 text-xs bg-transparent',
                                     !(row.isEnabled ?? row.enabled) && 'opacity-50 line-through'
                                 )" placeholder="Value" />
                         </TableCell>
-                        <TableCell class="p-0 text-center border-l w-9 align-middle">
+                        <TableCell class="p-0 text-center w-9 align-middle">
                             <div
                                 class="flex items-center justify-center h-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button @click="removeRow(Number(rIdx))"
-                                    class="p-1 text-muted-foreground hover:text-destructive rounded-sm hover:bg-muted transition-colors"
-                                    title="Delete row">
-                                    <X class="h-3.5 w-3.5" />
-                                </button>
+                                <Button 
+                                  @click="removeRow(Number(rIdx))" 
+                                  size="sm" 
+                                  variant="destructive">Delete</Button>
                             </div>
                         </TableCell>
                     </TableRow>

@@ -9,6 +9,8 @@ import (
 
 const serviceName = "xrest"
 
+var inMemoryStore = NewInMemorySecretStore()
+
 // SecretStore defines the interface for secure storage
 type SecretStore interface {
 	Get(key string) (string, error)
@@ -73,7 +75,7 @@ func (s *InMemorySecretStore) Delete(key string) error {
 // GetSecretStore returns the appropriate store depending on the environment
 func GetSecretStore() SecretStore {
 	if os.Getenv("XREST_ENV") == "test" || os.Getenv("XREST_ENV") == "ci" {
-		return NewInMemorySecretStore()
+		return inMemoryStore
 	}
 	return &KeyringSecretStore{}
 }
