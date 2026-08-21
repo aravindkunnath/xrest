@@ -323,7 +323,7 @@ watch(
                             </TooltipTrigger>
                             <TooltipContent
                                 side="top"
-                                class="w-fit max-w-[280px] break-all z-[100] shadow-xl border-primary/20 px-3 py-2"
+                                class="w-fit max-w-70 break-all z-[2000] shadow-xl border-primary/20 px-3 py-2"
                             >
                                 <div class="space-y-1.5 p-0.5">
                                     <div

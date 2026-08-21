@@ -40,7 +40,7 @@ const tokens = computed(() =>
               <span
                 :class="
                   cn(
-                    'px-0.5 rounded font-bold cursor-default transition-all mx-px whitespace-pre',
+                    'px-0.5 rounded font-bold cursor-default transition-all mx-px whitespace-pre z-10001',
                     token.isValid
                       ? 'text-primary bg-primary/10'
                       : 'text-destructive bg-destructive/10 underline decoration-destructive/30',
@@ -50,7 +50,7 @@ const tokens = computed(() =>
                 {{ token.content }}
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top" class="max-w-xs break-all z-[100]">
+            <TooltipContent side="top" class="max-w-xs break-all z-[2000]">
               <div class="space-y-1">
                 <div v-if="token.isValid" class="flex flex-col gap-1">
                   <div class="flex items-center justify-between gap-4">
