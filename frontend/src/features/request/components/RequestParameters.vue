@@ -178,7 +178,7 @@ watch(
         </div>
 
         <!-- Key-Value Table View -->
-        <div v-else class="border rounded-md overflow-hidden bg-card shadow-sm">
+        <div v-else class="rounded-md overflow-hidden ">
             <Table>
                 <TableHeader class="bg-muted/30">
                     <TableRow class="hover:bg-transparent border-b">
