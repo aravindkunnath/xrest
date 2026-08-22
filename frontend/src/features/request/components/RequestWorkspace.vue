@@ -48,7 +48,7 @@ const emit = defineEmits<{
 }>();
 
 // Use tab manager
-const { tabs, activeTab, addTab, closeTab, updateTabSnapshot } =
+const { tabs, activeTab, addTab, closeTab } =
     useTabManager();
 
 const { getTabVariables, isUnsafeEnv, getEnvName } = useEnvironmentVariables();
@@ -175,6 +175,9 @@ const handleSaveRequest = async (tab: any) => {
         (endpoint.body || "") !== (updatedEndpoint.body || "") ||
         JSON.stringify(endpoint.preflight || null) !== JSON.stringify(updatedEndpoint.preflight || null);
 
+    // Nothing changed — nothing to persist. Silently omit the save.
+    if (!isChanged) return;
+
     if (isChanged) {
         const nextVersionNum = (endpoint.lastVersion || 0) + 1;
         const config = {
@@ -216,8 +219,6 @@ const handleSaveRequest = async (tab: any) => {
         updatedItem,
         tab,
     });
-
-    updateTabSnapshot(tab);
 };
 
 const handleSelectServiceSettings = (service: any) => {

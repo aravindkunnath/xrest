@@ -34,7 +34,7 @@ const {
 
 const { getEnvName } = useEnvironmentVariables();
 
-const { tabs, activeTab, addTab, closeTab, initializeTabsFromSavedState } =
+const { tabs, activeTab, addTab, closeTab, updateTabSnapshot, initializeTabsFromSavedState } =
   useTabManager();
 
 const {
@@ -308,6 +308,7 @@ const handleSaveRequest = async (payload: {
     if (finalEndpoint) {
       payload.tab.lastVersion = finalEndpoint.lastVersion;
     }
+    updateTabSnapshot(payload.tab);
     toast.success("Endpoint saved", {
       description: `Changes to "${payload.tab.title}" have been persisted.`,
     });

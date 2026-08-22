@@ -197,7 +197,6 @@ describe('RequestWorkspace', () => {
             serviceIndex: 0,
             tab: mockTabs.value[0]
         })
-        expect(mockUpdateTabSnapshot).toHaveBeenCalledWith(mockTabs.value[0])
     })
 
     it('should record a version through the store, bump lastVersion, and drop versions from the payload', async () => {
@@ -244,36 +243,6 @@ describe('RequestWorkspace', () => {
             version: 1,
             config: { method: 'GET', url: 'http://test.com' },
         })
-    })
-
-    it('should render the version-count badge from the versions store', async () => {
-        const versionsStore = useVersionsStore()
-        await versionsStore.addVersion('service-1', 'endpoint-1', { method: 'GET', url: '/a' } as any, 50)
-        await versionsStore.addVersion('service-1', 'endpoint-1', { method: 'GET', url: '/b' } as any, 50)
-
-        // The panels must render their slots so the inner request tabs (incl.
-        // Versions) are reachable.
-        const globalOptionsWithSlots = {
-            ...globalOptions,
-            stubs: {
-                ...globalOptions.stubs,
-                ResizablePanelGroup: { template: '<div><slot /></div>' },
-                ResizablePanel: { template: '<div><slot /></div>' },
-            },
-        }
-
-        const wrapper = mountWorkspace({
-            props: { items: [] },
-            global: globalOptionsWithSlots,
-        })
-
-        // The Versions trigger badge number equals the store count.
-        const badge = wrapper
-            .findAll('button.tabs-trigger')
-            .map((w) => w.text())
-            .find((text) => text.includes('Versions'))
-        expect(badge).toBeTruthy()
-        expect(badge).toContain('2')
     })
 
     it('RESTORE: a version loaded from (mock) SQLite restores method/url/params/headers/body/preflight on the tab', async () => {

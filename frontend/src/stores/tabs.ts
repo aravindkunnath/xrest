@@ -18,6 +18,10 @@ export const useTabsStore = defineStore('tabs', () => {
     const tabSnapshots = new Map<string, string>()
     const isInitialized = ref(false)
 
+    // Set when we write a snapshot ourselves, to suppress the deep watcher
+    // from re-flagging the tab as edited by our own snapshot bookkeeping.
+    let snapshotApplying = false
+
     const getTabSnapshot = (tab: Tab): string => {
         const { response, isEdited, versions, activeSubTab, ...savedState } = tab
         return JSON.stringify(savedState)
@@ -26,6 +30,8 @@ export const useTabsStore = defineStore('tabs', () => {
     const updateTabSnapshot = (tab: Tab): void => {
         tabSnapshots.set(tab.id, getTabSnapshot(tab))
         tab.isEdited = false
+        snapshotApplying = true
+        nextTick(() => { snapshotApplying = false })
     }
 
     // Helper to strip heavy/transient data for persistence
@@ -136,13 +142,15 @@ export const useTabsStore = defineStore('tabs', () => {
     }
 
     watch(tabs, (newTabs) => {
-        newTabs.forEach(tab => {
-            const snapshot = tabSnapshots.get(tab.id)
-            if (snapshot) {
-                const current = JSON.stringify(getPersistentState(tab))
-                tab.isEdited = snapshot !== current
-            }
-        })
+        if (!snapshotApplying) {
+            newTabs.forEach(tab => {
+                const snapshot = tabSnapshots.get(tab.id)
+                if (snapshot) {
+                    const current = JSON.stringify(getPersistentState(tab))
+                    tab.isEdited = snapshot !== current
+                }
+            })
+        }
         debouncedSave()
     }, { deep: true })
 

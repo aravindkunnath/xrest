@@ -58,7 +58,7 @@ const { allActiveVariables, activeEnvironments, getEnvName } =
 
 const { gitStatuses, handleSyncGit, handleInitGit } = useGitIntegration();
 
-const { tabs, activeTab, addTab, closeTab, initializeTabsFromSavedState } =
+const { tabs, activeTab, addTab, closeTab, updateTabSnapshot, initializeTabsFromSavedState } =
   useTabManager();
 
 const {
@@ -384,6 +384,10 @@ const handleSaveRequest = async (payload: {
       );
       if (colIdx !== -1) {
         await collectionsStore.updateCollection(colIdx, payload.updatedItem);
+        payload.tab.lastVersion = collectionsStore.collections[colIdx]?.endpoints.find(
+          (e) => e.id === payload.tab.endpointId,
+        )?.lastVersion ?? payload.tab.lastVersion;
+        updateTabSnapshot(payload.tab);
         toast.success("Endpoint saved", {
           description: `Changes to "${payload.tab.title}" have been persisted.`,
         });
@@ -404,6 +408,8 @@ const handleSaveRequest = async (payload: {
     if (finalEndpoint) {
       payload.tab.lastVersion = finalEndpoint.lastVersion;
     }
+
+    updateTabSnapshot(payload.tab);
 
     toast.success("Endpoint saved", {
       description: `Changes to "${payload.tab.title}" have been persisted.`,
