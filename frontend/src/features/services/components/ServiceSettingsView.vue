@@ -43,11 +43,13 @@ import {
     Trash2,
     Unlock,
     Search,
+    GitCompare,
 } from "@lucide/vue";
 import { useGitIntegration } from "@/composables/useGitIntegration";
 import { useServiceSettings } from "@/features/services/composables/useServiceSettings";
 import { computed, onMounted, ref } from "vue";
 import Switch from "@/components/ui/switch/Switch.vue";
+import EndpointVersions from "./EndpointVersions.vue";
 
 const props = defineProps<{
     tab: {
@@ -78,7 +80,16 @@ const sections = computed(() => {
     if (tab.value.serviceData.directory) {
         list.push({ id: "git", label: "Git Status", icon: GitBranch });
     }
-    list.push({ id: "variables", label: "Environments & Variables", icon: Globe });
+    list.push({
+        id: "variables",
+        label: "Environments & Variables",
+        icon: Globe,
+    });
+    list.push({
+        id: "versions",
+        label: "Version History",
+        icon: GitCompare,
+    });
     return list;
 });
 
@@ -124,8 +135,13 @@ const handleSave = () => {
         const a = data.auth;
         const inert =
             a.type === "none" &&
-            !(a.bearerToken || a.basicUser || a.basicPass ||
-                a.apiKeyName || a.apiKeyValue);
+            !(
+                a.bearerToken ||
+                a.basicUser ||
+                a.basicPass ||
+                a.apiKeyName ||
+                a.apiKeyValue
+            );
         if (inert) {
             delete data.auth;
         }
@@ -168,7 +184,9 @@ const handleGitCommit = async () => {
 };
 
 const filteredVariables = computed(() => {
-    const allVars = getUniqueVariableNames(tab.value.serviceData.environments || []);
+    const allVars = getUniqueVariableNames(
+        tab.value.serviceData.environments || [],
+    );
     if (!searchQuery.value) return allVars;
     const query = searchQuery.value.toLowerCase();
     return allVars.filter((name: string) => name.toLowerCase().includes(query));
@@ -179,13 +197,15 @@ const isSectionVisible = (sectionId: string) => {
         return activeSection.value === sectionId;
     }
     const query = searchQuery.value.toLowerCase();
+
     if (sectionId === "general") {
         return (
             "general".includes(query) ||
             "name".includes(query) ||
             "directory".includes(query) ||
             "base".includes(query) ||
-            (tab.value.serviceData.name && tab.value.serviceData.name.toLowerCase().includes(query))
+            (tab.value.serviceData.name &&
+                tab.value.serviceData.name.toLowerCase().includes(query))
         );
     }
     if (sectionId === "auth") {
@@ -215,6 +235,9 @@ const isSectionVisible = (sectionId: string) => {
             filteredVariables.value.length > 0
         );
     }
+    if (sectionId === "versions") {
+        return "versions".includes(query);
+    }
     return false;
 };
 
@@ -223,12 +246,19 @@ const hasAnyVisibleSection = computed(() => {
 });
 </script>
 
-<<template>
-    <div class="h-full flex flex-col bg-background text-foreground overflow-hidden">
+<
+<template>
+    <div
+        class="h-full flex flex-col bg-background text-foreground overflow-hidden"
+    >
         <!-- Top Search Bar & Actions Header (VS Code Style) -->
-        <div class="flex items-center justify-between border-b px-6 py-3 shrink-0 gap-4">
+        <div
+            class="flex items-center justify-between border-b px-6 py-3 shrink-0 gap-4"
+        >
             <div class="relative w-full max-w-md">
-                <Search class="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search
+                    class="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground"
+                />
                 <Input
                     v-model="searchQuery"
                     placeholder="Search settings..."
@@ -272,8 +302,12 @@ const hasAnyVisibleSection = computed(() => {
         <!-- Main Workspace Split Panel -->
         <div class="flex-1 flex overflow-hidden">
             <!-- Left Hand Side Sidebar (LHS Navigation) -->
-            <div class="w-64 border-r bg-muted/15 p-4 space-y-1 overflow-y-auto select-none shrink-0">
-                <div class="text-[11px] font-bold tracking-wider text-muted-foreground/60 uppercase px-2 mb-2">
+            <div
+                class="w-64 border-r bg-muted/15 p-4 space-y-1 overflow-y-auto select-none shrink-0"
+            >
+                <div
+                    class="text-[11px] font-bold tracking-wider text-muted-foreground/60 uppercase px-2 mb-2"
+                >
                     {{
                         tab.serviceData.directory
                             ? "Service Settings"
@@ -286,9 +320,9 @@ const hasAnyVisibleSection = computed(() => {
                     @click="activeSection = section.id"
                     :class="[
                         'w-full text-left px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-2',
-                        (!searchQuery && activeSection === section.id)
+                        !searchQuery && activeSection === section.id
                             ? 'bg-accent text-accent-foreground font-semibold'
-                            : 'text-muted-foreground hover:bg-accent/40'
+                            : 'text-muted-foreground hover:bg-accent/40',
                     ]"
                 >
                     <component :is="section.icon" class="h-4 w-4 shrink-0" />
@@ -305,10 +339,18 @@ const hasAnyVisibleSection = computed(() => {
                 >
                     <AlertCircle class="h-10 w-10 opacity-30" />
                     <div>
-                        <h4 class="font-semibold text-lg text-foreground">No settings found</h4>
-                        <p class="text-sm">No settings matching "{{ searchQuery }}" were found.</p>
+                        <h4 class="font-semibold text-lg text-foreground">
+                            No settings found
+                        </h4>
+                        <p class="text-sm">
+                            No settings matching "{{ searchQuery }}" were found.
+                        </p>
                     </div>
-                    <Button variant="outline" size="sm" @click="searchQuery = ''">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        @click="searchQuery = ''"
+                    >
                         Clear Search
                     </Button>
                 </div>
@@ -362,8 +404,8 @@ const hasAnyVisibleSection = computed(() => {
                         </h3>
                     </div>
                     <p class="text-sm text-muted-foreground">
-                        Configure authentication that will be used by default for
-                        all requests in this service.
+                        Configure authentication that will be used by default
+                        for all requests in this service.
                     </p>
                     <RequestAuth
                         v-model:auth="tab.serviceData.auth"
@@ -433,7 +475,9 @@ const hasAnyVisibleSection = computed(() => {
                                 <div
                                     class="flex items-center justify-between border-b border-dashed pb-2"
                                 >
-                                    <span class="text-muted-foreground">Stage</span>
+                                    <span class="text-muted-foreground"
+                                        >Stage</span
+                                    >
                                     <span
                                         :class="[
                                             'font-bold',
@@ -516,7 +560,13 @@ const hasAnyVisibleSection = computed(() => {
                         </div>
                     </div>
                 </div>
-
+                <!-- Version History Section -->
+                <div
+                    v-show="isSectionVisible('versions')"
+                    class="bg-card rounded-lg border shadow-sm p-5 space-y-4"
+                >
+                    <EndpointVersions :tab="tab"/>
+                </div>
                 <!-- Environments & Variables Section -->
                 <div
                     v-show="isSectionVisible('variables')"
@@ -533,7 +583,9 @@ const hasAnyVisibleSection = computed(() => {
                             variant="ghost"
                             size="sm"
                             class="h-8 gap-2 text-primary hover:bg-primary/5"
-                            @click="addVariableToAll(tab.serviceData.environments)"
+                            @click="
+                                addVariableToAll(tab.serviceData.environments)
+                            "
                         >
                             <Plus class="h-3.5 w-3.5" /> Add New Variable
                         </Button>
@@ -545,19 +597,24 @@ const hasAnyVisibleSection = computed(() => {
                     >
                         <Table>
                             <TableHeader>
-                                <TableRow class="hover:bg-transparent bg-muted/30">
+                                <TableRow
+                                    class="hover:bg-transparent bg-muted/30"
+                                >
                                     <TableHead class="w-[180px] font-bold"
                                         >Variable Name</TableHead
                                     >
                                     <TableHead
-                                        v-for="env in tab.serviceData.environments"
+                                        v-for="env in tab.serviceData
+                                            .environments"
                                         :key="env.name"
                                         class="min-w-[150px] border-l"
                                     >
                                         <div
                                             class="flex flex-col gap-1 items-start py-2"
                                         >
-                                            <div class="flex items-center gap-1.5">
+                                            <div
+                                                class="flex items-center gap-1.5"
+                                            >
                                                 <span
                                                     :class="[
                                                         'w-1.5 h-1.5 rounded-full',
@@ -570,7 +627,9 @@ const hasAnyVisibleSection = computed(() => {
                                                     env.name
                                                 }}</span>
                                             </div>
-                                            <div class="flex items-center gap-1.5 mt-1">
+                                            <div
+                                                class="flex items-center gap-1.5 mt-1"
+                                            >
                                                 <Switch
                                                     v-if="env.isUnsafe"
                                                     v-model="env.isUnsafe"
@@ -588,7 +647,9 @@ const hasAnyVisibleSection = computed(() => {
                                             </div>
                                         </div>
                                     </TableHead>
-                                    <TableHead class="w-12 border-l"></TableHead>
+                                    <TableHead
+                                        class="w-12 border-l"
+                                    ></TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -603,17 +664,20 @@ const hasAnyVisibleSection = computed(() => {
                                             @blur="
                                                 (e) =>
                                                     syncVariableName(
-                                                        tab.serviceData.environments,
+                                                        tab.serviceData
+                                                            .environments,
                                                         varName,
-                                                        (e.target as HTMLInputElement)
-                                                            .value,
+                                                        (
+                                                            e.target as HTMLInputElement
+                                                        ).value,
                                                     )
                                             "
                                             class="w-full h-11 bg-transparent border-none px-3 focus:outline-none focus:ring-0"
                                         />
                                     </TableCell>
                                     <TableCell
-                                        v-for="env in tab.serviceData.environments"
+                                        v-for="env in tab.serviceData
+                                            .environments"
                                         :key="env.name"
                                         class="p-0 border-l group/cell align-top"
                                     >
@@ -623,13 +687,15 @@ const hasAnyVisibleSection = computed(() => {
                                             <!-- Secret Linked Mode -->
                                             <div
                                                 v-if="
-                                                    getVariable(env, varName)?.secretKey
+                                                    getVariable(env, varName)
+                                                        ?.secretKey
                                                 "
                                                 class="flex-1 h-11 flex items-center px-4 gap-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono text-xs"
                                             >
                                                 <Lock class="h-3 w-3" />
                                                 <span class="truncate">{{
-                                                    getVariable(env, varName)?.secretKey
+                                                    getVariable(env, varName)
+                                                        ?.secretKey
                                                 }}</span>
                                             </div>
 
@@ -637,8 +703,8 @@ const hasAnyVisibleSection = computed(() => {
                                             <input
                                                 v-else
                                                 :value="
-                                                    getVariable(env, varName)?.value ||
-                                                    ''
+                                                    getVariable(env, varName)
+                                                        ?.value || ''
                                                 "
                                                 @input="
                                                     (e) =>
@@ -669,7 +735,9 @@ const hasAnyVisibleSection = computed(() => {
                                                                 )?.secretKey,
                                                         }"
                                                     >
-                                                        <Key class="h-3.5 w-3.5" />
+                                                        <Key
+                                                            class="h-3.5 w-3.5"
+                                                        />
                                                     </Button>
                                                 </PopoverTrigger>
                                                 <PopoverContent
@@ -682,12 +750,14 @@ const hasAnyVisibleSection = computed(() => {
                                                         >
                                                             <span
                                                                 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-                                                                >Link Secret</span
+                                                                >Link
+                                                                Secret</span
                                                             >
                                                             <span
                                                                 class="text-[10px] text-muted-foreground"
                                                                 >{{
-                                                                    secretsStore.secrets
+                                                                    secretsStore
+                                                                        .secrets
                                                                         .length
                                                                 }}
                                                                 available</span
@@ -706,7 +776,8 @@ const hasAnyVisibleSection = computed(() => {
                                                                         getVariable(
                                                                             env,
                                                                             varName,
-                                                                        )?.secretKey ===
+                                                                        )
+                                                                            ?.secretKey ===
                                                                         secret,
                                                                 }"
                                                                 @click="
@@ -719,14 +790,17 @@ const hasAnyVisibleSection = computed(() => {
                                                             >
                                                                 <span
                                                                     class="truncate font-mono"
-                                                                    >{{ secret }}</span
+                                                                    >{{
+                                                                        secret
+                                                                    }}</span
                                                                 >
                                                                 <Check
                                                                     v-if="
                                                                         getVariable(
                                                                             env,
                                                                             varName,
-                                                                        )?.secretKey ===
+                                                                        )
+                                                                            ?.secretKey ===
                                                                         secret
                                                                     "
                                                                     class="h-3 w-3"
@@ -734,8 +808,10 @@ const hasAnyVisibleSection = computed(() => {
                                                             </button>
                                                             <div
                                                                 v-if="
-                                                                    secretsStore.secrets
-                                                                        .length === 0
+                                                                    secretsStore
+                                                                        .secrets
+                                                                        .length ===
+                                                                    0
                                                                 "
                                                                 class="text-xs text-muted-foreground p-2 text-center"
                                                             >
@@ -779,7 +855,8 @@ const hasAnyVisibleSection = computed(() => {
                                         <button
                                             @click="
                                                 removeVariable(
-                                                    tab.serviceData.environments,
+                                                    tab.serviceData
+                                                        .environments,
                                                     varName,
                                                 )
                                             "
@@ -796,19 +873,26 @@ const hasAnyVisibleSection = computed(() => {
                     <!-- Empty Variables State -->
                     <div
                         v-if="
-                            (!tab.serviceData.environments ||
-                            getUniqueVariableNames(tab.serviceData.environments).length === 0)
+                            !tab.serviceData.environments ||
+                            getUniqueVariableNames(tab.serviceData.environments)
+                                .length === 0
                         "
                         class="flex flex-col items-center justify-center py-12 text-muted-foreground border rounded-md bg-muted/5"
                     >
                         <AlertCircle class="h-8 w-8 opacity-20 mb-2" />
                         <p class="">
                             No variables defined for this
-                            {{ tab.serviceData.directory ? "service" : "collection" }}.
+                            {{
+                                tab.serviceData.directory
+                                    ? "service"
+                                    : "collection"
+                            }}.
                         </p>
                         <button
                             class="text-primary hover:underline mt-1 font-semibold"
-                            @click="addVariableToAll(tab.serviceData.environments)"
+                            @click="
+                                addVariableToAll(tab.serviceData.environments)
+                            "
                         >
                             Add your first variable
                         </button>

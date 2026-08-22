@@ -10,7 +10,6 @@ import { computed, onMounted, onUnmounted } from "vue";
 
 // Components
 import RequestBody from "@/features/request/components/RequestBody.vue";
-import RequestHistory from "@/features/history/components/RequestHistory.vue";
 import RequestParameters from "@/features/request/components/RequestParameters.vue";
 import RequestUrlBar from "@/features/request/components/RequestUrlBar.vue";
 import ResponseViewer from "@/features/response/components/ResponseViewer.vue";
@@ -258,10 +257,6 @@ const hasBodyContent = (body: any) => {
 const isPreflightEnabled = (preflight: any) => {
     return Boolean(preflight?.enabled);
 };
-
-const getVersionsCount = (tab: any) => {
-    return versionsStore.getCount(tab.endpointId);
-};
 </script>
 
 <template>
@@ -389,21 +384,8 @@ const getVersionsCount = (tab: any) => {
                                             </div>
 
                                             <!-- Divider -->
-                                            <div class="h-4 w-px bg-border my-auto mx-1 shrink-0"></div>
-
-                                            <!-- Group 3: History -->
-                                            <div class="flex items-center gap-1">
-                                                <span class="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider select-none mr-1">History:</span>
-                                                <TabsTrigger value="history"
-                                                    class="h-7 text-xs px-2.5 rounded-md border-0 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-xs flex items-center gap-1.5 transition-all">
-                                                    <span>Versions</span>
-                                                    <span v-if="getVersionsCount(tab) > 0"
-                                                        class="text-[10px] bg-muted-foreground/15 text-muted-foreground font-mono font-bold px-1.5 py-0.2 rounded-full">
-                                                        {{ getVersionsCount(tab) }}
-                                                    </span>
-                                                </TabsTrigger>
-                                            </div>
-                                        </TabsList>
+                                    <div class="h-4 w-px bg-border my-auto mx-1 shrink-0"></div>
+                                </TabsList>
 
                                         <div class="flex-1 overflow-auto min-h-0 flex flex-col">
                                             <TabsContent value="params" class="p-0 m-0">
@@ -459,11 +441,6 @@ const getVersionsCount = (tab: any) => {
                                                             $event,
                                                             tab,
                                                         )
-                                                        " />
-                                            </TabsContent>
-                                            <TabsContent value="history" class="p-0 m-0">
-                                                <RequestHistory :tab-id="tab.id" :service-id="tab.serviceId"
-                                                    :endpoint-id="tab.endpointId
                                                         " />
                                             </TabsContent>
                                             <TabsContent value="preflight" class="p-0 m-0 overflow-visible">
