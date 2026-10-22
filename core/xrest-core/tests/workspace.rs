@@ -108,6 +108,10 @@ fn saving_legacy_endpoint_drops_inline_versions_and_stubs() {
     assert!(!text.contains("versions:"));
     assert!(text.contains("serviceId: s-1700000000000"));
     assert!(text.contains("lastUpdated:"));
+    // Version history lands in .xrest/, which must be gitignored even for pre-existing workspaces.
+    let ignore = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    assert!(ignore.contains("/.xrest/"));
+    assert!(dir.path().join(".xrest/versions/e-1.json").is_file());
 }
 
 #[test]

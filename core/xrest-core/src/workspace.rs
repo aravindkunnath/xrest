@@ -259,6 +259,7 @@ impl Workspace {
         let now = now_secs();
         ep.metadata.last_updated = now;
         if before != after {
+            storage::ensure_gitignore(&self.root)?;
             let v = self.versions.add(id, after, now, self.max_versions)?;
             ep.last_version = v.version;
         }
