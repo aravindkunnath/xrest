@@ -68,8 +68,8 @@ jobs:
         with:
           workspaces: core
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen and xcbeautify
+        run: brew install xcodegen xcbeautify
 
       - name: Show toolchain
         run: |
@@ -87,7 +87,8 @@ jobs:
           set -o pipefail
           xcodebuild -project macos/XRest.xcodeproj -scheme XRest \
             -configuration Debug -destination 'platform=macOS' \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log \
+            | xcbeautify --renderer github-actions
 
       - name: Upload build log
         if: always()
