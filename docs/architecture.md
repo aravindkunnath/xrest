@@ -41,9 +41,50 @@ The unsafe guardrail is enforced in the core: `Workspace::prepare_send` returns
 is false, before anything touches the network. Apps use `send_policy().requires_confirmation` to
 decide whether to show a dialog, but a buggy app cannot bypass the check.
 
+## Core crate layout
+
+```text
+xrest-core/src/
+├── model/        what things are (serde types = the on-disk format)
+│   ├── request.rs    RequestSpec, Body, RequestOptions, Preflight, NameValue
+│   ├── service.rs    ServiceFile, auth, Environment, WorkspaceState
+│   ├── endpoint.rs   Endpoint, ScratchRequest, version snapshots
+│   └── response.rs   HttpResponse
+├── workspace/    the Workspace facade, one file per concern
+│   ├── mod.rs        struct, open/create, settings, environments, format upgrade
+│   ├── endpoints.rs  versioned endpoints
+│   ├── scratch.rs    scratchpad, promotion, cURL import
+│   └── send.rs       hands workspace state to `resolve`
+├── resolve.rs    RequestSpec → PreparedSend: variables, secrets, auth, preflight, body files
+├── exec.rs       PreparedSend → HTTP (reqwest), response decoding
+├── storage.rs    file layout, atomic writes, loading, format check
+└── interpolate.rs, policy.rs, preflight.rs, versions.rs, curl.rs, secrets.rs
+```
+
+`resolve` is pure with respect to the workspace (it receives a `SendContext`), so request semantics
+can be tested and changed without touching persistence.
+
 ## On-disk format
 
 Field names are `camelCase`, matching the legacy Go app. Unknown fields are ignored on read.
+
+### Format version
+
+`service.yaml` carries `formatVersion` for the whole workspace (`FORMAT_VERSION` in the core):
+
+| Version | Written by | Notes |
+| --- | --- | --- |
+| 0 (key absent) | legacy Go app | bodies are plain strings |
+| 1 | this core | typed `body`, per-request `options` |
+
+* A workspace with a **newer** version is refused (`UnsupportedFormat`) instead of being partially
+  read and then rewritten with data loss.
+* An **older** workspace opens as-is; opening never rewrites tracked files. The first save of an
+  endpoint, scratch request or the environments stamps the current version (and moves a legacy
+  `selectedEnvironment` into `.xrest/state.yaml` so the user's choice survives).
+* Readers stay backward compatible: a plain-string `body` (format 0) still loads, in endpoint
+  files, scratch files and version snapshots alike.
+* Bump `FORMAT_VERSION` whenever a change would make an older XRest misread or drop data.
 
 ```text
 <workspace>/
@@ -59,6 +100,7 @@ Field names are `camelCase`, matching the legacy Go app. Unknown fields are igno
 ### `service.yaml`
 
 ```yaml
+formatVersion: 1
 id: s-<uuid>
 name: Petstore
 isAuthenticated: true          # master switch for service-level auth
@@ -109,7 +151,8 @@ authType: bearer
 metadata: { version: "1.0", lastUpdated: 1700000001 }
 params:  [ { name: limit, value: "10", enabled: true, type: plain } ]
 headers: []
-body: ""
+body: { type: json, content: '{"name": "Rex"}' }   # omitted when there is no body
+options: { timeoutMs: 5000 }   # omitted when empty; see "Request bodies and options"
 preflight: { ... }             # optional, overrides the service preflight
 lastVersion: 3                 # save counter; the history is not stored here
 ```
@@ -126,9 +169,44 @@ url: "{{BASE_URL}}/things"
 authenticated: false
 params: []
 headers: []
-body: '{"a": 1}'
+body: { type: raw, content: 'hello', contentType: text/plain }
 createdAt: 1700000000
 updatedAt: 1700000000
+```
+
+### Request bodies and options
+
+`body` is a map tagged by `type`. Variables are interpolated in every text value and path.
+
+```yaml
+body: { type: raw, content: '<a/>', contentType: application/xml }  # no contentType: sniffed (JSON-looking → JSON, else text/plain)
+body: { type: json, content: '{"a": 1}' }                          # always application/json
+body: { type: form, fields: [ { name: q, value: rust } ] }         # application/x-www-form-urlencoded
+body:
+  type: multipart                                                   # multipart/form-data
+  fields:
+    - { name: title, value: hello }
+    - { name: upload, value: fixtures/cat.png, type: file }
+body: { type: binary, path: fixtures/blob.bin, contentType: image/png }  # default application/octet-stream
+```
+
+A `Content-Type` header set on the request wins over the body's, except for multipart, where the
+header is dropped because the boundary must come from the body.
+
+**Files must be inside the workspace.** Paths are relative to the workspace root (absolute paths
+are accepted if they point inside it). After following symlinks, a file outside the workspace is
+refused with `InvalidBody`: endpoints are shared through git, and a shared request must not be able
+to upload arbitrary files (for example `~/.ssh/id_rsa`) from a teammate's machine. Files are read
+when the request is prepared, up to 64 MiB each.
+
+`options` overrides the app's transport defaults for one request; every key is optional:
+
+```yaml
+options:
+  timeoutMs: 5000          # 0 or absent: default (30 s)
+  followRedirects: false   # default true
+  verifyTls: false         # default true; false accepts invalid certificates
+  proxy: "http://proxy:8080"   # absent: system proxy; "": direct connection; variables allowed
 ```
 
 ### Preflight
@@ -182,6 +260,15 @@ content is preserved.
 | Preflight token cache is scoped by service and environment; the cache unit is honored; `Bearer ` prefix only for the `Authorization` header | The Go code could replay a DEV token against PROD and prefixed every header |
 | Preflight `enabled` and `cacheToken` are honored | Ignored by the Go conversion |
 | Endpoint file `lastVersion` is omitted when 0 | Cosmetic |
+| `formatVersion` added to `service.yaml` (format 1) | Future format changes are detectable |
+| `body` is typed (`raw`/`json`/`form`/`multipart`/`binary`); per-request `options` added (format 1) | The Go HTTP layer supported these but the files could not express them |
+
+cURL import maps `-d` to `json` (JSON content) or `raw` with curl's default
+`application/x-www-form-urlencoded`, `--data-urlencode name=value` to `form`, `-F` to `multipart`
+(`@path` is a file field), and `-k`, `-m/--max-time`, `-x/--proxy` to `options`.
+
+Known gap: the Go preflight adapter could read token expiry as epoch seconds, epoch milliseconds or
+ISO 8601; the core only reads a relative lifetime (`expires_in` style).
 
 ## Request resolution (what `send` does)
 
@@ -195,8 +282,10 @@ content is preserved.
 5. Merge params into the URL query (a param replaces a same-named pair already in the URL;
    repeated params are kept). Only `http`/`https` URLs are accepted.
 6. Execute: preflight token (cached) is written to its header, then service auth
-   (bearer/basic/apikey header or query) is applied, then a default `Content-Type` is added if there
-   is a body and none was set (`application/json` for `{`/`[` bodies, else `text/plain`).
+   (bearer/basic/apikey header or query) is applied, then a default `Content-Type` is added from
+   the body type if none was set (see "Request bodies and options"). Files referenced by the body
+   are read during preparation, inside the workspace only. The request's `options` are merged over
+   the app's `HttpOptions`.
 7. Return the response. Non-2xx statuses are responses, not errors. Binary content types and
    non-UTF-8 bodies are base64 (`body_is_base64`); JSON bodies also get `pretty_body`.
 
@@ -236,11 +325,16 @@ XRestWorkspace
     async send(request: RequestSpec, confirmed: Bool) -> HttpResponse
 ```
 
-Records: `NameValue`, `Preflight`, `RequestSpec`, `Endpoint`, `ScratchRequest`, `EndpointVersion`,
+`RequestSpec.body` is the `RequestBody` enum (`empty`, `raw`, `json`, `form`, `multipart`,
+`binary`; `empty` rather than `none` to avoid clashing with Swift's `Optional.none`) and
+`RequestSpec.options` is `RequestOptions`. `ServiceInfo.format_version` reports the on-disk format.
+
+Records: `NameValue`, `Preflight`, `RequestSpec`, `RequestOptions`, `Endpoint`, `ScratchRequest`, `EndpointVersion`,
 `EnvironmentConfig` (not `Environment`, which would clash with SwiftUI's), `ServiceInfo`, `SendPolicy`,
 `HeaderPair`, `HttpResponse`.
 
-Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`, `NotFound(message)`,
+Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`,
+`UnsupportedFormat(found, supported)`, `NotFound(message)`,
 `InvalidInput(message)`, `Io(message)`, `Http(message)`, `Preflight(message)`, `MissingSecrets(keys)`,
 `NotImplemented(message)`.
 

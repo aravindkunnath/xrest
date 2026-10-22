@@ -38,13 +38,17 @@ See [docs/architecture.md](docs/architecture.md) for details.
 
 ```text
 my-service/
-├── service.yaml        # name, service-level auth, service preflight
+├── service.yaml        # formatVersion, name, service-level auth, service preflight
 ├── environments.yaml   # DEV / STAGE / PROD (isUnsafe), variables
 ├── endpoints/          # versioned requests, one YAML file each
 ├── scratchpad/         # loose requests (gitignored)
 ├── .xrest/             # per-user state: selected environment, version history (gitignored)
 └── .gitignore          # created by XRest; ignores /scratchpad/ and /.xrest/
 ```
+
+Request bodies are typed (text, JSON, form, multipart, file) and each request can override the
+timeout, redirects, TLS verification and proxy. Files a request uploads must live inside the
+workspace folder. Details: [docs/architecture.md](docs/architecture.md).
 
 ## Building
 
