@@ -1,0 +1,48 @@
+# XcodeGen spec. Generate the Xcode project with:
+#
+#   macos/scripts/build-xcframework.sh   # builds Frameworks/XRestCore.xcframework (needs Rust + Xcode)
+#   cd macos && xcodegen
+#
+# The generated XRest.xcodeproj is gitignored.
+name: XRest
+options:
+  bundleIdPrefix: dev.xrest
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    # The UniFFI-generated Swift is written for Swift 5 language mode.
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Automatic
+targets:
+  XRest:
+    type: application
+    platform: macOS
+    sources:
+      - path: XRest
+    dependencies:
+      # Static-library xcframework produced by scripts/build-xcframework.sh. Its Headers/
+      # directory carries the `xrest_ffiFFI` clang module that the generated Swift imports.
+      - framework: Frameworks/XRestCore.xcframework
+        embed: false
+      # System libraries needed by the Rust static library (reqwest/rustls).
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+      - sdk: CoreFoundation.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.xrest.XRest
+        PRODUCT_NAME: XRest
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: XRest
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        OTHER_LDFLAGS: ["$(inherited)", "-lresolv"]
+        # TODO(sandbox): enable App Sandbox (user-selected read/write + network client) once
+        # workspace access is persisted with security-scoped bookmarks.
+        ENABLE_APP_SANDBOX: NO
