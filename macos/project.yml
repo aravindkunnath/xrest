@@ -23,6 +23,8 @@ targets:
   XRest:
     type: application
     platform: macOS
+    # Generate a shared scheme so `xcodebuild -scheme XRest` works in CI.
+    scheme: {}
     sources:
       - path: XRest
     dependencies:

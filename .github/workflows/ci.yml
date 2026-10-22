@@ -52,31 +52,47 @@ jobs:
       - name: Check generated bindings
         run: macos/scripts/generate-bindings.sh --check
 
-  # TODO(macos-ci): enable once the SwiftUI app has been compiled once by hand.
-  # macos:
-  #   name: macOS app (build)
-  #   runs-on: macos-14
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Install Rust toolchain
-  #       uses: dtolnay/rust-toolchain@stable
-  #
-  #     - name: Cache cargo
-  #       uses: Swatinem/rust-cache@v2
-  #       with:
-  #         workspaces: core
-  #
-  #     - name: Install XcodeGen
-  #       run: brew install xcodegen
-  #
-  #     - name: Build XRestCore.xcframework
-  #       run: macos/scripts/build-xcframework.sh
-  #
-  #     - name: Generate Xcode project
-  #       run: cd macos && xcodegen
-  #
-  #     - name: Build app
-  #       run: |
-  #         xcodebuild -project macos/XRest.xcodeproj -scheme XRest \
-  #           -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+  macos:
+    name: macOS app (build)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build XRestCore.xcframework
+        run: macos/scripts/build-xcframework.sh --debug
+
+      - name: Generate Xcode project
+        run: cd macos && xcodegen
+
+      - name: Build app
+        run: |
+          set -o pipefail
+          xcodebuild -project macos/XRest.xcodeproj -scheme XRest \
+            -configuration Debug -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
