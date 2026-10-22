@@ -125,7 +125,8 @@ pub struct EndpointVersion {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
-pub struct Environment {
+/// Named variable set. (Not called `Environment` to avoid clashing with SwiftUI's `Environment`.)
+pub struct EnvironmentConfig {
     pub name: String,
     pub is_unsafe: bool,
     pub variables: Vec<NameValue>,
@@ -162,6 +163,8 @@ pub struct HttpResponse {
     /// UTF-8 text, or base64 when `body_is_base64`.
     pub body: String,
     pub body_is_base64: bool,
+    /// Re-indented JSON when the body is JSON, else `None`.
+    pub pretty_body: Option<String>,
     pub size_bytes: u64,
     pub time_ms: u64,
     pub final_url: String,
@@ -318,7 +321,7 @@ impl From<core::EndpointVersion> for EndpointVersion {
     }
 }
 
-impl From<core::Environment> for Environment {
+impl From<core::Environment> for EnvironmentConfig {
     fn from(e: core::Environment) -> Self {
         Self {
             name: e.name,
@@ -341,6 +344,7 @@ impl From<core::HttpResponse> for HttpResponse {
             content_type: r.content_type,
             body: r.body,
             body_is_base64: r.body_is_base64,
+            pretty_body: r.pretty_body,
             size_bytes: r.size_bytes,
             time_ms: r.time_ms,
             final_url: r.final_url,
@@ -382,13 +386,13 @@ impl XRestWorkspace {
 impl XRestWorkspace {
     /// Open an existing workspace directory (must contain `service.yaml`).
     #[uniffi::constructor]
-    pub fn open(path: String) -> Result<Arc<Self>> {
+    pub fn open_workspace(path: String) -> Result<Arc<Self>> {
         Ok(Self::wrap(core::Workspace::open(path)?))
     }
 
     /// Initialise a new workspace in `path` and open it.
     #[uniffi::constructor]
-    pub fn create(path: String, name: String) -> Result<Arc<Self>> {
+    pub fn create_workspace(path: String, name: String) -> Result<Arc<Self>> {
         Ok(Self::wrap(core::Workspace::create(path, &name)?))
     }
 
@@ -411,7 +415,7 @@ impl XRestWorkspace {
 
     // environments
 
-    pub fn environments(&self) -> Vec<Environment> {
+    pub fn environments(&self) -> Vec<EnvironmentConfig> {
         self.lock()
             .environments()
             .iter()

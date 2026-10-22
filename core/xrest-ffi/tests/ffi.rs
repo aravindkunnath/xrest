@@ -38,7 +38,8 @@ async fn full_flow_through_ffi_surface() {
 
     let dir = tempfile::tempdir().unwrap();
     let ws =
-        XRestWorkspace::create(dir.path().to_string_lossy().into_owned(), "Demo".into()).unwrap();
+        XRestWorkspace::create_workspace(dir.path().to_string_lossy().into_owned(), "Demo".into())
+            .unwrap();
     assert_eq!(ws.service().name, "Demo");
     assert_eq!(ws.selected_environment().as_deref(), Some("DEV"));
     assert_eq!(ws.environments().len(), 3);
@@ -48,7 +49,7 @@ async fn full_flow_through_ffi_surface() {
     let envs = std::fs::read_to_string(dir.path().join("environments.yaml")).unwrap();
     let envs = envs.replacen("value: ''", &format!("value: {}", server.uri()), 1);
     std::fs::write(dir.path().join("environments.yaml"), envs).unwrap();
-    let ws = XRestWorkspace::open(dir.path().to_string_lossy().into_owned()).unwrap();
+    let ws = XRestWorkspace::open_workspace(dir.path().to_string_lossy().into_owned()).unwrap();
 
     ws.set_secret("k".into(), "s3".into());
     let mut s = spec("{{BASE_URL}}/ping");
@@ -95,10 +96,12 @@ async fn full_flow_through_ffi_surface() {
 fn errors_map_to_ffi_variants() {
     let dir = tempfile::tempdir().unwrap();
     assert!(matches!(
-        XRestWorkspace::open(dir.path().to_string_lossy().into_owned()),
+        XRestWorkspace::open_workspace(dir.path().to_string_lossy().into_owned()),
         Err(XRestError::InvalidInput { .. })
     ));
-    let ws = XRestWorkspace::create(dir.path().to_string_lossy().into_owned(), "x".into()).unwrap();
+    let ws =
+        XRestWorkspace::create_workspace(dir.path().to_string_lossy().into_owned(), "x".into())
+            .unwrap();
     assert!(matches!(
         ws.get_endpoint("nope".into()),
         Err(XRestError::NotFound { .. })

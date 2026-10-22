@@ -370,6 +370,8 @@ pub struct HttpResponse {
     /// UTF-8 text, or base64 when `body_is_base64`.
     pub body: String,
     pub body_is_base64: bool,
+    /// Re-indented JSON (key order and number formatting preserved) when the body is JSON.
+    pub pretty_body: Option<String>,
     pub size_bytes: u64,
     pub time_ms: u64,
     pub final_url: String,

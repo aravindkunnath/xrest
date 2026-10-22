@@ -104,6 +104,10 @@ async fn sends_with_interpolation_params_headers_and_body() {
     assert_eq!(resp.status, 201);
     assert_eq!(resp.status_text, "Created");
     assert_eq!(resp.body, r#"{"created":true}"#);
+    assert_eq!(
+        resp.pretty_body.as_deref(),
+        Some("{\n  \"created\": true\n}")
+    );
     assert!(!resp.body_is_base64);
     assert_eq!(resp.size_bytes, 16);
     assert!(resp

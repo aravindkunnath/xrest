@@ -160,6 +160,11 @@ impl PreparedSend {
             .map(|(_, v)| v.clone())
             .unwrap_or_default();
         let (body, body_is_base64) = decode_body(&raw.bytes, &content_type);
+        let pretty_body = if body_is_base64 {
+            None
+        } else {
+            pretty_json(&body, &content_type)
+        };
         Ok(HttpResponse {
             status: raw.status,
             status_text: raw.status_text,
@@ -167,6 +172,7 @@ impl PreparedSend {
             content_type,
             body,
             body_is_base64,
+            pretty_body,
             size_bytes: raw.bytes.len() as u64,
             time_ms: raw.elapsed.as_millis() as u64,
             final_url: raw.final_url,
@@ -334,6 +340,19 @@ fn decode_body(bytes: &[u8], content_type: &str) -> (String, bool) {
     }
 }
 
+/// Pretty-print `body` if it is JSON (by content type or by shape).
+fn pretty_json(body: &str, content_type: &str) -> Option<String> {
+    let trimmed = body.trim_start();
+    let looks_json = content_type.to_ascii_lowercase().contains("json")
+        || trimmed.starts_with('{')
+        || trimmed.starts_with('[');
+    if !looks_json {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    serde_json::to_string_pretty(&value).ok()
+}
+
 async fn preflight_token(
     client: &reqwest::Client,
     pf: &ResolvedPreflight,
@@ -399,6 +418,22 @@ mod tests {
         let mut h = vec![p("authorization", "old"), p("X", "1")];
         set_header(&mut h, "Authorization", "new".into());
         assert_eq!(h, vec![p("X", "1"), p("Authorization", "new")]);
+    }
+
+    #[test]
+    fn pretty_json_keeps_order_and_big_numbers() {
+        let out = pretty_json(
+            r#"{"z":1,"a":[12345678901234567890,1.50]}"#,
+            "application/json",
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            "{\n  \"z\": 1,\n  \"a\": [\n    12345678901234567890,\n    1.50\n  ]\n}"
+        );
+        assert!(pretty_json("plain text", "text/plain").is_none());
+        assert!(pretty_json("{broken", "application/json").is_none());
+        assert!(pretty_json("[1]", "text/plain").is_some());
     }
 
     #[test]
