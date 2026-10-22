@@ -4,65 +4,79 @@ on:
   push:
   pull_request:
 
+# The legacy Wails/Go/Vue app lives in legacy/ and is no longer built or tested here.
+
 jobs:
-  frontend:
-    name: Frontend CI
+  core:
+    name: Core (fmt, clippy, test)
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: core
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          package_json_file: frontend/package.json
-          
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-          cache-dependency-path: frontend/pnpm-lock.yaml
-          
-      - name: Install dependencies
-        run: pnpm install
-        
-      - name: Lint and Type Check
-        run: pnpm run build
-        
-      - name: Run Vitest tests
-        run: pnpm run test run
 
-  backend:
-    name: Backend CI
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+  bindings:
+    name: Swift bindings are up to date
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libwebkitgtk-6.0-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libasound2-dev \
-            libgtk-3-dev \
-            libgtk-4-dev
-            
-      - name: Setup Go
-        uses: actions/setup-go@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
         with:
-          go-version-file: 'go.mod'
-          
-      - name: Create frontend placeholder for embed
-        run: mkdir -p frontend/dist && touch frontend/dist/placeholder
-          
-      - name: Run Go tests
-        run: go test ./...
-        env:
-          XREST_ENV: ci
+          workspaces: core
+
+      - name: Check generated bindings
+        run: macos/scripts/generate-bindings.sh --check
+
+  # TODO(macos-ci): enable once the SwiftUI app has been compiled once by hand.
+  # macos:
+  #   name: macOS app (build)
+  #   runs-on: macos-14
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install Rust toolchain
+  #       uses: dtolnay/rust-toolchain@stable
+  #
+  #     - name: Cache cargo
+  #       uses: Swatinem/rust-cache@v2
+  #       with:
+  #         workspaces: core
+  #
+  #     - name: Install XcodeGen
+  #       run: brew install xcodegen
+  #
+  #     - name: Build XRestCore.xcframework
+  #       run: macos/scripts/build-xcframework.sh
+  #
+  #     - name: Generate Xcode project
+  #       run: cd macos && xcodegen
+  #
+  #     - name: Build app
+  #       run: |
+  #         xcodebuild -project macos/XRest.xcodeproj -scheme XRest \
+  #           -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build

@@ -1,81 +1,98 @@
 # XRest
 **The Service‑First REST Client for Microservices.**
 
-XRest organizes APIs as versioned "services" with built-in environment management, safe/unsafe execution controls, and optional auth pre‑flight—making microservice workflows repeatable, shareable, and safe.
+XRest organizes APIs as versioned "services" with built-in environment management, safe/unsafe execution controls, and optional auth pre‑flight, making microservice workflows repeatable, shareable, and safe.
+
+> **Status:** XRest is being rebuilt as a shared Rust core plus native apps (macOS first). The previous Wails/Go/Vue app is preserved in [`legacy/`](legacy/) as a porting reference. Not ready for production use.
 
 ---
 
-## 🚀 Key Features
+## Key features
 
-- **Service‑First Hierarchy**: Organize APIs as first-class Services instead of loose collections. Each service carries its own environments and authentication logic.
-- **Git‑Native Collaboration**: All data (services, environments, endpoints) is stored in human-readable YAML. Sync changes across your team using git as your source of truth.
-- **Guardrails for Production**: Mark environments (like `PROD`) as **Unsafe**. XRest enforces visual cues (red UI) and mandatory confirmation dialogs before executing destructive requests.
-- **Pre‑flight Auth**: Stop copy-pasting tokens. Define auth endpoints that automatically acquire, cache, and inject Bearer tokens into your requests.
-- **Request Versioning**: Track the evolution of your API contracts with built-in versioning for every endpoint.
-- **Zero-Cloud Privacy**: XRest is local-first. Your API keys, internal URLs, and payloads never leave your machine or your private Git repository.
+- **One service per workspace.** A workspace is a service directory: its versioned **endpoints**, its **environments**, and a **scratchpad** for loose requests.
+- **Git‑native.** Services, environments and endpoints are human-readable YAML. Sync with git; the scratchpad is gitignored by default.
+- **Guardrails for production.** Mark environments (like `PROD`) as **unsafe**. The core refuses to send to them without an explicit confirmation, on every platform, and the app shows red cues.
+- **Pre‑flight auth.** Define a token request once; XRest acquires, caches (per environment) and injects the token.
+- **Endpoint versioning.** Every change to an endpoint's request is snapshotted.
+- **Scratchpad.** Try things without committing them. Promote a scratch request into a versioned endpoint when it's worth keeping.
+- **Local-first.** Your URLs, keys and payloads never leave your machine or your git repo.
 
-## 🛠 Tech Stack
+## Architecture
 
-- **Core**: [Wails v3](https://wails.io/) & [Go](https://go.dev/)
-- **Frontend**: [Vue 3](https://vuejs.org/), [TypeScript](https://www.typescriptlang.org/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/), [Shadcn UI Vue](https://www.shadcn-vue.com/)
-- **State Management**: [Pinia](https://pinia.vuejs.org/)
-- **Build Tool**: [Vite](https://vitejs.dev/)
+Ghostty-style: the **core** owns everything that must behave identically across platforms; each **platform app** owns all UI.
 
-## 📁 Storage & Configuration
-
-XRest follows a "Configuration as Code" philosophy.
-
-### Global Settings
-Stored in the user's home directory:
-- `~/.xrest/settings.yaml` (all operating systems)
-
-### Service Data
-Each service stores its data in a dedicated directory of your choice:
 ```text
-your-service-directory/
-├── service.yaml       # Core service configuration
-├── environments.yaml  # Environment variables (DEV, STAGE, PROD)
-└── endpoints/         # API request templates (*.yaml)
+core/                    Cargo workspace
+  xrest-core/            Platform-agnostic library: workspace model, YAML, interpolation,
+                         environments + unsafe policy, auth, preflight, execution, versioning, cURL import
+  xrest-ffi/             UniFFI bindings (staticlib + cdylib); async send maps to Swift async
+  uniffi-bindgen/        Pinned binding generator
+macos/                   SwiftUI app (macOS 14+), XcodeGen project, build scripts, generated bindings
+legacy/                  Previous Wails v3 + Go + Vue app (reference only)
+docs/architecture.md     Core/app boundary, on-disk format, FFI API
 ```
 
-## 🛠 Development
+See [docs/architecture.md](docs/architecture.md) for details.
 
-### Prerequisites
-- Go (v1.25+)
-- Wails v3 CLI
-- Node.js (v18+)
-- pnpm
-- [go-task](https://taskfile.dev/) (recommended build tool)
+## Workspace format
 
-### Setup
-Using [go-task](https://taskfile.dev/) (Recommended):
+```text
+my-service/
+├── service.yaml        # name, service-level auth, service preflight
+├── environments.yaml   # DEV / STAGE / PROD (isUnsafe), variables
+├── endpoints/          # versioned requests, one YAML file each
+├── scratchpad/         # loose requests (gitignored)
+├── .xrest/             # per-user state: selected environment, version history (gitignored)
+└── .gitignore          # created by XRest; ignores /scratchpad/ and /.xrest/
+```
+
+## Building
+
+### Core (Linux, macOS)
+
+Requires a recent stable Rust toolchain.
+
 ```bash
-# Install dependencies
-pnpm --filter frontend install
-
-# Run in development mode
-task dev
-
-# Build production bundle
-task build
+cd core
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
 
-Using Wails v3 CLI directly:
+### Swift bindings
+
+Regenerate `macos/XRest/Bindings/xrest_ffi.swift` after any change to the `xrest-ffi` API (works on Linux too):
+
 ```bash
-# Run in development mode
-wails3 dev -config ./build/config.yml
-
-# Build production bundle (via Go build with tags)
-go build -tags production -o bin/xrest ./cmd/wails
+macos/scripts/generate-bindings.sh          # regenerate
+macos/scripts/generate-bindings.sh --check  # fail if stale (CI)
 ```
 
-## 📦 Release (macOS)
+### macOS app
+
+Requires macOS 14+, Xcode 15+, Rust (with `rustup`) and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+
 ```bash
-# Package the application into a .dmg installer
-task package:dmg
+macos/scripts/build-xcframework.sh   # universal static lib -> macos/Frameworks/XRestCore.xcframework
+cd macos && xcodegen                 # generates XRest.xcodeproj from project.yml
+open XRest.xcodeproj                 # build & run the XRest scheme
 ```
 
----
+> The SwiftUI sources were written without access to a Swift toolchain and have not been compiled yet; expect to fix a few compile errors on the first build.
 
-*Note: xrest is currently in active development and is not yet ready for production use. Use at your own risk.*
+### Legacy app
+
+See [`legacy/`](legacy/) (Go + Wails v3 + Vue). It is no longer built in CI.
+
+## What is not done yet
+
+| Area | State |
+| --- | --- |
+| Request history (SQLite) | Stubbed: `xrest_core::history`, TODO |
+| Git integration | Stubbed: `xrest_core::git`, TODO |
+| Swagger / OpenAPI import | Stubbed: `xrest_core::swagger`, TODO |
+| Secrets in the OS keychain | `{{secret.KEY}}` works through a `SecretStore` trait; only an in-memory store exists |
+| Editing environments, service auth, preflight in the macOS UI | Edit the YAML files for now |
+| macOS release pipeline, App Sandbox, GTK app | Not started |
+
+*XRest is in active development. Use at your own risk.*

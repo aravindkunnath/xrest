@@ -1,46 +1,58 @@
-name: Wails build
+name: Release
+
+# DISABLED: this workflow built the legacy Wails app (now in legacy/). The new release pipeline
+# (universal macOS app: build-xcframework.sh -> xcodegen -> xcodebuild archive -> sign/notarize ->
+# dmg) has not been written yet. Only the manual trigger is left so the file stays valid.
+# TODO(release): add the macOS archive/notarize job, then restore the tag trigger.
 
 on:
-  push:
-    tags:
-      # Match any new tag
-      - '*'
+  workflow_dispatch:
 
-env:
-  # Necessary for most environments as build failure can occur due to OOM issues
-  NODE_OPTIONS: "--max-old-space-size=4096"
+# Original (Wails) workflow, kept for reference:
+#
+# on:
+#   push:
+#     tags:
+#       - '*'
+#
+# env:
+#   NODE_OPTIONS: "--max-old-space-size=4096"
+#
+# jobs:
+#   build:
+#     permissions:
+#       contents: write
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         build:
+#           - name: 'App'
+#             platform:  'linux/amd64'
+#             os: 'ubuntu-latest'
+#           - name: 'App'
+#             platform:  'windows/amd64'
+#             os: 'windows-latest'
+#           - name: 'App'
+#             platform:  'darwin/universal'
+#             os: 'macos-latest'
+#     runs-on: ${{ matrix.build.os }}
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+#         with:
+#           submodules: recursive
+#       - name: Build wails
+#         uses: dAppServer/wails-build-action@v2.2
+#         id: build
+#         with:
+#           build-name: ${{ matrix.build.name }}
+#           build-platform: ${{ matrix.build.platform }}
+#           package: false
+#           go-version: '1.25'
 
 jobs:
-  build:
-    permissions:
-      contents: write
-    strategy:
-      # Failure in one platform build won't impact the others
-      fail-fast: false
-      matrix:
-        build:
-          - name: 'App'
-            platform:  'linux/amd64'
-            os: 'ubuntu-latest'
-          - name: 'App'
-            platform:  'windows/amd64'
-            os: 'windows-latest'
-          - name: 'App'
-            platform:  'darwin/universal'
-            os: 'macos-latest'
-
-    runs-on: ${{ matrix.build.os }}
+  disabled:
+    name: Release pipeline not implemented
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Build wails
-        uses: dAppServer/wails-build-action@v2.2
-        id: build
-        with:
-          build-name: ${{ matrix.build.name }}
-          build-platform: ${{ matrix.build.platform }}
-          package: false
-          go-version: '1.25'
+      - run: echo "Release pipeline is disabled; see the comment at the top of this file."
