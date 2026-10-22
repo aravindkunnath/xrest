@@ -10,6 +10,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
+#[cfg(test)]
+use crate::model::Body;
 use crate::model::{EndpointVersion, RequestConfig};
 
 pub const MIN_VERSIONS_LIMIT: usize = 5;
@@ -134,7 +136,8 @@ mod tests {
             auth_type: "none".into(),
             params: vec![],
             headers: vec![],
-            body: String::new(),
+            body: Body::None,
+            options: Default::default(),
             preflight: None,
         }
     }

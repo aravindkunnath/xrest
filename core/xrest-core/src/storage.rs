@@ -18,7 +18,9 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::error::{Error, Result};
-use crate::model::{Endpoint, Environment, ScratchRequest, ServiceFile, WorkspaceState};
+use crate::model::{
+    Endpoint, Environment, ScratchRequest, ServiceFile, WorkspaceState, FORMAT_VERSION,
+};
 
 pub const SERVICE_FILE: &str = "service.yaml";
 pub const ENVIRONMENTS_FILE: &str = "environments.yaml";
@@ -156,6 +158,13 @@ pub fn load(root: &Path) -> Result<Loaded> {
         return Err(Error::NotAWorkspace(root.to_path_buf()));
     }
     let service: ServiceFile = read_yaml(&service_path)?;
+    if service.format_version > FORMAT_VERSION {
+        return Err(Error::UnsupportedFormat {
+            path: service_path,
+            found: service.format_version,
+            supported: FORMAT_VERSION,
+        });
+    }
     let mut warnings = vec![];
 
     let env_path = root.join(ENVIRONMENTS_FILE);

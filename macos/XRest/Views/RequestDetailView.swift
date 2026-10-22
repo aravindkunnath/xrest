@@ -4,6 +4,7 @@ private enum EditorTab: String, CaseIterable, Identifiable {
     case params = "Params"
     case headers = "Headers"
     case body = "Body"
+    case options = "Options"
     var id: String { rawValue }
 }
 
@@ -97,7 +98,7 @@ struct RequestDetailView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(maxWidth: 320)
+            .frame(maxWidth: 420)
             .padding(.vertical, 8)
 
             switch tab {
@@ -106,7 +107,9 @@ struct RequestDetailView: View {
             case .headers:
                 KeyValueEditor(rows: draft.headers, namePlaceholder: "Header")
             case .body:
-                CodeEditor(text: draft.body)
+                BodyEditor(draft: draft, workspaceRoot: model.service.rootPath)
+            case .options:
+                OptionsEditor(options: draft.options)
             }
         }
     }

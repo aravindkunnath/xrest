@@ -12,15 +12,18 @@ use base64::Engine;
 use url::Url;
 
 use crate::error::{Error, Result};
-use crate::model::{HttpResponse, Preflight};
+use crate::model::{HttpResponse, Preflight, RequestOptions};
 use crate::preflight::{cache_ttl, extract_token, TokenCache};
 
+/// App-wide transport defaults; a request's [`crate::RequestOptions`] override them per send.
 #[derive(Debug, Clone)]
 pub struct HttpOptions {
     pub timeout: Duration,
     pub follow_redirects: bool,
     pub insecure_skip_verify: bool,
     pub use_system_proxy: bool,
+    /// Explicit proxy URL; `Some("")` forces a direct connection. Overrides `use_system_proxy`.
+    pub proxy: Option<String>,
 }
 
 impl Default for HttpOptions {
@@ -30,17 +33,67 @@ impl Default for HttpOptions {
             follow_redirects: true,
             insecure_skip_verify: false,
             use_system_proxy: true,
+            proxy: None,
         }
     }
 }
 
-/// A request with every placeholder resolved.
+impl HttpOptions {
+    /// These defaults with a request's options applied (`proxy` already interpolated).
+    pub fn merged(&self, o: &RequestOptions) -> HttpOptions {
+        HttpOptions {
+            timeout: o
+                .timeout_ms
+                .filter(|ms| *ms > 0)
+                .map(Duration::from_millis)
+                .unwrap_or(self.timeout),
+            follow_redirects: o.follow_redirects.unwrap_or(self.follow_redirects),
+            insecure_skip_verify: o
+                .verify_tls
+                .map(|v| !v)
+                .unwrap_or(self.insecure_skip_verify),
+            use_system_proxy: self.use_system_proxy,
+            proxy: o.proxy.clone().or_else(|| self.proxy.clone()),
+        }
+    }
+}
+
+/// A request with every placeholder resolved and every referenced file read.
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedRequest {
     pub method: String,
     pub url: Url,
     pub headers: Vec<(String, String)>,
-    pub body: String,
+    pub body: ResolvedBody,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ResolvedBody {
+    Empty,
+    /// `content_type: None` means "sniff" (main request only), as the legacy app did.
+    Text {
+        content: String,
+        content_type: Option<String>,
+    },
+    Bytes {
+        data: Vec<u8>,
+        content_type: String,
+    },
+    Form(Vec<(String, String)>),
+    Multipart(Vec<ResolvedPart>),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ResolvedPart {
+    Text {
+        name: String,
+        value: String,
+    },
+    File {
+        name: String,
+        file_name: String,
+        data: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -142,15 +195,7 @@ impl PreparedSend {
             }
         }
 
-        if !request.body.is_empty() && !has_header(&request.headers, "content-type") {
-            let t = request.body.trim_start();
-            let ct = if t.starts_with('{') || t.starts_with('[') {
-                "application/json"
-            } else {
-                "text/plain; charset=utf-8"
-            };
-            set_header(&mut request.headers, "Content-Type", ct.to_string());
-        }
+        default_content_type(&mut request);
 
         let raw = send_raw(&client, &request).await?;
         let content_type = raw
@@ -180,6 +225,62 @@ impl PreparedSend {
             unresolved_variables: self.unresolved,
         })
     }
+}
+
+/// Set `Content-Type` from the body when the user did not set one.
+fn default_content_type(req: &mut ResolvedRequest) {
+    if matches!(req.body, ResolvedBody::Multipart(_)) {
+        // reqwest writes the boundary parameter; a user-set Content-Type would break it.
+        req.headers
+            .retain(|(k, _)| !k.eq_ignore_ascii_case("content-type"));
+        return;
+    }
+    if has_header(&req.headers, "content-type") {
+        return;
+    }
+    let ct = match &req.body {
+        ResolvedBody::Empty | ResolvedBody::Multipart(_) => return,
+        ResolvedBody::Text { content, .. } if content.is_empty() => return,
+        ResolvedBody::Text {
+            content_type: Some(ct),
+            ..
+        } => ct.clone(),
+        ResolvedBody::Text { content, .. } => {
+            let t = content.trim_start();
+            if t.starts_with('{') || t.starts_with('[') {
+                "application/json".into()
+            } else {
+                "text/plain; charset=utf-8".into()
+            }
+        }
+        ResolvedBody::Bytes { content_type, .. } => content_type.clone(),
+        ResolvedBody::Form(_) => "application/x-www-form-urlencoded".into(),
+    };
+    set_header(&mut req.headers, "Content-Type", ct);
+}
+
+fn encode_form(pairs: &[(String, String)]) -> String {
+    let mut ser = url::form_urlencoded::Serializer::new(String::new());
+    for (k, v) in pairs {
+        ser.append_pair(k, v);
+    }
+    ser.finish()
+}
+
+fn multipart_form(parts: &[ResolvedPart]) -> reqwest::multipart::Form {
+    parts
+        .iter()
+        .fold(reqwest::multipart::Form::new(), |form, part| match part {
+            ResolvedPart::Text { name, value } => form.text(name.clone(), value.clone()),
+            ResolvedPart::File {
+                name,
+                file_name,
+                data,
+            } => form.part(
+                name.clone(),
+                reqwest::multipart::Part::bytes(data.clone()).file_name(file_name.clone()),
+            ),
+        })
 }
 
 pub(crate) fn has_header(headers: &[(String, String)], name: &str) -> bool {
@@ -244,8 +345,17 @@ fn build_client(opts: &HttpOptions) -> Result<reqwest::Client> {
     if opts.insecure_skip_verify {
         b = b.danger_accept_invalid_certs(true);
     }
-    if !opts.use_system_proxy {
-        b = b.no_proxy();
+    match opts.proxy.as_deref().map(str::trim) {
+        Some("") => b = b.no_proxy(),
+        Some(p) => {
+            let proxy = reqwest::Proxy::all(p).map_err(|e| Error::InvalidUrl {
+                url: p.to_string(),
+                message: format!("invalid proxy: {e}"),
+            })?;
+            b = b.proxy(proxy);
+        }
+        None if !opts.use_system_proxy => b = b.no_proxy(),
+        None => {}
     }
     b.build().map_err(|e| Error::Http(e.to_string()))
 }
@@ -266,9 +376,14 @@ async fn send_raw(client: &reqwest::Client, req: &ResolvedRequest) -> Result<Raw
     for (k, v) in &req.headers {
         builder = builder.header(k.as_str(), v.as_str());
     }
-    if !req.body.is_empty() {
-        builder = builder.body(req.body.clone());
-    }
+    builder = match &req.body {
+        ResolvedBody::Empty => builder,
+        ResolvedBody::Text { content, .. } if content.is_empty() => builder,
+        ResolvedBody::Text { content, .. } => builder.body(content.clone()),
+        ResolvedBody::Bytes { data, .. } => builder.body(data.clone()),
+        ResolvedBody::Form(pairs) => builder.body(encode_form(pairs)),
+        ResolvedBody::Multipart(parts) => builder.multipart(multipart_form(parts)),
+    };
     let start = Instant::now();
     let resp = builder
         .send()

@@ -96,7 +96,7 @@ async fn sends_with_interpolation_params_headers_and_body() {
     disabled.enabled = false;
     s.params.push(disabled);
     s.headers.push(NameValue::new("X-User", "{{ USER_ID }}"));
-    s.body = r#"{"id": "{{USER_ID}}"}"#.into();
+    s.body = Body::from_text(r#"{"id": "{{USER_ID}}"}"#);
 
     let prepared = f.ws.prepare_send(&s, false).unwrap();
     assert_eq!(prepared.environment(), Some("DEV"));
@@ -605,10 +605,226 @@ async fn text_body_without_content_type_gets_default() {
         .mount(&f.server)
         .await;
     let mut s = spec("PUT", "{{BASE_URL}}/t");
-    s.body = "hello".into();
+    s.body = Body::from_text("hello");
     f.ws.prepare_send(&s, false)
         .unwrap()
         .execute()
         .await
         .unwrap();
+}
+
+// ---- typed bodies ------------------------------------------------------------------------
+
+async fn send(f: &Fixture, s: &RequestSpec) -> Result<HttpResponse> {
+    f.ws.prepare_send(s, false)?.execute().await
+}
+
+#[tokio::test]
+async fn json_body_always_sends_json_content_type() {
+    let f = fixture().await;
+    Mock::given(path("/j"))
+        .and(header("content-type", "application/json"))
+        .and(body_string("not json-looking but typed as json"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("POST", "{{BASE_URL}}/j");
+    s.body = Body::Json {
+        content: "not json-looking but typed as json".into(),
+    };
+    send(&f, &s).await.unwrap();
+}
+
+#[tokio::test]
+async fn raw_body_uses_its_content_type_but_a_header_wins() {
+    let f = fixture().await;
+    Mock::given(path("/x"))
+        .and(header("content-type", "application/xml"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/h"))
+        .and(header("content-type", "text/csv"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("POST", "{{BASE_URL}}/x");
+    s.body = Body::Raw {
+        content: "<a/>".into(),
+        content_type: Some("application/xml".into()),
+    };
+    send(&f, &s).await.unwrap();
+    s.url = "{{BASE_URL}}/h".into();
+    s.headers = vec![NameValue::new("Content-Type", "text/csv")];
+    send(&f, &s).await.unwrap();
+}
+
+#[tokio::test]
+async fn form_body_is_urlencoded_with_variables() {
+    let f = fixture().await;
+    Mock::given(path("/f"))
+        .and(header("content-type", "application/x-www-form-urlencoded"))
+        .and(body_string("user=42&q=a+b%26c"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut disabled = NameValue::new("skip", "me");
+    disabled.enabled = false;
+    let mut s = spec("POST", "{{BASE_URL}}/f");
+    s.body = Body::Form {
+        fields: vec![
+            NameValue::new("user", "{{USER_ID}}"),
+            NameValue::new("q", "a b&c"),
+            disabled,
+        ],
+    };
+    send(&f, &s).await.unwrap();
+}
+
+#[tokio::test]
+async fn multipart_body_sends_text_and_file_parts() {
+    let f = fixture().await;
+    let data = f.ws.root().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join("a.txt"), b"FILE-CONTENTS").unwrap();
+    Mock::given(path("/m"))
+        .and(|r: &wiremock::Request| {
+            let ct = r
+                .headers
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            let body = String::from_utf8_lossy(&r.body);
+            ct.starts_with("multipart/form-data; boundary=")
+                && body.contains("name=\"title\"")
+                && body.contains("hello 42")
+                && body.contains("filename=\"a.txt\"")
+                && body.contains("FILE-CONTENTS")
+        })
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("POST", "{{BASE_URL}}/m");
+    // A user-set Content-Type would break the boundary, so it is dropped.
+    s.headers = vec![NameValue::new("Content-Type", "multipart/form-data")];
+    s.body = Body::Multipart {
+        fields: vec![
+            NameValue::new("title", "hello {{USER_ID}}"),
+            NameValue::file("upload", "data/a.txt"),
+        ],
+    };
+    send(&f, &s).await.unwrap();
+}
+
+#[tokio::test]
+async fn binary_body_sends_file_bytes() {
+    let f = fixture().await;
+    std::fs::write(f.ws.root().join("blob.bin"), [0u8, 1, 2, 255]).unwrap();
+    Mock::given(path("/b"))
+        .and(header("content-type", "application/octet-stream"))
+        .and(|r: &wiremock::Request| r.body == [0u8, 1, 2, 255])
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("PUT", "{{BASE_URL}}/b");
+    s.body = Body::Binary {
+        path: "blob.bin".into(),
+        content_type: None,
+    };
+    send(&f, &s).await.unwrap();
+}
+
+#[tokio::test]
+async fn files_outside_the_workspace_are_never_sent() {
+    let f = fixture().await;
+    let outside = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(outside.path(), b"private").unwrap();
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("POST", "{{BASE_URL}}/b");
+    s.body = Body::Binary {
+        path: outside.path().display().to_string(),
+        content_type: None,
+    };
+    assert!(matches!(
+        f.ws.prepare_send(&s, false),
+        Err(Error::InvalidBody(_))
+    ));
+    s.body = Body::Multipart {
+        fields: vec![NameValue::file("f", "../../etc/passwd")],
+    };
+    assert!(matches!(
+        f.ws.prepare_send(&s, false),
+        Err(Error::InvalidBody(_))
+    ));
+}
+
+// ---- request options ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn per_request_timeout_overrides_the_default() {
+    let f = fixture().await;
+    Mock::given(path("/slow"))
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_millis(800)))
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/slow");
+    s.options.timeout_ms = Some(100);
+    assert!(matches!(send(&f, &s).await, Err(Error::Http(_))));
+    s.options.timeout_ms = None;
+    assert_eq!(send(&f, &s).await.unwrap().status, 200);
+}
+
+#[tokio::test]
+async fn follow_redirects_can_be_disabled_per_request() {
+    let f = fixture().await;
+    Mock::given(path("/old"))
+        .respond_with(
+            ResponseTemplate::new(302).insert_header("location", format!("{}/new", f.server.uri())),
+        )
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/new"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("arrived"))
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/old");
+    assert_eq!(send(&f, &s).await.unwrap().body, "arrived");
+    s.options.follow_redirects = Some(false);
+    assert_eq!(send(&f, &s).await.unwrap().status, 302);
+}
+
+#[tokio::test]
+async fn invalid_proxy_is_reported() {
+    let f = fixture().await;
+    let mut s = spec("GET", "{{BASE_URL}}/x");
+    s.options.proxy = Some("not a url".into());
+    assert!(matches!(send(&f, &s).await, Err(Error::InvalidUrl { .. })));
+}
+
+#[test]
+fn options_merge_over_defaults() {
+    let base = HttpOptions::default();
+    let merged = base.merged(&RequestOptions {
+        timeout_ms: Some(0),
+        follow_redirects: Some(false),
+        verify_tls: Some(false),
+        proxy: Some(String::new()),
+    });
+    assert_eq!(merged.timeout, base.timeout, "0 means the default");
+    assert!(!merged.follow_redirects);
+    assert!(merged.insecure_skip_verify);
+    assert_eq!(merged.proxy.as_deref(), Some(""));
+    let untouched = base.merged(&RequestOptions::default());
+    assert_eq!(untouched.timeout, base.timeout);
+    assert!(untouched.follow_redirects && !untouched.insecure_skip_verify);
 }

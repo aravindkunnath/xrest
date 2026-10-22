@@ -7,7 +7,7 @@
 //! TODO(curl-auth): offer to map `-u user:pass` to service-level basic auth.
 
 use crate::error::{Error, Result};
-use crate::model::NameValue;
+use crate::model::{Body, NameValue, RequestOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedCurl {
@@ -15,8 +15,92 @@ pub struct ParsedCurl {
     pub method: String,
     pub url: String,
     pub headers: Vec<NameValue>,
-    pub body: String,
+    pub body: Body,
+    pub options: RequestOptions,
     pub params: Vec<NameValue>,
+}
+
+/// One `-d`-style argument, kept apart until the body type is known.
+enum Data {
+    /// `-d`, `--data`, `--data-raw`, `--data-binary`: sent as given (already encoded).
+    Raw(String),
+    /// `--data-urlencode [name=]content`: curl URL-encodes `content`.
+    Encode(Option<String>, String),
+}
+
+fn encode(v: &str) -> String {
+    url::form_urlencoded::byte_serialize(v.as_bytes()).collect()
+}
+
+fn header_value<'a>(headers: &'a [NameValue], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case(name))
+        .map(|h| h.value.as_str())
+}
+
+/// Pick a typed body for curl's data arguments, matching what curl would send.
+fn data_body(data: Vec<Data>, headers: &[NameValue]) -> Body {
+    if data.is_empty() {
+        return Body::None;
+    }
+    let ct = header_value(headers, "content-type").map(str::to_ascii_lowercase);
+    let form_ct = ct
+        .as_deref()
+        .is_none_or(|c| c.starts_with("application/x-www-form-urlencoded"));
+    if form_ct && data.iter().all(|d| matches!(d, Data::Encode(Some(_), _))) {
+        let fields = data
+            .into_iter()
+            .filter_map(|d| match d {
+                Data::Encode(Some(n), v) => Some(NameValue::new(n, v)),
+                _ => None,
+            })
+            .collect();
+        return Body::Form { fields };
+    }
+    let content = data
+        .into_iter()
+        .map(|d| match d {
+            Data::Raw(s) => s,
+            Data::Encode(Some(n), v) => format!("{n}={}", encode(&v)),
+            Data::Encode(None, v) => encode(&v),
+        })
+        .collect::<Vec<_>>()
+        .join("&");
+    let looks_json = {
+        let t = content.trim_start();
+        (t.starts_with('{') || t.starts_with('['))
+            && serde_json::from_str::<serde_json::Value>(&content).is_ok()
+    };
+    match ct.as_deref() {
+        Some(c) if c.contains("json") => Body::Json { content },
+        // The explicit header decides the type; keep the text as-is.
+        Some(_) => Body::Raw {
+            content,
+            content_type: None,
+        },
+        None if looks_json => Body::Json { content },
+        // curl's default for -d.
+        None => Body::Raw {
+            content,
+            content_type: Some("application/x-www-form-urlencoded".into()),
+        },
+    }
+}
+
+/// `-F name=value` / `-F name=@path[;type=…]`: `@` and `<` read a file.
+fn form_field(arg: &str, literal: bool) -> Option<NameValue> {
+    let (name, value) = arg.split_once('=')?;
+    if name.is_empty() {
+        return None;
+    }
+    if !literal {
+        if let Some(path) = value.strip_prefix('@').or_else(|| value.strip_prefix('<')) {
+            let path = path.split(';').next().unwrap_or(path);
+            return Some(NameValue::file(name, path));
+        }
+    }
+    Some(NameValue::new(name, value))
 }
 
 fn is_http_method(s: &str) -> bool {
@@ -143,7 +227,9 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
     let mut method = "GET".to_string();
     let mut url = String::new();
     let mut headers = vec![];
-    let mut body = String::new();
+    let mut data = vec![];
+    let mut form = vec![];
+    let mut options = RequestOptions::default();
 
     let mut i = 0;
     while i < tokens.len() {
@@ -165,12 +251,54 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
                     i += 1;
                 }
             }
-            "-d" | "--data" | "--data-raw" | "--data-binary" | "--data-urlencode" => {
+            "-d" | "--data" | "--data-raw" | "--data-binary" | "--data-ascii" => {
                 if let Some(n) = next {
-                    body = unquote(n).to_string();
+                    data.push(Data::Raw(unquote(n).to_string()));
                     if method == "GET" {
                         method = "POST".into();
                     }
+                    i += 1;
+                }
+            }
+            "--data-urlencode" => {
+                if let Some(n) = next {
+                    let arg = unquote(n);
+                    data.push(match arg.split_once('=') {
+                        Some(("", v)) => Data::Encode(None, v.to_string()),
+                        Some((k, v)) => Data::Encode(Some(k.to_string()), v.to_string()),
+                        None => Data::Encode(None, arg.to_string()),
+                    });
+                    if method == "GET" {
+                        method = "POST".into();
+                    }
+                    i += 1;
+                }
+            }
+            "-F" | "--form" | "--form-string" => {
+                if let Some(n) = next {
+                    if let Some(f) = form_field(unquote(n), tok == "--form-string") {
+                        form.push(f);
+                    }
+                    if method == "GET" {
+                        method = "POST".into();
+                    }
+                    i += 1;
+                }
+            }
+            "-k" | "--insecure" => options.verify_tls = Some(false),
+            "-m" | "--max-time" => {
+                if let Some(n) = next {
+                    if let Ok(secs) = unquote(n).parse::<f64>() {
+                        if secs > 0.0 {
+                            options.timeout_ms = Some((secs * 1000.0).round() as u64);
+                        }
+                    }
+                    i += 1;
+                }
+            }
+            "-x" | "--proxy" => {
+                if let Some(n) = next {
+                    options.proxy = Some(unquote(n).to_string());
                     i += 1;
                 }
             }
@@ -184,15 +312,14 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
             }
             // Flags with an argument that does not affect the request definition.
             "-u" | "--user" | "-b" | "--cookie" | "-A" | "--user-agent" | "-o" | "--output"
-            | "-w" | "--write-out" | "--connect-timeout" | "--max-time" | "--retry"
-            | "--retry-delay" => {
+            | "-w" | "--write-out" | "--connect-timeout" | "--retry" | "--retry-delay" => {
                 if next.is_some() {
                     i += 1;
                 }
             }
             // Known boolean flags.
-            "-k" | "--insecure" | "-L" | "--location" | "-i" | "--include" | "-s" | "--silent"
-            | "-S" | "--show-error" | "-v" | "--verbose" | "--compressed" => {}
+            "-L" | "--location" | "-i" | "--include" | "-s" | "--silent" | "-S"
+            | "--show-error" | "-v" | "--verbose" | "--compressed" => {}
             t if t.starts_with('-') => {
                 // Unknown flag: skip its argument if it plausibly has one.
                 if let Some(n) = next {
@@ -225,6 +352,11 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
     if url.is_empty() {
         return Err(Error::Curl("no URL found".into()));
     }
+    let body = if form.is_empty() {
+        data_body(data, &headers)
+    } else {
+        Body::Multipart { fields: form }
+    };
     Ok(ParsedCurl {
         name: endpoint_name(&url),
         params: query_params(&url),
@@ -232,6 +364,7 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
         url,
         headers,
         body,
+        options,
     })
 }
 
@@ -254,7 +387,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.method, "POST");
-        assert_eq!(p.body, r#"{"key":"value"}"#);
+        assert_eq!(
+            p.body,
+            Body::Json {
+                content: r#"{"key":"value"}"#.into()
+            }
+        );
         assert_eq!(
             p.headers,
             vec![NameValue::new("Content-Type", "application/json")]
@@ -265,7 +403,13 @@ mod tests {
     fn data_implies_post() {
         let p = parse(r#"curl -d "key=value" http://api.example.com/submit"#).unwrap();
         assert_eq!(p.method, "POST");
-        assert_eq!(p.body, "key=value");
+        assert_eq!(
+            p.body,
+            Body::Raw {
+                content: "key=value".into(),
+                content_type: Some("application/x-www-form-urlencoded".into())
+            }
+        );
         let p = parse(r#"curl -X PUT -d 'x' http://a.b/c"#).unwrap();
         assert_eq!(p.method, "PUT");
     }
@@ -285,11 +429,86 @@ mod tests {
 
     #[test]
     fn ignored_flags() {
-        let p = parse("curl -k -L -s -S --compressed --connect-timeout 10 --max-time 30 http://api.example.com")
+        let p = parse("curl -L -s -S --compressed --connect-timeout 10 http://api.example.com")
             .unwrap();
         assert_eq!(p.method, "GET");
         assert_eq!(p.url, "http://api.example.com");
         assert_eq!(p.name, "root");
+        assert!(p.options.is_empty());
+        assert_eq!(p.body, Body::None);
+    }
+
+    #[test]
+    fn transport_flags_become_options() {
+        let p = parse("curl -k --max-time 2.5 -x http://proxy:8080 https://h.io/x").unwrap();
+        assert_eq!(p.options.verify_tls, Some(false));
+        assert_eq!(p.options.timeout_ms, Some(2500));
+        assert_eq!(p.options.proxy.as_deref(), Some("http://proxy:8080"));
+        assert_eq!(p.url, "https://h.io/x");
+    }
+
+    #[test]
+    fn json_body_is_detected_without_a_header() {
+        let p = parse(r#"curl https://h.io -d '[1,2]'"#).unwrap();
+        assert_eq!(
+            p.body,
+            Body::Json {
+                content: "[1,2]".into()
+            }
+        );
+    }
+
+    #[test]
+    fn explicit_content_type_keeps_raw_text() {
+        let p = parse(r#"curl https://h.io -H 'Content-Type: text/xml' -d '<a/>'"#).unwrap();
+        assert_eq!(
+            p.body,
+            Body::Raw {
+                content: "<a/>".into(),
+                content_type: None
+            }
+        );
+    }
+
+    #[test]
+    fn data_urlencode_becomes_form_fields() {
+        let p = parse(r#"curl https://h.io --data-urlencode 'q=a b' --data-urlencode 'n=1&2'"#)
+            .unwrap();
+        assert_eq!(p.method, "POST");
+        assert_eq!(
+            p.body,
+            Body::Form {
+                fields: vec![NameValue::new("q", "a b"), NameValue::new("n", "1&2")]
+            }
+        );
+        // Mixed with raw data, it is encoded into one string like curl does.
+        let p = parse(r#"curl https://h.io -d 'a=1' --data-urlencode 'b=x y'"#).unwrap();
+        assert_eq!(
+            p.body,
+            Body::Raw {
+                content: "a=1&b=x+y".into(),
+                content_type: Some("application/x-www-form-urlencoded".into())
+            }
+        );
+    }
+
+    #[test]
+    fn form_flags_become_multipart() {
+        let p = parse(
+            r#"curl https://h.io/up -F 'title=hi' -F 'file=@data/a.png;type=image/png' --form-string 'raw=@x'"#,
+        )
+        .unwrap();
+        assert_eq!(p.method, "POST");
+        assert_eq!(
+            p.body,
+            Body::Multipart {
+                fields: vec![
+                    NameValue::new("title", "hi"),
+                    NameValue::file("file", "data/a.png"),
+                    NameValue::new("raw", "@x"),
+                ]
+            }
+        );
     }
 
     #[test]

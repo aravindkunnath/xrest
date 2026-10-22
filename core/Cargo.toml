@@ -10,7 +10,7 @@ rust-version = "1.82"
 
 [workspace.dependencies]
 base64 = "0.22"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip", "form"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip", "form", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
 serde_yaml_ng = "0.10"

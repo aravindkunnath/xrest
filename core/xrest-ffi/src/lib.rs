@@ -27,6 +27,9 @@ pub enum XRestError {
     Http { message: String },
     #[error("{message}")]
     Preflight { message: String },
+    /// The workspace was written by a newer XRest.
+    #[error("this workspace uses format {found}; this XRest supports up to {supported}. Update XRest to open it.")]
+    UnsupportedFormat { found: u32, supported: u32 },
     #[error("missing secrets: {}", keys.join(", "))]
     MissingSecrets { keys: Vec<String> },
     #[error("{message}")]
@@ -41,12 +44,16 @@ impl From<core::Error> for XRestError {
                 XRestError::ConfirmationRequired { environment }
             }
             core::Error::NotFound { .. } => XRestError::NotFound { message },
+            core::Error::UnsupportedFormat {
+                found, supported, ..
+            } => XRestError::UnsupportedFormat { found, supported },
             core::Error::NotAWorkspace(_)
             | core::Error::AlreadyExists(_)
             | core::Error::InvalidId(_)
             | core::Error::InvalidUrl { .. }
             | core::Error::UnknownEnvironment(_)
-            | core::Error::Curl(_) => XRestError::InvalidInput { message },
+            | core::Error::Curl(_)
+            | core::Error::InvalidBody(_) => XRestError::InvalidInput { message },
             core::Error::Io { .. } | core::Error::Yaml { .. } => XRestError::Io { message },
             core::Error::MissingSecrets(keys) => XRestError::MissingSecrets { keys },
             core::Error::Preflight(_) => XRestError::Preflight { message },
@@ -87,6 +94,46 @@ pub struct Preflight {
     pub token_header: Option<String>,
 }
 
+/// A typed request body. File paths are relative to the workspace root and must stay inside it.
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum RequestBody {
+    /// No body. (Not called `None`, which would be ambiguous with Swift's `Optional.none`.)
+    Empty,
+    /// Text as-is; without `content_type` the type is sniffed (JSON-looking → JSON).
+    Raw {
+        content: String,
+        content_type: Option<String>,
+    },
+    Json {
+        content: String,
+    },
+    /// `application/x-www-form-urlencoded`.
+    Form {
+        fields: Vec<NameValue>,
+    },
+    /// `multipart/form-data`; fields with kind `file` upload the file at `value`.
+    Multipart {
+        fields: Vec<NameValue>,
+    },
+    /// The bytes of one file.
+    Binary {
+        path: String,
+        content_type: Option<String>,
+    },
+}
+
+/// Per-request transport options; `None` means the app default.
+#[derive(Debug, Clone, Default, uniffi::Record)]
+pub struct RequestOptions {
+    /// Milliseconds; 0 means the default.
+    pub timeout_ms: Option<u64>,
+    pub follow_redirects: Option<bool>,
+    /// `false` accepts invalid TLS certificates.
+    pub verify_tls: Option<bool>,
+    /// Proxy URL; empty forces a direct connection.
+    pub proxy: Option<String>,
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct RequestSpec {
     pub method: String,
@@ -94,7 +141,8 @@ pub struct RequestSpec {
     pub authenticated: bool,
     pub params: Vec<NameValue>,
     pub headers: Vec<NameValue>,
-    pub body: String,
+    pub body: RequestBody,
+    pub options: RequestOptions,
     pub preflight: Option<Preflight>,
 }
 
@@ -140,6 +188,8 @@ pub struct ServiceInfo {
     pub is_authenticated: bool,
     /// `none`, `basic`, `bearer` or `apikey`.
     pub auth_kind: String,
+    /// On-disk format version (older workspaces are upgraded on the first save).
+    pub format_version: u32,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -250,6 +300,77 @@ impl From<Preflight> for core::Preflight {
     }
 }
 
+impl From<core::Body> for RequestBody {
+    fn from(b: core::Body) -> Self {
+        match b {
+            core::Body::None => RequestBody::Empty,
+            core::Body::Raw {
+                content,
+                content_type,
+            } => RequestBody::Raw {
+                content,
+                content_type,
+            },
+            core::Body::Json { content } => RequestBody::Json { content },
+            core::Body::Form { fields } => RequestBody::Form {
+                fields: nv_out(fields),
+            },
+            core::Body::Multipart { fields } => RequestBody::Multipart {
+                fields: nv_out(fields),
+            },
+            core::Body::Binary { path, content_type } => RequestBody::Binary { path, content_type },
+        }
+    }
+}
+
+impl From<RequestBody> for core::Body {
+    fn from(b: RequestBody) -> Self {
+        match b {
+            RequestBody::Empty => core::Body::None,
+            RequestBody::Raw {
+                content,
+                content_type,
+            } => core::Body::Raw {
+                content,
+                content_type: content_type.filter(|c| !c.trim().is_empty()),
+            },
+            RequestBody::Json { content } => core::Body::Json { content },
+            RequestBody::Form { fields } => core::Body::Form {
+                fields: nv_in(fields),
+            },
+            RequestBody::Multipart { fields } => core::Body::Multipart {
+                fields: nv_in(fields),
+            },
+            RequestBody::Binary { path, content_type } => core::Body::Binary {
+                path,
+                content_type: content_type.filter(|c| !c.trim().is_empty()),
+            },
+        }
+    }
+}
+
+impl From<core::RequestOptions> for RequestOptions {
+    fn from(o: core::RequestOptions) -> Self {
+        Self {
+            timeout_ms: o.timeout_ms,
+            follow_redirects: o.follow_redirects,
+            verify_tls: o.verify_tls,
+            proxy: o.proxy,
+        }
+    }
+}
+
+impl From<RequestOptions> for core::RequestOptions {
+    fn from(o: RequestOptions) -> Self {
+        Self {
+            timeout_ms: o.timeout_ms.filter(|ms| *ms > 0),
+            follow_redirects: o.follow_redirects,
+            verify_tls: o.verify_tls,
+            proxy: o.proxy,
+        }
+    }
+}
+
 impl From<core::RequestSpec> for RequestSpec {
     fn from(s: core::RequestSpec) -> Self {
         Self {
@@ -258,7 +379,8 @@ impl From<core::RequestSpec> for RequestSpec {
             authenticated: s.authenticated,
             params: nv_out(s.params),
             headers: nv_out(s.headers),
-            body: s.body,
+            body: s.body.into(),
+            options: s.options.into(),
             preflight: s.preflight.map(Into::into),
         }
     }
@@ -272,7 +394,8 @@ impl From<RequestSpec> for core::RequestSpec {
             authenticated: s.authenticated,
             params: nv_in(s.params),
             headers: nv_in(s.headers),
-            body: s.body,
+            body: s.body.into(),
+            options: s.options.into(),
             preflight: s.preflight.map(Into::into),
         }
     }
@@ -304,19 +427,10 @@ impl From<core::ScratchRequest> for ScratchRequest {
 
 impl From<core::EndpointVersion> for EndpointVersion {
     fn from(v: core::EndpointVersion) -> Self {
-        let c = v.config;
         Self {
             version: v.version,
             last_updated: v.last_updated,
-            spec: RequestSpec {
-                method: c.method,
-                url: c.url,
-                authenticated: c.authenticated,
-                params: nv_out(c.params),
-                headers: nv_out(c.headers),
-                body: c.body,
-                preflight: c.preflight.map(Into::into),
-            },
+            spec: v.config.spec().into(),
         }
     }
 }
@@ -405,6 +519,7 @@ impl XRestWorkspace {
             root_path: ws.root().to_string_lossy().into_owned(),
             is_authenticated: s.is_authenticated,
             auth_kind: s.effective_auth_kind().as_str().to_string(),
+            format_version: ws.format_version(),
         }
     }
 

@@ -161,7 +161,7 @@ fn endpoint_crud_and_versioning() {
 
     let mut s = ep.spec();
     s.method = "POST".into();
-    s.body = "{}".into();
+    s.body = Body::from_text("{}");
     let v2 = ws.update_endpoint(&ep.id, None, s).unwrap();
     assert_eq!(v2.last_version, 2);
 
@@ -245,7 +245,7 @@ fn promote_scratch_creates_versioned_endpoint_and_removes_scratch() {
     let mut ws = Workspace::create(dir.path(), "x").unwrap();
     let mut sp = spec("{{BASE_URL}}/things");
     sp.method = "POST".into();
-    sp.body = r#"{"a":1}"#.into();
+    sp.body = Body::from_text(r#"{"a":1}"#);
     sp.headers.push(NameValue::new("X-Trace", "1"));
     let s = ws.create_scratch("draft", sp.clone()).unwrap();
 
@@ -289,7 +289,12 @@ fn curl_import_into_scratch_and_endpoint() {
     assert_eq!(s.name, "api items");
     assert_eq!(s.spec.method, "POST");
     assert_eq!(s.spec.params, vec![NameValue::new("x", "1")]);
-    assert_eq!(s.spec.body, r#"{"n":1}"#);
+    assert_eq!(
+        s.spec.body,
+        Body::Json {
+            content: r#"{"n":1}"#.into()
+        }
+    );
     let e = ws
         .import_curl_as_endpoint("curl https://h.io/ping")
         .unwrap();
@@ -324,4 +329,94 @@ fn deferred_modules_report_not_implemented() {
         xrest_core::git::status(Path::new(".")),
         Err(Error::NotImplemented(_))
     ));
+}
+
+// ---- format version -----------------------------------------------------------------------
+
+#[test]
+fn new_workspaces_are_written_at_the_current_format() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = Workspace::create(dir.path(), "svc").unwrap();
+    assert_eq!(ws.format_version(), FORMAT_VERSION);
+    let yaml = fs::read_to_string(dir.path().join("service.yaml")).unwrap();
+    assert!(
+        yaml.contains(&format!("formatVersion: {FORMAT_VERSION}")),
+        "{yaml}"
+    );
+}
+
+#[test]
+fn legacy_workspace_opens_unchanged_and_upgrades_on_first_save() {
+    let dir = tempfile::tempdir().unwrap();
+    copy_dir(&fixture("legacy-service"), dir.path());
+    let before = fs::read_to_string(dir.path().join("service.yaml")).unwrap();
+
+    let mut ws = Workspace::open(dir.path()).unwrap();
+    assert_eq!(ws.format_version(), 0);
+    assert_eq!(ws.selected_environment().unwrap().name, "STAGE");
+    // Opening and reading never rewrites tracked files.
+    assert_eq!(
+        before,
+        fs::read_to_string(dir.path().join("service.yaml")).unwrap()
+    );
+
+    ws.create_scratch("probe", spec("http://h.io/x")).unwrap();
+    assert_eq!(ws.format_version(), FORMAT_VERSION);
+    let after = fs::read_to_string(dir.path().join("service.yaml")).unwrap();
+    assert!(
+        after.contains(&format!("formatVersion: {FORMAT_VERSION}")),
+        "{after}"
+    );
+    assert!(!after.contains("selectedEnvironment"), "{after}");
+
+    // The legacy environment choice survived the move into .xrest/state.yaml.
+    let reopened = Workspace::open(dir.path()).unwrap();
+    assert_eq!(reopened.format_version(), FORMAT_VERSION);
+    assert_eq!(reopened.selected_environment().unwrap().name, "STAGE");
+}
+
+#[test]
+fn workspace_from_a_newer_xrest_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    Workspace::create(dir.path(), "svc").unwrap();
+    let path = dir.path().join("service.yaml");
+    let yaml = fs::read_to_string(&path).unwrap().replace(
+        &format!("formatVersion: {FORMAT_VERSION}"),
+        &format!("formatVersion: {}", FORMAT_VERSION + 1),
+    );
+    fs::write(&path, yaml).unwrap();
+    match Workspace::open(dir.path()) {
+        Err(Error::UnsupportedFormat {
+            found, supported, ..
+        }) => assert_eq!((found, supported), (FORMAT_VERSION + 1, FORMAT_VERSION)),
+        other => panic!("expected UnsupportedFormat, got {:?}", other.err()),
+    }
+}
+
+#[test]
+fn typed_body_and_options_persist_through_endpoint_versions() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    let mut s = spec("http://h.io/upload");
+    s.body = Body::Multipart {
+        fields: vec![NameValue::new("a", "1"), NameValue::file("f", "data/x.bin")],
+    };
+    s.options = RequestOptions {
+        timeout_ms: Some(1500),
+        follow_redirects: Some(false),
+        ..Default::default()
+    };
+    let ep = ws.create_endpoint("Upload", s.clone()).unwrap();
+
+    let mut s2 = s.clone();
+    s2.body = Body::Json {
+        content: "{}".into(),
+    };
+    ws.update_endpoint(&ep.id, None, s2.clone()).unwrap();
+
+    let reopened = Workspace::open(dir.path()).unwrap();
+    assert_eq!(reopened.endpoint(&ep.id).unwrap().spec(), s2);
+    let versions = reopened.endpoint_versions(&ep.id, 10).unwrap();
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[1].config.spec(), s);
 }

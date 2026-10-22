@@ -11,7 +11,8 @@ fn spec(url: &str) -> RequestSpec {
         authenticated: false,
         params: vec![],
         headers: vec![],
-        body: String::new(),
+        body: RequestBody::Empty,
+        options: RequestOptions::default(),
         preflight: None,
     }
 }
@@ -114,4 +115,54 @@ fn errors_map_to_ffi_variants() {
         ws.import_curl_as_scratch("not curl".into()),
         Err(XRestError::InvalidInput { .. })
     ));
+}
+
+#[test]
+fn typed_body_and_options_round_trip_through_ffi() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws =
+        XRestWorkspace::create_workspace(dir.path().display().to_string(), "svc".into()).unwrap();
+    assert_eq!(ws.service().format_version, 1);
+    let mut s = spec("http://h.io/x");
+    let mut file = nv("f", "data/a.png");
+    file.kind = "file".into();
+    s.body = RequestBody::Multipart {
+        fields: vec![nv("a", "1"), file],
+    };
+    s.options = RequestOptions {
+        timeout_ms: Some(2000),
+        follow_redirects: None,
+        verify_tls: Some(false),
+        proxy: None,
+    };
+    let created = ws.create_scratch("upload".into(), s).unwrap();
+    let back = ws.get_scratch(created.id).unwrap().spec;
+    match back.body {
+        RequestBody::Multipart { fields } => {
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[1].kind, "file");
+            assert_eq!(fields[1].value, "data/a.png");
+        }
+        other => panic!("unexpected body {other:?}"),
+    }
+    assert_eq!(back.options.timeout_ms, Some(2000));
+    assert_eq!(back.options.verify_tls, Some(false));
+}
+
+#[test]
+fn newer_workspace_format_maps_to_its_own_error() {
+    let dir = tempfile::tempdir().unwrap();
+    XRestWorkspace::create_workspace(dir.path().display().to_string(), "svc".into()).unwrap();
+    let path = dir.path().join("service.yaml");
+    let yaml = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("formatVersion: 1", "formatVersion: 99");
+    std::fs::write(&path, yaml).unwrap();
+    match XRestWorkspace::open_workspace(dir.path().display().to_string()) {
+        Err(XRestError::UnsupportedFormat { found, supported }) => {
+            assert_eq!((found, supported), (99, 1))
+        }
+        Err(e) => panic!("unexpected error {e:?}"),
+        Ok(_) => panic!("a newer format must not open"),
+    }
 }

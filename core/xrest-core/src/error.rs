@@ -15,6 +15,19 @@ pub enum Error {
     },
     #[error("invalid YAML in {}: {message}", .path.display())]
     Yaml { path: PathBuf, message: String },
+    /// The workspace was written by a newer XRest; refusing to read (and later rewrite) it.
+    #[error(
+        "{} uses workspace format {found}, but this version of XRest supports up to {supported}; update XRest",
+        .path.display()
+    )]
+    UnsupportedFormat {
+        path: PathBuf,
+        found: u32,
+        supported: u32,
+    },
+    /// A request body could not be built (e.g. a file outside the workspace or missing).
+    #[error("invalid request body: {0}")]
+    InvalidBody(String),
     #[error("{what} not found: {id}")]
     NotFound { what: &'static str, id: String },
     #[error("invalid id {0:?}: ids may only contain letters, digits, '-', '_' and '.'")]

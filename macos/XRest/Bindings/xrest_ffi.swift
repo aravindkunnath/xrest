@@ -1585,24 +1585,109 @@ public func FfiConverterTypePreflight_lower(_ value: Preflight) -> RustBuffer {
 }
 
 
+/**
+ * Per-request transport options; `None` means the app default.
+ */
+public struct RequestOptions: Equatable, Hashable {
+    /**
+     * Milliseconds; 0 means the default.
+     */
+    public var timeoutMs: UInt64?
+    public var followRedirects: Bool?
+    /**
+     * `false` accepts invalid TLS certificates.
+     */
+    public var verifyTls: Bool?
+    /**
+     * Proxy URL; empty forces a direct connection.
+     */
+    public var proxy: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Milliseconds; 0 means the default.
+         */timeoutMs: UInt64?, followRedirects: Bool?, 
+        /**
+         * `false` accepts invalid TLS certificates.
+         */verifyTls: Bool?, 
+        /**
+         * Proxy URL; empty forces a direct connection.
+         */proxy: String?) {
+        self.timeoutMs = timeoutMs
+        self.followRedirects = followRedirects
+        self.verifyTls = verifyTls
+        self.proxy = proxy
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RequestOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRequestOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RequestOptions {
+        return
+            try RequestOptions(
+                timeoutMs: FfiConverterOptionUInt64.read(from: &buf), 
+                followRedirects: FfiConverterOptionBool.read(from: &buf), 
+                verifyTls: FfiConverterOptionBool.read(from: &buf), 
+                proxy: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RequestOptions, into buf: inout [UInt8]) {
+        FfiConverterOptionUInt64.write(value.timeoutMs, into: &buf)
+        FfiConverterOptionBool.write(value.followRedirects, into: &buf)
+        FfiConverterOptionBool.write(value.verifyTls, into: &buf)
+        FfiConverterOptionString.write(value.proxy, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRequestOptions_lift(_ buf: RustBuffer) throws -> RequestOptions {
+    return try FfiConverterTypeRequestOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRequestOptions_lower(_ value: RequestOptions) -> RustBuffer {
+    return FfiConverterTypeRequestOptions.lower(value)
+}
+
+
 public struct RequestSpec: Equatable, Hashable {
     public var method: String
     public var url: String
     public var authenticated: Bool
     public var params: [NameValue]
     public var headers: [NameValue]
-    public var body: String
+    public var body: RequestBody
+    public var options: RequestOptions
     public var preflight: Preflight?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(method: String, url: String, authenticated: Bool, params: [NameValue], headers: [NameValue], body: String, preflight: Preflight?) {
+    public init(method: String, url: String, authenticated: Bool, params: [NameValue], headers: [NameValue], body: RequestBody, options: RequestOptions, preflight: Preflight?) {
         self.method = method
         self.url = url
         self.authenticated = authenticated
         self.params = params
         self.headers = headers
         self.body = body
+        self.options = options
         self.preflight = preflight
     }
 
@@ -1627,7 +1712,8 @@ public struct FfiConverterTypeRequestSpec: FfiConverterRustBuffer {
                 authenticated: FfiConverterBool.read(from: &buf), 
                 params: FfiConverterSequenceTypeNameValue.read(from: &buf), 
                 headers: FfiConverterSequenceTypeNameValue.read(from: &buf), 
-                body: FfiConverterString.read(from: &buf), 
+                body: FfiConverterTypeRequestBody.read(from: &buf), 
+                options: FfiConverterTypeRequestOptions.read(from: &buf), 
                 preflight: FfiConverterOptionTypePreflight.read(from: &buf)
         )
     }
@@ -1638,7 +1724,8 @@ public struct FfiConverterTypeRequestSpec: FfiConverterRustBuffer {
         FfiConverterBool.write(value.authenticated, into: &buf)
         FfiConverterSequenceTypeNameValue.write(value.params, into: &buf)
         FfiConverterSequenceTypeNameValue.write(value.headers, into: &buf)
-        FfiConverterString.write(value.body, into: &buf)
+        FfiConverterTypeRequestBody.write(value.body, into: &buf)
+        FfiConverterTypeRequestOptions.write(value.options, into: &buf)
         FfiConverterOptionTypePreflight.write(value.preflight, into: &buf)
     }
 }
@@ -1790,18 +1877,26 @@ public struct ServiceInfo: Equatable, Hashable {
      * `none`, `basic`, `bearer` or `apikey`.
      */
     public var authKind: String
+    /**
+     * On-disk format version (older workspaces are upgraded on the first save).
+     */
+    public var formatVersion: UInt32
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(id: String, name: String, rootPath: String, isAuthenticated: Bool, 
         /**
          * `none`, `basic`, `bearer` or `apikey`.
-         */authKind: String) {
+         */authKind: String, 
+        /**
+         * On-disk format version (older workspaces are upgraded on the first save).
+         */formatVersion: UInt32) {
         self.id = id
         self.name = name
         self.rootPath = rootPath
         self.isAuthenticated = isAuthenticated
         self.authKind = authKind
+        self.formatVersion = formatVersion
     }
 
     
@@ -1824,7 +1919,8 @@ public struct FfiConverterTypeServiceInfo: FfiConverterRustBuffer {
                 name: FfiConverterString.read(from: &buf), 
                 rootPath: FfiConverterString.read(from: &buf), 
                 isAuthenticated: FfiConverterBool.read(from: &buf), 
-                authKind: FfiConverterString.read(from: &buf)
+                authKind: FfiConverterString.read(from: &buf), 
+                formatVersion: FfiConverterUInt32.read(from: &buf)
         )
     }
 
@@ -1834,6 +1930,7 @@ public struct FfiConverterTypeServiceInfo: FfiConverterRustBuffer {
         FfiConverterString.write(value.rootPath, into: &buf)
         FfiConverterBool.write(value.isAuthenticated, into: &buf)
         FfiConverterString.write(value.authKind, into: &buf)
+        FfiConverterUInt32.write(value.formatVersion, into: &buf)
     }
 }
 
@@ -1851,6 +1948,135 @@ public func FfiConverterTypeServiceInfo_lift(_ buf: RustBuffer) throws -> Servic
 public func FfiConverterTypeServiceInfo_lower(_ value: ServiceInfo) -> RustBuffer {
     return FfiConverterTypeServiceInfo.lower(value)
 }
+
+
+/**
+ * A typed request body. File paths are relative to the workspace root and must stay inside it.
+ */
+
+public enum RequestBody: Equatable, Hashable {
+    
+    /**
+     * No body. (Not called `None`, which would be ambiguous with Swift's `Optional.none`.)
+     */
+    case empty
+    /**
+     * Text as-is; without `content_type` the type is sniffed (JSON-looking → JSON).
+     */
+    case raw(content: String, contentType: String?
+    )
+    case json(content: String
+    )
+    /**
+     * `application/x-www-form-urlencoded`.
+     */
+    case form(fields: [NameValue]
+    )
+    /**
+     * `multipart/form-data`; fields with kind `file` upload the file at `value`.
+     */
+    case multipart(fields: [NameValue]
+    )
+    /**
+     * The bytes of one file.
+     */
+    case binary(path: String, contentType: String?
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RequestBody: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRequestBody: FfiConverterRustBuffer {
+    typealias SwiftType = RequestBody
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RequestBody {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .empty
+        
+        case 2: return .raw(content: try FfiConverterString.read(from: &buf), contentType: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 3: return .json(content: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .form(fields: try FfiConverterSequenceTypeNameValue.read(from: &buf)
+        )
+        
+        case 5: return .multipart(fields: try FfiConverterSequenceTypeNameValue.read(from: &buf)
+        )
+        
+        case 6: return .binary(path: try FfiConverterString.read(from: &buf), contentType: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RequestBody, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .empty:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .raw(content,contentType):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(content, into: &buf)
+            FfiConverterOptionString.write(contentType, into: &buf)
+            
+        
+        case let .json(content):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(content, into: &buf)
+            
+        
+        case let .form(fields):
+            writeInt(&buf, Int32(4))
+            FfiConverterSequenceTypeNameValue.write(fields, into: &buf)
+            
+        
+        case let .multipart(fields):
+            writeInt(&buf, Int32(5))
+            FfiConverterSequenceTypeNameValue.write(fields, into: &buf)
+            
+        
+        case let .binary(path,contentType):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterOptionString.write(contentType, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRequestBody_lift(_ buf: RustBuffer) throws -> RequestBody {
+    return try FfiConverterTypeRequestBody.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRequestBody_lower(_ value: RequestBody) -> RustBuffer {
+    return FfiConverterTypeRequestBody.lower(value)
+}
+
 
 
 public 
@@ -1872,6 +2098,11 @@ enum XRestError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
     case Http(message: String
     )
     case Preflight(message: String
+    )
+    /**
+     * The workspace was written by a newer XRest.
+     */
+    case UnsupportedFormat(found: UInt32, supported: UInt32
     )
     case MissingSecrets(keys: [String]
     )
@@ -1924,10 +2155,14 @@ public struct FfiConverterTypeXRestError: FfiConverterRustBuffer {
         case 6: return .Preflight(
             message: try FfiConverterString.read(from: &buf)
             )
-        case 7: return .MissingSecrets(
+        case 7: return .UnsupportedFormat(
+            found: try FfiConverterUInt32.read(from: &buf), 
+            supported: try FfiConverterUInt32.read(from: &buf)
+            )
+        case 8: return .MissingSecrets(
             keys: try FfiConverterSequenceString.read(from: &buf)
             )
-        case 8: return .NotImplemented(
+        case 9: return .NotImplemented(
             message: try FfiConverterString.read(from: &buf)
             )
 
@@ -1972,13 +2207,19 @@ public struct FfiConverterTypeXRestError: FfiConverterRustBuffer {
             FfiConverterString.write(message, into: &buf)
             
         
-        case let .MissingSecrets(keys):
+        case let .UnsupportedFormat(found,supported):
             writeInt(&buf, Int32(7))
+            FfiConverterUInt32.write(found, into: &buf)
+            FfiConverterUInt32.write(supported, into: &buf)
+            
+        
+        case let .MissingSecrets(keys):
+            writeInt(&buf, Int32(8))
             FfiConverterSequenceString.write(keys, into: &buf)
             
         
         case let .NotImplemented(message):
-            writeInt(&buf, Int32(8))
+            writeInt(&buf, Int32(9))
             FfiConverterString.write(message, into: &buf)
             
         }
@@ -1998,6 +2239,54 @@ public func FfiConverterTypeXRestError_lift(_ buf: RustBuffer) throws -> XRestEr
 #endif
 public func FfiConverterTypeXRestError_lower(_ value: XRestError) -> RustBuffer {
     return FfiConverterTypeXRestError.lower(value)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
+    typealias SwiftType = Bool?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterBool.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterBool.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
 }
 
 #if swift(>=5.8)
