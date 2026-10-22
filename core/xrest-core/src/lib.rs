@@ -1,0 +1,26 @@
+//! XRest core: everything that must behave identically on every platform.
+//!
+//! Platform apps (SwiftUI today, GTK later) own all UI and talk to this crate through
+//! `xrest-ffi`. See `docs/architecture.md` for the boundary.
+
+pub mod curl;
+pub mod error;
+pub mod exec;
+pub mod git;
+pub mod history;
+pub mod interpolate;
+pub mod model;
+pub mod policy;
+pub mod preflight;
+pub mod secrets;
+pub mod storage;
+pub mod swagger;
+pub mod versions;
+pub mod workspace;
+
+pub use error::{Error, Result};
+pub use exec::{HttpOptions, PreparedSend};
+pub use model::*;
+pub use policy::SendPolicy;
+pub use secrets::{MemorySecretStore, SecretStore};
+pub use workspace::Workspace;

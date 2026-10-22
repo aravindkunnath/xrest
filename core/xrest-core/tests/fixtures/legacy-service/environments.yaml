@@ -1,0 +1,27 @@
+- name: DEV
+  isUnsafe: false
+  variables:
+    - name: BASE_URL
+      value: http://localhost:8080
+      enabled: true
+      type: plain
+    - name: TOKEN
+      value: ""
+      enabled: true
+      secretKey: dev-token
+      type: secret
+- name: STAGE
+  isUnsafe: false
+  variables:
+    - name: BASE_URL
+      value: https://stage.example.com
+      enabled: true
+      secretKey: ""
+      type: plain
+- name: PROD
+  isUnsafe: true
+  variables:
+    - name: BASE_URL
+      value: https://example.com
+      enabled: true
+      type: plain

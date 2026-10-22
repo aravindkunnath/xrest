@@ -1,0 +1,30 @@
+id: e-1
+serviceId: s-1700000000000
+name: List pets
+method: GET
+url: '{{BASE_URL}}/pets'
+authenticated: true
+authType: bearer
+metadata:
+    version: "1.0"
+    lastUpdated: 1700000001
+params:
+    - name: limit
+      value: "10"
+      enabled: true
+      type: plain
+headers: []
+body: ""
+lastVersion: 2
+versions:
+    - version: 1
+      config:
+        method: GET
+        url: '{{BASE_URL}}/pets'
+        authenticated: true
+        authType: bearer
+        params: []
+        headers: []
+        body: ""
+        preflight: null
+      lastUpdated: 1700000000

@@ -1,0 +1,551 @@
+//! UniFFI surface over `xrest-core`.
+//!
+//! The API is deliberately coarse: one object ([`XRestWorkspace`]) plus plain records. Records
+//! mirror the core types (the core stays free of any FFI dependency); conversions live here.
+//! Swift bindings are generated from this crate; see `macos/scripts/generate-bindings.sh`.
+
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use xrest_core as core;
+
+uniffi::setup_scaffolding!();
+
+// ---- errors -------------------------------------------------------------------------------
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum XRestError {
+    /// The selected environment is unsafe and `confirmed` was false.
+    #[error("environment {environment:?} is unsafe: sending requires confirmation")]
+    ConfirmationRequired { environment: String },
+    #[error("{message}")]
+    NotFound { message: String },
+    #[error("{message}")]
+    InvalidInput { message: String },
+    #[error("{message}")]
+    Io { message: String },
+    #[error("{message}")]
+    Http { message: String },
+    #[error("{message}")]
+    Preflight { message: String },
+    #[error("missing secrets: {}", keys.join(", "))]
+    MissingSecrets { keys: Vec<String> },
+    #[error("{message}")]
+    NotImplemented { message: String },
+}
+
+impl From<core::Error> for XRestError {
+    fn from(e: core::Error) -> Self {
+        let message = e.to_string();
+        match e {
+            core::Error::ConfirmationRequired { environment } => {
+                XRestError::ConfirmationRequired { environment }
+            }
+            core::Error::NotFound { .. } => XRestError::NotFound { message },
+            core::Error::NotAWorkspace(_)
+            | core::Error::AlreadyExists(_)
+            | core::Error::InvalidId(_)
+            | core::Error::InvalidUrl { .. }
+            | core::Error::UnknownEnvironment(_)
+            | core::Error::Curl(_) => XRestError::InvalidInput { message },
+            core::Error::Io { .. } | core::Error::Yaml { .. } => XRestError::Io { message },
+            core::Error::MissingSecrets(keys) => XRestError::MissingSecrets { keys },
+            core::Error::Preflight(_) => XRestError::Preflight { message },
+            core::Error::Http(_) => XRestError::Http { message },
+            core::Error::NotImplemented(_) => XRestError::NotImplemented { message },
+        }
+    }
+}
+
+type Result<T> = std::result::Result<T, XRestError>;
+
+// ---- records ------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct NameValue {
+    pub name: String,
+    pub value: String,
+    pub enabled: bool,
+    pub secret_key: Option<String>,
+    /// `plain` or `secret` (informational).
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct Preflight {
+    pub enabled: bool,
+    pub method: String,
+    pub url: String,
+    pub body: String,
+    pub body_type: String,
+    pub body_params: Vec<NameValue>,
+    pub headers: Vec<NameValue>,
+    pub cache_token: bool,
+    pub cache_duration: String,
+    pub cache_duration_key: String,
+    pub cache_duration_unit: String,
+    pub token_key: String,
+    pub token_header: Option<String>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RequestSpec {
+    pub method: String,
+    pub url: String,
+    pub authenticated: bool,
+    pub params: Vec<NameValue>,
+    pub headers: Vec<NameValue>,
+    pub body: String,
+    pub preflight: Option<Preflight>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct Endpoint {
+    pub id: String,
+    pub name: String,
+    pub spec: RequestSpec,
+    pub last_version: i32,
+    /// Unix seconds.
+    pub last_updated: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ScratchRequest {
+    pub id: String,
+    pub name: String,
+    pub spec: RequestSpec,
+    /// Unix seconds.
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct EndpointVersion {
+    pub version: i32,
+    pub last_updated: u64,
+    pub spec: RequestSpec,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct Environment {
+    pub name: String,
+    pub is_unsafe: bool,
+    pub variables: Vec<NameValue>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ServiceInfo {
+    pub id: String,
+    pub name: String,
+    pub root_path: String,
+    pub is_authenticated: bool,
+    /// `none`, `basic`, `bearer` or `apikey`.
+    pub auth_kind: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SendPolicy {
+    pub environment: Option<String>,
+    pub requires_confirmation: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HeaderPair {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub headers: Vec<HeaderPair>,
+    pub content_type: String,
+    /// UTF-8 text, or base64 when `body_is_base64`.
+    pub body: String,
+    pub body_is_base64: bool,
+    pub size_bytes: u64,
+    pub time_ms: u64,
+    pub final_url: String,
+    pub environment: Option<String>,
+    pub unresolved_variables: Vec<String>,
+}
+
+// ---- conversions --------------------------------------------------------------------------
+
+impl From<core::NameValue> for NameValue {
+    fn from(v: core::NameValue) -> Self {
+        Self {
+            name: v.name,
+            value: v.value,
+            enabled: v.enabled,
+            secret_key: v.secret_key.filter(|s| !s.is_empty()),
+            kind: v.kind,
+        }
+    }
+}
+
+impl From<NameValue> for core::NameValue {
+    fn from(v: NameValue) -> Self {
+        Self {
+            name: v.name,
+            value: v.value,
+            enabled: v.enabled,
+            secret_key: v.secret_key.filter(|s| !s.is_empty()),
+            kind: if v.kind.is_empty() {
+                "plain".into()
+            } else {
+                v.kind
+            },
+        }
+    }
+}
+
+fn nv_in(v: Vec<NameValue>) -> Vec<core::NameValue> {
+    v.into_iter().map(Into::into).collect()
+}
+
+fn nv_out(v: Vec<core::NameValue>) -> Vec<NameValue> {
+    v.into_iter().map(Into::into).collect()
+}
+
+impl From<core::Preflight> for Preflight {
+    fn from(p: core::Preflight) -> Self {
+        Self {
+            enabled: p.enabled,
+            method: p.method,
+            url: p.url,
+            body: p.body,
+            body_type: p.body_type,
+            body_params: nv_out(p.body_params),
+            headers: nv_out(p.headers),
+            cache_token: p.cache_token,
+            cache_duration: p.cache_duration,
+            cache_duration_key: p.cache_duration_key,
+            cache_duration_unit: p.cache_duration_unit,
+            token_key: p.token_key,
+            token_header: p.token_header,
+        }
+    }
+}
+
+impl From<Preflight> for core::Preflight {
+    fn from(p: Preflight) -> Self {
+        Self {
+            enabled: p.enabled,
+            method: p.method,
+            url: p.url,
+            body: p.body,
+            body_type: p.body_type,
+            body_params: nv_in(p.body_params),
+            headers: nv_in(p.headers),
+            cache_token: p.cache_token,
+            cache_duration: p.cache_duration,
+            cache_duration_key: p.cache_duration_key,
+            cache_duration_unit: p.cache_duration_unit,
+            token_key: p.token_key,
+            token_header: p.token_header,
+        }
+    }
+}
+
+impl From<core::RequestSpec> for RequestSpec {
+    fn from(s: core::RequestSpec) -> Self {
+        Self {
+            method: s.method,
+            url: s.url,
+            authenticated: s.authenticated,
+            params: nv_out(s.params),
+            headers: nv_out(s.headers),
+            body: s.body,
+            preflight: s.preflight.map(Into::into),
+        }
+    }
+}
+
+impl From<RequestSpec> for core::RequestSpec {
+    fn from(s: RequestSpec) -> Self {
+        Self {
+            method: s.method,
+            url: s.url,
+            authenticated: s.authenticated,
+            params: nv_in(s.params),
+            headers: nv_in(s.headers),
+            body: s.body,
+            preflight: s.preflight.map(Into::into),
+        }
+    }
+}
+
+impl From<core::Endpoint> for Endpoint {
+    fn from(e: core::Endpoint) -> Self {
+        let spec = e.spec().into();
+        Self {
+            id: e.id,
+            name: e.name,
+            spec,
+            last_version: e.last_version,
+            last_updated: e.metadata.last_updated,
+        }
+    }
+}
+
+impl From<core::ScratchRequest> for ScratchRequest {
+    fn from(s: core::ScratchRequest) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            spec: s.spec.into(),
+            updated_at: s.updated_at,
+        }
+    }
+}
+
+impl From<core::EndpointVersion> for EndpointVersion {
+    fn from(v: core::EndpointVersion) -> Self {
+        let c = v.config;
+        Self {
+            version: v.version,
+            last_updated: v.last_updated,
+            spec: RequestSpec {
+                method: c.method,
+                url: c.url,
+                authenticated: c.authenticated,
+                params: nv_out(c.params),
+                headers: nv_out(c.headers),
+                body: c.body,
+                preflight: c.preflight.map(Into::into),
+            },
+        }
+    }
+}
+
+impl From<core::Environment> for Environment {
+    fn from(e: core::Environment) -> Self {
+        Self {
+            name: e.name,
+            is_unsafe: e.is_unsafe,
+            variables: nv_out(e.variables),
+        }
+    }
+}
+
+impl From<core::HttpResponse> for HttpResponse {
+    fn from(r: core::HttpResponse) -> Self {
+        Self {
+            status: r.status,
+            status_text: r.status_text,
+            headers: r
+                .headers
+                .into_iter()
+                .map(|(name, value)| HeaderPair { name, value })
+                .collect(),
+            content_type: r.content_type,
+            body: r.body,
+            body_is_base64: r.body_is_base64,
+            size_bytes: r.size_bytes,
+            time_ms: r.time_ms,
+            final_url: r.final_url,
+            environment: r.environment,
+            unresolved_variables: r.unresolved_variables,
+        }
+    }
+}
+
+// ---- the workspace object -----------------------------------------------------------------
+
+/// One open workspace (a service directory with its endpoints and scratchpad).
+///
+/// Thread-safe: methods may be called from any thread. Synchronous methods only touch local
+/// files; [`XRestWorkspace::send`] is async and does not hold the internal lock while waiting
+/// on the network.
+#[derive(uniffi::Object)]
+pub struct XRestWorkspace {
+    inner: Mutex<core::Workspace>,
+    secrets: Arc<core::MemorySecretStore>,
+}
+
+impl XRestWorkspace {
+    fn wrap(mut ws: core::Workspace) -> Arc<Self> {
+        let secrets = Arc::new(core::MemorySecretStore::default());
+        ws.set_secret_store(secrets.clone());
+        Arc::new(Self {
+            inner: Mutex::new(ws),
+            secrets,
+        })
+    }
+
+    fn lock(&self) -> MutexGuard<'_, core::Workspace> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl XRestWorkspace {
+    /// Open an existing workspace directory (must contain `service.yaml`).
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<Self>> {
+        Ok(Self::wrap(core::Workspace::open(path)?))
+    }
+
+    /// Initialise a new workspace in `path` and open it.
+    #[uniffi::constructor]
+    pub fn create(path: String, name: String) -> Result<Arc<Self>> {
+        Ok(Self::wrap(core::Workspace::create(path, &name)?))
+    }
+
+    pub fn service(&self) -> ServiceInfo {
+        let ws = self.lock();
+        let s = ws.service();
+        ServiceInfo {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            root_path: ws.root().to_string_lossy().into_owned(),
+            is_authenticated: s.is_authenticated,
+            auth_kind: s.effective_auth_kind().as_str().to_string(),
+        }
+    }
+
+    /// Non-fatal problems found while loading the workspace.
+    pub fn warnings(&self) -> Vec<String> {
+        self.lock().warnings().to_vec()
+    }
+
+    // environments
+
+    pub fn environments(&self) -> Vec<Environment> {
+        self.lock()
+            .environments()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub fn selected_environment(&self) -> Option<String> {
+        self.lock().selected_environment().map(|e| e.name.clone())
+    }
+
+    pub fn select_environment(&self, name: String) -> Result<()> {
+        Ok(self.lock().select_environment(&name)?)
+    }
+
+    /// Whether a send in the current environment needs `confirmed = true`.
+    pub fn send_policy(&self) -> SendPolicy {
+        let p = self.lock().send_policy();
+        SendPolicy {
+            environment: p.environment,
+            requires_confirmation: p.requires_confirmation,
+        }
+    }
+
+    // endpoints
+
+    pub fn list_endpoints(&self) -> Vec<Endpoint> {
+        self.lock()
+            .endpoints()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub fn get_endpoint(&self, id: String) -> Result<Endpoint> {
+        Ok(self.lock().endpoint(&id)?.clone().into())
+    }
+
+    pub fn create_endpoint(&self, name: String, spec: RequestSpec) -> Result<Endpoint> {
+        Ok(self.lock().create_endpoint(&name, spec.into())?.into())
+    }
+
+    /// Save an endpoint. Records a new version when the request changed.
+    pub fn update_endpoint(&self, id: String, name: String, spec: RequestSpec) -> Result<Endpoint> {
+        Ok(self
+            .lock()
+            .update_endpoint(&id, Some(&name), spec.into())?
+            .into())
+    }
+
+    pub fn delete_endpoint(&self, id: String) -> Result<()> {
+        Ok(self.lock().delete_endpoint(&id)?)
+    }
+
+    /// Version history, newest first.
+    pub fn endpoint_versions(&self, id: String, limit: u32) -> Result<Vec<EndpointVersion>> {
+        Ok(self
+            .lock()
+            .endpoint_versions(&id, limit as usize)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    // scratchpad
+
+    pub fn list_scratch(&self) -> Vec<ScratchRequest> {
+        self.lock()
+            .scratch_requests()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub fn get_scratch(&self, id: String) -> Result<ScratchRequest> {
+        Ok(self.lock().scratch(&id)?.clone().into())
+    }
+
+    pub fn create_scratch(&self, name: String, spec: RequestSpec) -> Result<ScratchRequest> {
+        Ok(self.lock().create_scratch(&name, spec.into())?.into())
+    }
+
+    pub fn update_scratch(
+        &self,
+        id: String,
+        name: String,
+        spec: RequestSpec,
+    ) -> Result<ScratchRequest> {
+        Ok(self
+            .lock()
+            .update_scratch(&id, Some(&name), spec.into())?
+            .into())
+    }
+
+    pub fn delete_scratch(&self, id: String) -> Result<()> {
+        Ok(self.lock().delete_scratch(&id)?)
+    }
+
+    /// Move a scratch request into the versioned endpoints (the scratch file is removed).
+    pub fn promote_scratch(&self, id: String, name: Option<String>) -> Result<Endpoint> {
+        Ok(self.lock().promote_scratch(&id, name.as_deref())?.into())
+    }
+
+    /// Parse a cURL command into a new scratch request.
+    pub fn import_curl_as_scratch(&self, command: String) -> Result<ScratchRequest> {
+        Ok(self.lock().import_curl_as_scratch(&command)?.into())
+    }
+
+    // secrets and caches
+
+    /// Store a secret for `{{secret.KEY}}` placeholders. In memory only for now.
+    /// TODO(keychain): back this with the platform credential store.
+    pub fn set_secret(&self, key: String, value: String) {
+        self.secrets.set(key, value);
+    }
+
+    pub fn clear_token_cache(&self) {
+        self.lock().clear_token_cache();
+    }
+
+    // sending
+
+    /// Resolve and send `request` in the selected environment.
+    ///
+    /// Fails with [`XRestError::ConfirmationRequired`] if the environment is unsafe and
+    /// `confirmed` is false. A non-2xx status is a normal response, not an error.
+    pub async fn send(&self, request: RequestSpec, confirmed: bool) -> Result<HttpResponse> {
+        let prepared = {
+            let ws = self.lock();
+            ws.prepare_send(&request.into(), confirmed)?
+        };
+        Ok(prepared.execute().await?.into())
+    }
+}

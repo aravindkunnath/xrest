@@ -1,0 +1,610 @@
+//! End-to-end sends against a local wiremock server.
+
+use std::sync::Arc;
+
+use wiremock::matchers::{body_json, body_string, header, method, path, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+use xrest_core::*;
+
+struct Fixture {
+    _dir: tempfile::TempDir,
+    ws: Workspace,
+    server: MockServer,
+    secrets: Arc<MemorySecretStore>,
+}
+
+async fn fixture() -> Fixture {
+    let dir = tempfile::tempdir().unwrap();
+    let server = MockServer::start().await;
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    ws.set_http_options(HttpOptions {
+        use_system_proxy: false,
+        ..Default::default()
+    });
+    let secrets = Arc::new(MemorySecretStore::default());
+    ws.set_secret_store(secrets.clone());
+    let uri = server.uri();
+    let envs = vec![
+        Environment {
+            name: "DEV".into(),
+            is_unsafe: false,
+            variables: vec![
+                NameValue::new("BASE_URL", uri.clone()),
+                NameValue::new("USER_ID", "42"),
+            ],
+        },
+        Environment {
+            name: "PROD".into(),
+            is_unsafe: true,
+            variables: vec![NameValue::new("BASE_URL", uri)],
+        },
+    ];
+    ws.update_environments(envs).unwrap();
+    Fixture {
+        _dir: dir,
+        ws,
+        server,
+        secrets,
+    }
+}
+
+fn spec(method: &str, url: &str) -> RequestSpec {
+    RequestSpec {
+        method: method.into(),
+        url: url.into(),
+        ..Default::default()
+    }
+}
+
+fn set_service(f: &mut Fixture, edit: impl FnOnce(&mut ServiceFile)) {
+    // Rewrite service.yaml and reopen, as a user editing the file would.
+    let root = f.ws.root().to_path_buf();
+    let mut svc = f.ws.service().clone();
+    edit(&mut svc);
+    xrest_core::storage::save_service(&root, &svc).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.set_http_options(HttpOptions {
+        use_system_proxy: false,
+        ..Default::default()
+    });
+    ws.set_secret_store(f.secrets.clone());
+    f.ws = ws;
+}
+
+#[tokio::test]
+async fn sends_with_interpolation_params_headers_and_body() {
+    let f = fixture().await;
+    Mock::given(method("POST"))
+        .and(path("/users/42"))
+        .and(query_param("page", "2"))
+        .and(query_param("keep", "yes"))
+        .and(header("x-user", "42"))
+        .and(header("content-type", "application/json"))
+        .and(body_json(serde_json::json!({"id": "42"})))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .insert_header("x-reply", "ok")
+                .set_body_string(r#"{"created":true}"#),
+        )
+        .expect(1)
+        .mount(&f.server)
+        .await;
+
+    let mut s = spec("post", "{{BASE_URL}}/users/{{USER_ID}}?page=1&keep=yes");
+    s.params.push(NameValue::new("page", "2"));
+    let mut disabled = NameValue::new("ignored", "x");
+    disabled.enabled = false;
+    s.params.push(disabled);
+    s.headers.push(NameValue::new("X-User", "{{ USER_ID }}"));
+    s.body = r#"{"id": "{{USER_ID}}"}"#.into();
+
+    let prepared = f.ws.prepare_send(&s, false).unwrap();
+    assert_eq!(prepared.environment(), Some("DEV"));
+    let resp = prepared.execute().await.unwrap();
+    assert_eq!(resp.status, 201);
+    assert_eq!(resp.status_text, "Created");
+    assert_eq!(resp.body, r#"{"created":true}"#);
+    assert!(!resp.body_is_base64);
+    assert_eq!(resp.size_bytes, 16);
+    assert!(resp
+        .headers
+        .iter()
+        .any(|(k, v)| k == "x-reply" && v == "ok"));
+    assert!(resp.unresolved_variables.is_empty());
+    assert!(resp.final_url.contains("page=2"));
+}
+
+#[tokio::test]
+async fn non_2xx_is_a_response_not_an_error() {
+    let f = fixture().await;
+    Mock::given(path("/missing"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("nope"))
+        .mount(&f.server)
+        .await;
+    let resp =
+        f.ws.prepare_send(&spec("GET", "{{BASE_URL}}/missing"), false)
+            .unwrap()
+            .execute()
+            .await
+            .unwrap();
+    assert_eq!((resp.status, resp.body.as_str()), (404, "nope"));
+}
+
+#[tokio::test]
+async fn reports_unresolved_variables_but_still_sends() {
+    let f = fixture().await;
+    Mock::given(path("/x"))
+        .and(header("x-a", "{{NOT_DEFINED}}"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/x");
+    s.headers.push(NameValue::new("X-A", "{{NOT_DEFINED}}"));
+    let prepared = f.ws.prepare_send(&s, false).unwrap();
+    assert_eq!(prepared.unresolved_variables(), ["NOT_DEFINED"]);
+    let resp = prepared.execute().await.unwrap();
+    assert_eq!(resp.unresolved_variables, vec!["NOT_DEFINED"]);
+}
+
+#[tokio::test]
+async fn unsafe_environment_requires_explicit_confirmation() {
+    let mut f = fixture().await;
+    Mock::given(path("/danger"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    f.ws.select_environment("PROD").unwrap();
+    assert!(f.ws.send_policy().requires_confirmation);
+
+    let s = spec("DELETE", "{{BASE_URL}}/danger");
+    match f.ws.prepare_send(&s, false) {
+        Err(Error::ConfirmationRequired { environment }) => assert_eq!(environment, "PROD"),
+        other => panic!("expected ConfirmationRequired, got {:?}", other.err()),
+    }
+    // Also by-id helpers.
+    let sc = f.ws.create_scratch("d", s.clone()).unwrap();
+    assert!(matches!(
+        f.ws.prepare_send_scratch(&sc.id, false),
+        Err(Error::ConfirmationRequired { .. })
+    ));
+    let ep = f.ws.create_endpoint("d", s.clone()).unwrap();
+    assert!(matches!(
+        f.ws.prepare_send_endpoint(&ep.id, false),
+        Err(Error::ConfirmationRequired { .. })
+    ));
+
+    let resp =
+        f.ws.prepare_send(&s, true)
+            .unwrap()
+            .execute()
+            .await
+            .unwrap();
+    assert_eq!(resp.status, 200);
+    assert_eq!(resp.environment.as_deref(), Some("PROD"));
+    // `expect(1)` verifies on drop that the refused attempts never hit the network.
+}
+
+#[tokio::test]
+async fn scratch_requests_use_the_same_environment() {
+    let mut f = fixture().await;
+    Mock::given(path("/scratch"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("hi"))
+        .mount(&f.server)
+        .await;
+    let sc =
+        f.ws.create_scratch("s", spec("GET", "{{BASE_URL}}/scratch"))
+            .unwrap();
+    let resp =
+        f.ws.prepare_send_scratch(&sc.id, false)
+            .unwrap()
+            .execute()
+            .await
+            .unwrap();
+    assert_eq!(resp.body, "hi");
+    assert_eq!(resp.environment.as_deref(), Some("DEV"));
+}
+
+#[tokio::test]
+async fn service_bearer_auth_only_when_request_opts_in() {
+    let mut f = fixture().await;
+    set_service(&mut f, |s| {
+        s.is_authenticated = true;
+        s.auth_type = Some(AuthKind::Bearer);
+        s.auth = Some(AuthConfig {
+            kind: AuthKind::Bearer,
+            bearer_token: "{{secret.api}}".into(),
+            ..Default::default()
+        });
+    });
+    f.secrets.set("api", "tok-123");
+    Mock::given(path("/authed"))
+        .and(header("authorization", "Bearer tok-123"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/anon"))
+        .respond_with(move |req: &wiremock::Request| {
+            assert!(req.headers.get("authorization").is_none());
+            ResponseTemplate::new(200)
+        })
+        .expect(1)
+        .mount(&f.server)
+        .await;
+
+    let mut authed = spec("GET", "{{BASE_URL}}/authed");
+    authed.authenticated = true;
+    f.ws.prepare_send(&authed, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+    f.ws.prepare_send(&spec("GET", "{{BASE_URL}}/anon"), false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn basic_and_apikey_auth() {
+    let mut f = fixture().await;
+    set_service(&mut f, |s| {
+        s.is_authenticated = true;
+        s.auth_type = Some(AuthKind::Basic);
+        s.auth = Some(AuthConfig {
+            kind: AuthKind::Basic,
+            basic_user: "aladdin".into(),
+            basic_pass: "open sesame".into(),
+            ..Default::default()
+        });
+    });
+    Mock::given(path("/basic"))
+        .and(header(
+            "authorization",
+            "Basic YWxhZGRpbjpvcGVuIHNlc2FtZQ==",
+        ))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/basic");
+    s.authenticated = true;
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+
+    for (location, expect_header) in [("header", true), ("query", false)] {
+        set_service(&mut f, |svc| {
+            svc.auth_type = Some(AuthKind::Apikey);
+            svc.auth = Some(AuthConfig {
+                kind: AuthKind::Apikey,
+                api_key_name: "X-Key".into(),
+                api_key_value: "k1".into(),
+                api_key_location: location.into(),
+                ..Default::default()
+            });
+        });
+        let p = format!("/apikey-{location}");
+        let mut m = Mock::given(path(p.as_str()));
+        m = if expect_header {
+            m.and(header("x-key", "k1"))
+        } else {
+            m.and(query_param("X-Key", "k1"))
+        };
+        m.respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&f.server)
+            .await;
+        let mut s = spec("GET", &format!("{{{{BASE_URL}}}}{p}"));
+        s.authenticated = true;
+        f.ws.prepare_send(&s, false)
+            .unwrap()
+            .execute()
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn missing_secret_is_an_error_before_any_request() {
+    let f = fixture().await;
+    let mut s = spec("GET", "{{BASE_URL}}/x");
+    s.headers.push(NameValue::new("X-S", "{{secret.absent}}"));
+    match f.ws.prepare_send(&s, false) {
+        Err(Error::MissingSecrets(keys)) => assert_eq!(keys, vec!["absent"]),
+        other => panic!("{:?}", other.err()),
+    }
+}
+
+#[tokio::test]
+async fn environment_variable_with_secret_key_resolves_from_store() {
+    let mut f = fixture().await;
+    let mut envs = f.ws.environments().to_vec();
+    let mut v = NameValue::new("API_KEY", "");
+    v.secret_key = Some("prod-key".into());
+    envs[0].variables.push(v);
+    f.ws.update_environments(envs).unwrap();
+    f.secrets.set("prod-key", "shh");
+    Mock::given(path("/k"))
+        .and(header("x-api-key", "shh"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/k");
+    s.headers.push(NameValue::new("X-Api-Key", "{{API_KEY}}"));
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+}
+
+fn preflight(server: &MockServer) -> Preflight {
+    Preflight {
+        enabled: true,
+        method: "POST".into(),
+        url: format!("{}/oauth/token", server.uri()),
+        body: r#"{"client":"abc"}"#.into(),
+        cache_token: true,
+        cache_duration: "derived".into(),
+        cache_duration_key: "expires_in".into(),
+        cache_duration_unit: "seconds".into(),
+        token_key: "data.token".into(),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn preflight_acquires_injects_and_caches_token() {
+    let mut f = fixture().await;
+    let pf = preflight(&f.server);
+    set_service(&mut f, |s| {
+        s.is_authenticated = true;
+        s.preflight = Some(pf);
+    });
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .and(body_string(r#"{"client":"abc"}"#))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"data": {"token": "pf-token"}, "expires_in": 3600}),
+            ),
+        )
+        .expect(1) // second send must come from the cache
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/secure"))
+        .and(header("authorization", "Bearer pf-token"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(2)
+        .mount(&f.server)
+        .await;
+
+    let mut s = spec("GET", "{{BASE_URL}}/secure");
+    s.authenticated = true;
+    for _ in 0..2 {
+        let r =
+            f.ws.prepare_send(&s, false)
+                .unwrap()
+                .execute()
+                .await
+                .unwrap();
+        assert_eq!(r.status, 200);
+    }
+}
+
+#[tokio::test]
+async fn preflight_token_cache_is_scoped_per_environment_and_clearable() {
+    let mut f = fixture().await;
+    // Same preflight URL for both environments; tokens must not leak across them.
+    let pf = preflight(&f.server);
+    set_service(&mut f, |s| {
+        s.is_authenticated = true;
+        s.preflight = Some(pf);
+    });
+    Mock::given(path("/oauth/token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"token": "t"}, "expires_in": 3600})),
+        )
+        .expect(3)
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/secure"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/secure");
+    s.authenticated = true;
+
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap(); // DEV: fetch #1
+    f.ws.select_environment("PROD").unwrap();
+    f.ws.prepare_send(&s, true)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap(); // PROD: fetch #2
+    f.ws.prepare_send(&s, true)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap(); // PROD: cached
+    f.ws.clear_token_cache();
+    f.ws.prepare_send(&s, true)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap(); // fetch #3
+}
+
+#[tokio::test]
+async fn endpoint_preflight_overrides_service_and_custom_header_has_no_bearer_prefix() {
+    let mut f = fixture().await;
+    let svc_pf = Preflight {
+        url: format!("{}/svc-token", f.server.uri()),
+        ..preflight(&f.server)
+    };
+    set_service(&mut f, |s| {
+        s.is_authenticated = true;
+        s.preflight = Some(svc_pf);
+    });
+    Mock::given(path("/svc-token"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/ep-token"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"access_token": "abc"})),
+        )
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/who"))
+        .and(header("x-token", "abc"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/who");
+    s.authenticated = true;
+    s.preflight = Some(Preflight {
+        enabled: true,
+        method: "GET".into(),
+        url: "{{BASE_URL}}/ep-token".into(),
+        token_header: Some("X-Token".into()),
+        ..Default::default()
+    });
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn preflight_form_body_and_failure_modes() {
+    let f = fixture().await;
+    Mock::given(path("/form-token"))
+        .and(header("content-type", "application/x-www-form-urlencoded"))
+        .and(body_string("grant_type=client_credentials&id=a+b"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"access_token": "ok"})),
+        )
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/denied"))
+        .respond_with(ResponseTemplate::new(401).set_body_string("bad creds"))
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/garbage"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<html>"))
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/t"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&f.server)
+        .await;
+
+    let mut s = spec("GET", "{{BASE_URL}}/t");
+    s.preflight = Some(Preflight {
+        enabled: true,
+        method: "POST".into(),
+        url: "{{BASE_URL}}/form-token".into(),
+        body_type: "urlencoded".into(),
+        body_params: vec![
+            NameValue::new("grant_type", "client_credentials"),
+            NameValue::new("id", "a b"),
+        ],
+        ..Default::default()
+    });
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+
+    for (p, needle) in [("/denied", "401"), ("/garbage", "not valid JSON")] {
+        let mut s = spec("GET", "{{BASE_URL}}/t");
+        s.preflight = Some(Preflight {
+            enabled: true,
+            method: "GET".into(),
+            url: format!("{{{{BASE_URL}}}}{p}"),
+            ..Default::default()
+        });
+        match f.ws.prepare_send(&s, false).unwrap().execute().await {
+            Err(Error::Preflight(m)) => assert!(m.contains(needle), "{m}"),
+            other => panic!("{:?}", other.err()),
+        }
+    }
+}
+
+#[tokio::test]
+async fn invalid_url_and_connection_errors() {
+    let f = fixture().await;
+    assert!(matches!(
+        f.ws.prepare_send(&spec("GET", "not a url"), false),
+        Err(Error::InvalidUrl { .. })
+    ));
+    assert!(matches!(
+        f.ws.prepare_send(&spec("GET", "{{MISSING}}/x"), false),
+        Err(Error::InvalidUrl { .. })
+    ));
+    // Port 1 on localhost: connection refused.
+    let r =
+        f.ws.prepare_send(&spec("GET", "http://127.0.0.1:1/"), false)
+            .unwrap()
+            .execute()
+            .await;
+    assert!(matches!(r, Err(Error::Http(_))), "{:?}", r.err());
+}
+
+#[tokio::test]
+async fn binary_responses_are_base64() {
+    let f = fixture().await;
+    Mock::given(path("/img"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(vec![0x89, 0x50, 0x4e, 0x47], "image/png"),
+        )
+        .mount(&f.server)
+        .await;
+    let r =
+        f.ws.prepare_send(&spec("GET", "{{BASE_URL}}/img"), false)
+            .unwrap()
+            .execute()
+            .await
+            .unwrap();
+    assert!(r.body_is_base64);
+    assert_eq!(r.body, "iVBORw==");
+    assert_eq!(r.size_bytes, 4);
+}
+
+#[tokio::test]
+async fn text_body_without_content_type_gets_default() {
+    let f = fixture().await;
+    Mock::given(path("/t"))
+        .and(header("content-type", "text/plain; charset=utf-8"))
+        .and(body_string("hello"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+    let mut s = spec("PUT", "{{BASE_URL}}/t");
+    s.body = "hello".into();
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+}

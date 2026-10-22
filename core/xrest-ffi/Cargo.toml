@@ -1,0 +1,21 @@
+[package]
+name = "xrest-ffi"
+description = "UniFFI bindings (Swift first) over xrest-core."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "xrest_ffi"
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[dependencies]
+uniffi = { workspace = true, features = ["tokio"] }
+xrest-core = { path = "../xrest-core" }
+tokio.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+wiremock.workspace = true
