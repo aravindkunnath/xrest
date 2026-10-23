@@ -69,9 +69,22 @@ struct EnvironmentsEditorView: View {
         HStack(alignment: .bottom, spacing: 12) {
             Text("VARIABLE").font(.ui(11)).tracking(0.7).foregroundStyle(Theme.muted)
                 .frame(width: nameWidth, alignment: .leading)
-            ForEach(grid.columns, id: \.name) { col in
+            ForEach(Array(grid.columns.enumerated()), id: \.offset) { index, col in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(col.name).font(.ui(12, weight: .semibold))
+                    HStack(spacing: 2) {
+                        ColumnNameField(name: col.name) { grid.renameColumn(from: col.name, to: $0) }
+                        columnButton("chevron.left", "Move left", disabled: index == 0) {
+                            grid.moveColumn(from: IndexSet(integer: index), to: index - 1)
+                        }
+                        columnButton(
+                            "chevron.right", "Move right", disabled: index == grid.columns.count - 1
+                        ) {
+                            grid.moveColumn(from: IndexSet(integer: index), to: index + 2)
+                        }
+                        columnButton("trash", "Remove environment", disabled: grid.columns.count <= 1) {
+                            grid.removeColumn(name: col.name)
+                        }
+                    }
                     Toggle(
                         "Unsafe",
                         isOn: Binding(
@@ -84,9 +97,38 @@ struct EnvironmentsEditorView: View {
                 }
                 .frame(width: cellWidth, alignment: .leading)
             }
+            Button {
+                grid.addColumn(name: uniqueEnvironmentName())
+            } label: {
+                Text("+ Add environment").font(.ui(12)).foregroundStyle(Theme.muted)
+            }
+            .buttonStyle(.plain)
             Color.clear.frame(width: 24)
         }
         .padding(.bottom, 6)
+    }
+
+    private func columnButton(
+        _ icon: String, _ label: String, disabled: Bool, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Theme.muted)
+                .frame(width: 20, height: 20)
+        }
+        .buttonStyle(HoverButtonStyle(radius: 4))
+        .disabled(disabled)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private func uniqueEnvironmentName() -> String {
+        let taken = Set(grid.columns.map(\.name))
+        if !taken.contains("ENV") { return "ENV" }
+        var n = 2
+        while taken.contains("ENV \(n)") { n += 1 }
+        return "ENV \(n)"
     }
 
     private func rowView(_ row: EnvironmentGrid.Row) -> some View {
@@ -100,7 +142,7 @@ struct EnvironmentsEditorView: View {
             .font(.mono(12))
             .frame(width: nameWidth, alignment: .leading)
 
-            ForEach(grid.columns, id: \.name) { col in
+            ForEach(Array(grid.columns.enumerated()), id: \.offset) { _, col in
                 cell(row, env: col.name)
                     .frame(width: cellWidth, alignment: .leading)
             }
@@ -210,5 +252,25 @@ struct EnvironmentsEditorView: View {
         } catch {
             saveError = describe(error)
         }
+    }
+}
+
+/// Environment name field that commits on return or focus loss, so half-typed names never
+/// collide with another environment mid-edit.
+private struct ColumnNameField: View {
+    let name: String
+    let commit: (String) -> Void
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("ENVIRONMENT", text: $draft)
+            .textFieldStyle(.plain)
+            .font(.ui(12, weight: .semibold))
+            .focused($focused)
+            .onAppear { draft = name }
+            .onChange(of: name) { _, new in if !focused { draft = new } }
+            .onSubmit { commit(draft) }
+            .onChange(of: focused) { _, now in if !now { commit(draft) } }
     }
 }
