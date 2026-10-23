@@ -8,7 +8,10 @@ struct WorkspaceView: View {
         VStack(spacing: 0) {
             TitleBar(model: model)
             HStack(spacing: 0) {
-                ActivityRail(openSecrets: { model.openSecrets() })
+                ActivityRail(
+                    openSecrets: { model.openSecrets() },
+                    openEnvironments: { model.openPanel(.environments) },
+                    openSettings: { model.openPanel(.settings) })
                 SidebarView(model: model)
                     .frame(width: 280)
                 MainColumn(model: model)
@@ -189,8 +192,12 @@ struct MainColumn: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            tabStrip
-            if model.draft != nil {
+            if model.panel == nil { tabStrip }
+            if model.panel == .environments {
+                EnvironmentsEditorView(model: model)
+            } else if model.panel == .settings {
+                ServiceSettingsView(model: model)
+            } else if model.draft != nil {
                 RequestDetailView(model: model)
             } else {
                 VStack(spacing: 8) {

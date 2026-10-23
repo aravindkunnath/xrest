@@ -7,6 +7,20 @@ enum SidebarSelection: Hashable {
     case scratch(String)
 }
 
+/// Editors that replace the request detail pane.
+enum DetailPanel: Equatable {
+    case environments
+    case settings
+}
+
+/// State of the last "Test preflight" run.
+enum PreflightTestState {
+    case idle
+    case running
+    case done(PreflightTestResult)
+    case failed(String)
+}
+
 /// Observable wrapper around the Rust core's `XRestWorkspace` (one per window).
 ///
 /// The core owns all behavior (interpolation, auth, unsafe policy, execution); this class only
@@ -45,6 +59,11 @@ final class WorkspaceModel {
     var pendingConfirmation: PendingConfirmation?
     var showImportCurl = false
     var showSecrets = false
+    /// Environments / service settings editor shown instead of the request.
+    private(set) var panel: DetailPanel?
+    /// Set by the open panel while it holds unsaved edits.
+    var panelDirty = false
+    private(set) var preflightTest = PreflightTestState.idle
     /// Key to prefill in the Secrets screen's add form.
     var secretsPrefill: String?
     var pendingDelete: SidebarSelection?
@@ -125,6 +144,13 @@ final class WorkspaceModel {
 
     /// Change the selection. Unsaved edits are saved first; if that fails the selection stays.
     func select(_ new: SidebarSelection?) {
+        if panel != nil {
+            guard !panelDirty else {
+                errorMessage = "Save or revert your changes in the editor first."
+                return
+            }
+            closePanel()
+        }
         guard new != selection else { return }
         guard flush() else { return }
         selection = new
@@ -224,11 +250,67 @@ final class WorkspaceModel {
         }
     }
 
+    // MARK: Environments and service settings
+
+    /// Open an editor in the detail pane. Fails (with a message) if another one has unsaved edits.
+    func openPanel(_ new: DetailPanel) {
+        guard panel != new else { return }
+        if panelDirty {
+            errorMessage = "Save or revert your changes in the editor first."
+            return
+        }
+        guard flush() else { return }
+        panel = new
+        preflightTest = .idle
+    }
+
+    func closePanel() {
+        panel = nil
+        panelDirty = false
+        preflightTest = .idle
+    }
+
+    /// Save all environments, then refresh state from the core.
+    func saveEnvironments(_ envs: [EnvironmentConfig]) throws {
+        try core.saveEnvironments(envs: envs)
+        reload()
+    }
+
+    func saveServiceSettings(_ settings: ServiceSettings) throws {
+        try core.updateServiceSettings(settings: settings)
+        reload()
+    }
+
+    /// Run a preflight once (behind the unsafe confirmation when the environment is unsafe).
+    func testPreflight(_ preflight: Preflight) {
+        if case .running = preflightTest { return }
+        runGuarded(method: preflight.method, url: preflight.url) { [weak self] confirmed in
+            self?.runPreflightTest(preflight, confirmed: confirmed)
+        }
+    }
+
+    private func runPreflightTest(_ preflight: Preflight, confirmed: Bool) {
+        preflightTest = .running
+        Task {
+            do {
+                let result = try await core.testPreflight(preflight: preflight, confirmed: confirmed)
+                preflightTest = .done(result)
+            } catch {
+                preflightTest = .failed(describe(error))
+            }
+        }
+    }
+
     // MARK: Secrets
 
     func openSecrets(prefill: String? = nil) {
         secretsPrefill = prefill
         showSecrets = true
+    }
+
+    /// Keys offered by "Link secret": stored keys plus keys the workspace already references.
+    func secretKeyChoices() -> [String] {
+        Array(Set(secrets.keys()).union(core.secretKeysInUse())).sorted()
     }
 
     /// Secret keys the current service references, with whether each is stored.
@@ -247,19 +329,23 @@ final class WorkspaceModel {
     /// Runs `action` straight away in a safe environment (`confirmed: false`), or behind the
     /// countdown confirmation sheet in an unsafe one (`confirmed: true` once accepted). The core
     /// is the authority on whether the environment is unsafe. Test Preflight uses this too.
-    func runGuarded(_ action: @escaping (_ confirmed: Bool) -> Void) {
+    func runGuarded(
+        method: String? = nil, url: String? = nil, _ action: @escaping (_ confirmed: Bool) -> Void
+    ) {
         if core.sendPolicy().requiresConfirmation {
-            presentConfirmation { action(true) }
+            presentConfirmation(method: method, url: url) { action(true) }
         } else {
             action(false)
         }
     }
 
-    private func presentConfirmation(_ action: @escaping () -> Void) {
+    private func presentConfirmation(
+        method: String? = nil, url: String? = nil, _ action: @escaping () -> Void
+    ) {
         pendingConfirmation = PendingConfirmation(
             environment: selectedEnvironment ?? "environment",
-            method: draft?.method ?? "",
-            url: draft?.url ?? "",
+            method: method ?? draft?.method ?? "",
+            url: url ?? draft?.url ?? "",
             action: action)
     }
 
