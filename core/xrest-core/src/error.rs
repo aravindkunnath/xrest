@@ -45,6 +45,9 @@ pub enum Error {
     Preflight(String),
     #[error("request failed: {0}")]
     Http(String),
+    /// A write API was given values it refuses (e.g. duplicate or empty environment names).
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
     #[error("invalid cURL command: {0}")]
     Curl(String),
     #[error("not implemented yet: {0}")]

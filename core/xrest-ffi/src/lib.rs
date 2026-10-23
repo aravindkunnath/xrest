@@ -53,7 +53,8 @@ impl From<core::Error> for XRestError {
             | core::Error::InvalidUrl { .. }
             | core::Error::UnknownEnvironment(_)
             | core::Error::Curl(_)
-            | core::Error::InvalidBody(_) => XRestError::InvalidInput { message },
+            | core::Error::InvalidBody(_)
+            | core::Error::InvalidInput(_) => XRestError::InvalidInput { message },
             core::Error::Io { .. } | core::Error::Yaml { .. } => XRestError::Io { message },
             core::Error::MissingSecrets(keys) => XRestError::MissingSecrets { keys },
             core::Error::Preflight(_) => XRestError::Preflight { message },
@@ -192,6 +193,39 @@ pub struct ServiceInfo {
     pub auth_kind: String,
     /// On-disk format version (older workspaces are upgraded on the first save).
     pub format_version: u32,
+    pub basic_user: String,
+    pub basic_pass: String,
+    pub bearer_token: String,
+    pub api_key_name: String,
+    pub api_key_value: String,
+    /// `header` or `query` (empty means header).
+    pub api_key_location: String,
+    pub preflight: Option<Preflight>,
+}
+
+/// The editable service settings (`update_service_settings`). `id`, git URL and format version
+/// are not editable.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ServiceSettings {
+    pub name: String,
+    pub is_authenticated: bool,
+    /// `none`, `basic`, `bearer` or `apikey`.
+    pub auth_type: String,
+    pub basic_user: String,
+    pub basic_pass: String,
+    pub bearer_token: String,
+    pub api_key_name: String,
+    pub api_key_value: String,
+    pub api_key_location: String,
+    pub preflight: Option<Preflight>,
+}
+
+/// Text with variables resolved and every secret shown as `••••••`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct InterpolationPreview {
+    pub resolved: String,
+    /// Plain variable names, then `secret.KEY` for secrets with no value.
+    pub unresolved: Vec<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -487,6 +521,63 @@ impl From<core::Environment> for EnvironmentConfig {
     }
 }
 
+impl From<EnvironmentConfig> for core::Environment {
+    fn from(e: EnvironmentConfig) -> Self {
+        Self {
+            name: e.name,
+            is_unsafe: e.is_unsafe,
+            variables: nv_in(e.variables),
+        }
+    }
+}
+
+impl From<core::ServiceSettings> for ServiceSettings {
+    fn from(s: core::ServiceSettings) -> Self {
+        Self {
+            name: s.name,
+            is_authenticated: s.is_authenticated,
+            auth_type: s.auth_type.as_str().to_string(),
+            basic_user: s.basic_user,
+            basic_pass: s.basic_pass,
+            bearer_token: s.bearer_token,
+            api_key_name: s.api_key_name,
+            api_key_value: s.api_key_value,
+            api_key_location: s.api_key_location,
+            preflight: s.preflight.map(Into::into),
+        }
+    }
+}
+
+impl TryFrom<ServiceSettings> for core::ServiceSettings {
+    type Error = XRestError;
+
+    fn try_from(s: ServiceSettings) -> Result<Self> {
+        let auth_type = match s.auth_type.trim().to_ascii_lowercase().as_str() {
+            "" | "none" => core::AuthKind::None,
+            "basic" => core::AuthKind::Basic,
+            "bearer" => core::AuthKind::Bearer,
+            "apikey" => core::AuthKind::Apikey,
+            other => {
+                return Err(XRestError::InvalidInput {
+                    message: format!("unknown auth type {other:?}"),
+                })
+            }
+        };
+        Ok(Self {
+            name: s.name,
+            is_authenticated: s.is_authenticated,
+            auth_type,
+            basic_user: s.basic_user,
+            basic_pass: s.basic_pass,
+            bearer_token: s.bearer_token,
+            api_key_name: s.api_key_name,
+            api_key_value: s.api_key_value,
+            api_key_location: s.api_key_location,
+            preflight: s.preflight.map(Into::into),
+        })
+    }
+}
+
 impl From<core::HttpResponse> for HttpResponse {
     fn from(r: core::HttpResponse) -> Self {
         Self {
@@ -588,6 +679,7 @@ impl XRestWorkspace {
     pub fn service(&self) -> ServiceInfo {
         let ws = self.lock();
         let s = ws.service();
+        let c = ws.service_settings();
         ServiceInfo {
             id: s.id.clone(),
             name: s.name.clone(),
@@ -595,7 +687,20 @@ impl XRestWorkspace {
             is_authenticated: s.is_authenticated,
             auth_kind: s.effective_auth_kind().as_str().to_string(),
             format_version: ws.format_version(),
+            basic_user: c.basic_user,
+            basic_pass: c.basic_pass,
+            bearer_token: c.bearer_token,
+            api_key_name: c.api_key_name,
+            api_key_value: c.api_key_value,
+            api_key_location: c.api_key_location,
+            preflight: c.preflight.map(Into::into),
         }
+    }
+
+    /// Save the service name, auth and preflight. Keeps the id and git URL; clears the token
+    /// cache. Fails with `InvalidInput` for an empty name or unknown auth type.
+    pub fn update_service_settings(&self, settings: ServiceSettings) -> Result<()> {
+        Ok(self.lock().update_service_settings(settings.try_into()?)?)
     }
 
     /// Non-fatal problems found while loading the workspace.
@@ -612,6 +717,29 @@ impl XRestWorkspace {
             .cloned()
             .map(Into::into)
             .collect()
+    }
+
+    /// Replace all environments. Names are trimmed, non-empty and unique (else `InvalidInput`).
+    /// The selection is kept if its name still exists, else it moves to the first environment.
+    pub fn save_environments(&self, envs: Vec<EnvironmentConfig>) -> Result<()> {
+        Ok(self
+            .lock()
+            .save_environments(envs.into_iter().map(Into::into).collect())?)
+    }
+
+    /// Enabled variable names of the selected environment, for autocomplete.
+    pub fn variable_names(&self) -> Vec<String> {
+        self.lock().variable_names()
+    }
+
+    /// Resolve `text` in the selected environment for display. Secrets (looked up through the
+    /// provider, then the memory store) are masked as `••••••`; their values are never returned.
+    pub fn preview(&self, text: String) -> InterpolationPreview {
+        let p = self.lock().preview(&text);
+        InterpolationPreview {
+            resolved: p.resolved,
+            unresolved: p.unresolved,
+        }
     }
 
     pub fn selected_environment(&self) -> Option<String> {

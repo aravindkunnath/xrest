@@ -17,6 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{Error, Result};
 use crate::exec::HttpOptions;
+use crate::interpolate::InterpolationPreview;
 use crate::model::*;
 use crate::policy::SendPolicy;
 use crate::preflight::TokenCache;
@@ -127,6 +128,40 @@ impl Workspace {
         &self.warnings
     }
 
+    /// The editable service settings (name, auth, preflight).
+    pub fn service_settings(&self) -> ServiceSettings {
+        ServiceSettings::from_service(&self.service)
+    }
+
+    /// Write the service settings to `service.yaml`, keeping `id`, `gitUrl` and stamping the
+    /// format version. Clears the token cache, since auth or preflight may have changed.
+    pub fn update_service_settings(&mut self, settings: ServiceSettings) -> Result<()> {
+        let name = settings.name.trim().to_string();
+        if name.is_empty() {
+            return Err(Error::InvalidInput("service name cannot be empty".into()));
+        }
+        self.ensure_current_format()?;
+        let mut service = self.service.clone();
+        service.name = name;
+        service.is_authenticated = settings.is_authenticated;
+        service.auth_type = Some(settings.auth_type);
+        service.auth = Some(AuthConfig {
+            kind: settings.auth_type,
+            active: true,
+            basic_user: settings.basic_user,
+            basic_pass: settings.basic_pass,
+            bearer_token: settings.bearer_token,
+            api_key_name: settings.api_key_name,
+            api_key_value: settings.api_key_value,
+            api_key_location: settings.api_key_location,
+        });
+        service.preflight = settings.preflight;
+        storage::save_service(&self.root, &service)?;
+        self.service = service;
+        self.tokens.clear();
+        Ok(())
+    }
+
     pub fn set_secret_store(&mut self, store: Arc<dyn SecretStore>) {
         self.secrets = store;
     }
@@ -189,6 +224,64 @@ impl Workspace {
         storage::save_environments(&self.root, &envs)?;
         self.environments = envs;
         Ok(())
+    }
+
+    /// Replace all environments. Names are trimmed and must be non-empty and unique
+    /// ([`Error::InvalidInput`] otherwise, nothing written). The selection is kept if its name
+    /// still exists, else it moves to the first environment.
+    pub fn save_environments(&mut self, mut envs: Vec<Environment>) -> Result<()> {
+        let mut seen = std::collections::HashSet::new();
+        for e in &mut envs {
+            e.name = e.name.trim().to_string();
+            if e.name.is_empty() {
+                return Err(Error::InvalidInput(
+                    "environment names cannot be empty".into(),
+                ));
+            }
+            if !seen.insert(e.name.clone()) {
+                return Err(Error::InvalidInput(format!(
+                    "duplicate environment name {:?}",
+                    e.name
+                )));
+            }
+        }
+        self.ensure_current_format()?;
+        let current = self.selected_environment().map(|e| e.name.clone());
+        storage::save_environments(&self.root, &envs)?;
+        self.environments = envs;
+        let keep = current.filter(|c| self.environments.iter().any(|e| &e.name == c));
+        let next = keep.or_else(|| self.environments.first().map(|e| e.name.clone()));
+        if self.state.selected_environment != next {
+            let state = WorkspaceState {
+                selected_environment: next,
+            };
+            storage::save_state(&self.root, &state)?;
+            self.state = state;
+        }
+        Ok(())
+    }
+
+    /// Enabled, non-empty variable names of the selected environment (for autocomplete).
+    pub fn variable_names(&self) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        let vars = self
+            .selected_environment()
+            .map(|e| e.variables.as_slice())
+            .unwrap_or_default();
+        for v in vars.iter().filter(|v| v.enabled && !v.name.is_empty()) {
+            if !out.contains(&v.name) {
+                out.push(v.name.clone());
+            }
+        }
+        out
+    }
+
+    /// Resolve `text` against the selected environment for display. Secret values are masked,
+    /// never returned; unresolved names are listed. Only secret lookup touches anything outside
+    /// memory.
+    pub fn preview(&self, text: &str) -> InterpolationPreview {
+        let vars = crate::resolve::variables(self.selected_environment());
+        crate::interpolate::preview(text, &vars, &|k| self.secrets.get(k).is_some())
     }
 
     /// The active environment: saved choice, else the legacy `selectedEnvironment` from

@@ -854,9 +854,21 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func listScratch()  -> [ScratchRequest]
     
     /**
+     * Resolve `text` in the selected environment for display. Secrets (looked up through the
+     * provider, then the memory store) are masked as `••••••`; their values are never returned.
+     */
+    func preview(text: String)  -> InterpolationPreview
+    
+    /**
      * Move a scratch request into the versioned endpoints (the scratch file is removed).
      */
     func promoteScratch(id: String, name: String?) throws  -> Endpoint
+    
+    /**
+     * Replace all environments. Names are trimmed, non-empty and unique (else `InvalidInput`).
+     * The selection is kept if its name still exists, else it moves to the first environment.
+     */
+    func saveEnvironments(envs: [EnvironmentConfig]) throws 
     
     /**
      * Every distinct secret key referenced by the service, environments, endpoints and scratch
@@ -907,6 +919,17 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func updateEndpoint(id: String, name: String, spec: RequestSpec) throws  -> Endpoint
     
     func updateScratch(id: String, name: String, spec: RequestSpec) throws  -> ScratchRequest
+    
+    /**
+     * Save the service name, auth and preflight. Keeps the id and git URL; clears the token
+     * cache. Fails with `InvalidInput` for an empty name or unknown auth type.
+     */
+    func updateServiceSettings(settings: ServiceSettings) throws 
+    
+    /**
+     * Enabled variable names of the selected environment, for autocomplete.
+     */
+    func variableNames()  -> [String]
     
     /**
      * Non-fatal problems found while loading the workspace.
@@ -1122,6 +1145,20 @@ open func listScratch() -> [ScratchRequest]  {
 }
     
     /**
+     * Resolve `text` in the selected environment for display. Secrets (looked up through the
+     * provider, then the memory store) are masked as `••••••`; their values are never returned.
+     */
+open func preview(text: String) -> InterpolationPreview  {
+    return try!  FfiConverterTypeInterpolationPreview_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_preview(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(text),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Move a scratch request into the versioned endpoints (the scratch file is removed).
      */
 open func promoteScratch(id: String, name: String?)throws  -> Endpoint  {
@@ -1133,6 +1170,19 @@ open func promoteScratch(id: String, name: String?)throws  -> Endpoint  {
         FfiConverterOptionString.lower(name),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Replace all environments. Names are trimmed, non-empty and unique (else `InvalidInput`).
+     * The selection is kept if its name still exists, else it moves to the first environment.
+     */
+open func saveEnvironments(envs: [EnvironmentConfig])throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_save_environments(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeEnvironmentConfig.lower(envs),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -1279,6 +1329,31 @@ open func updateScratch(id: String, name: String, spec: RequestSpec)throws  -> S
         FfiConverterString.lower(id),
         FfiConverterString.lower(name),
         FfiConverterTypeRequestSpec_lower(spec),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Save the service name, auth and preflight. Keeps the id and git URL; clears the token
+     * cache. Fails with `InvalidInput` for an empty name or unknown auth type.
+     */
+open func updateServiceSettings(settings: ServiceSettings)throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_update_service_settings(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeServiceSettings_lower(settings),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Enabled variable names of the selected environment, for autocomplete.
+     */
+open func variableNames() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_variable_names(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -1691,6 +1766,69 @@ public func FfiConverterTypeHttpResponse_lift(_ buf: RustBuffer) throws -> HttpR
 #endif
 public func FfiConverterTypeHttpResponse_lower(_ value: HttpResponse) -> RustBuffer {
     return FfiConverterTypeHttpResponse.lower(value)
+}
+
+
+/**
+ * Text with variables resolved and every secret shown as `••••••`.
+ */
+public struct InterpolationPreview: Equatable, Hashable {
+    public var resolved: String
+    /**
+     * Plain variable names, then `secret.KEY` for secrets with no value.
+     */
+    public var unresolved: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(resolved: String, 
+        /**
+         * Plain variable names, then `secret.KEY` for secrets with no value.
+         */unresolved: [String]) {
+        self.resolved = resolved
+        self.unresolved = unresolved
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension InterpolationPreview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInterpolationPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> InterpolationPreview {
+        return
+            try InterpolationPreview(
+                resolved: FfiConverterString.read(from: &buf), 
+                unresolved: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: InterpolationPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.resolved, into: &buf)
+        FfiConverterSequenceString.write(value.unresolved, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInterpolationPreview_lift(_ buf: RustBuffer) throws -> InterpolationPreview {
+    return try FfiConverterTypeInterpolationPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInterpolationPreview_lower(_ value: InterpolationPreview) -> RustBuffer {
+    return FfiConverterTypeInterpolationPreview.lower(value)
 }
 
 
@@ -2260,6 +2398,16 @@ public struct ServiceInfo: Equatable, Hashable {
      * On-disk format version (older workspaces are upgraded on the first save).
      */
     public var formatVersion: UInt32
+    public var basicUser: String
+    public var basicPass: String
+    public var bearerToken: String
+    public var apiKeyName: String
+    public var apiKeyValue: String
+    /**
+     * `header` or `query` (empty means header).
+     */
+    public var apiKeyLocation: String
+    public var preflight: Preflight?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2269,13 +2417,23 @@ public struct ServiceInfo: Equatable, Hashable {
          */authKind: String, 
         /**
          * On-disk format version (older workspaces are upgraded on the first save).
-         */formatVersion: UInt32) {
+         */formatVersion: UInt32, basicUser: String, basicPass: String, bearerToken: String, apiKeyName: String, apiKeyValue: String, 
+        /**
+         * `header` or `query` (empty means header).
+         */apiKeyLocation: String, preflight: Preflight?) {
         self.id = id
         self.name = name
         self.rootPath = rootPath
         self.isAuthenticated = isAuthenticated
         self.authKind = authKind
         self.formatVersion = formatVersion
+        self.basicUser = basicUser
+        self.basicPass = basicPass
+        self.bearerToken = bearerToken
+        self.apiKeyName = apiKeyName
+        self.apiKeyValue = apiKeyValue
+        self.apiKeyLocation = apiKeyLocation
+        self.preflight = preflight
     }
 
     
@@ -2299,7 +2457,14 @@ public struct FfiConverterTypeServiceInfo: FfiConverterRustBuffer {
                 rootPath: FfiConverterString.read(from: &buf), 
                 isAuthenticated: FfiConverterBool.read(from: &buf), 
                 authKind: FfiConverterString.read(from: &buf), 
-                formatVersion: FfiConverterUInt32.read(from: &buf)
+                formatVersion: FfiConverterUInt32.read(from: &buf), 
+                basicUser: FfiConverterString.read(from: &buf), 
+                basicPass: FfiConverterString.read(from: &buf), 
+                bearerToken: FfiConverterString.read(from: &buf), 
+                apiKeyName: FfiConverterString.read(from: &buf), 
+                apiKeyValue: FfiConverterString.read(from: &buf), 
+                apiKeyLocation: FfiConverterString.read(from: &buf), 
+                preflight: FfiConverterOptionTypePreflight.read(from: &buf)
         )
     }
 
@@ -2310,6 +2475,13 @@ public struct FfiConverterTypeServiceInfo: FfiConverterRustBuffer {
         FfiConverterBool.write(value.isAuthenticated, into: &buf)
         FfiConverterString.write(value.authKind, into: &buf)
         FfiConverterUInt32.write(value.formatVersion, into: &buf)
+        FfiConverterString.write(value.basicUser, into: &buf)
+        FfiConverterString.write(value.basicPass, into: &buf)
+        FfiConverterString.write(value.bearerToken, into: &buf)
+        FfiConverterString.write(value.apiKeyName, into: &buf)
+        FfiConverterString.write(value.apiKeyValue, into: &buf)
+        FfiConverterString.write(value.apiKeyLocation, into: &buf)
+        FfiConverterOptionTypePreflight.write(value.preflight, into: &buf)
     }
 }
 
@@ -2326,6 +2498,102 @@ public func FfiConverterTypeServiceInfo_lift(_ buf: RustBuffer) throws -> Servic
 #endif
 public func FfiConverterTypeServiceInfo_lower(_ value: ServiceInfo) -> RustBuffer {
     return FfiConverterTypeServiceInfo.lower(value)
+}
+
+
+/**
+ * The editable service settings (`update_service_settings`). `id`, git URL and format version
+ * are not editable.
+ */
+public struct ServiceSettings: Equatable, Hashable {
+    public var name: String
+    public var isAuthenticated: Bool
+    /**
+     * `none`, `basic`, `bearer` or `apikey`.
+     */
+    public var authType: String
+    public var basicUser: String
+    public var basicPass: String
+    public var bearerToken: String
+    public var apiKeyName: String
+    public var apiKeyValue: String
+    public var apiKeyLocation: String
+    public var preflight: Preflight?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, isAuthenticated: Bool, 
+        /**
+         * `none`, `basic`, `bearer` or `apikey`.
+         */authType: String, basicUser: String, basicPass: String, bearerToken: String, apiKeyName: String, apiKeyValue: String, apiKeyLocation: String, preflight: Preflight?) {
+        self.name = name
+        self.isAuthenticated = isAuthenticated
+        self.authType = authType
+        self.basicUser = basicUser
+        self.basicPass = basicPass
+        self.bearerToken = bearerToken
+        self.apiKeyName = apiKeyName
+        self.apiKeyValue = apiKeyValue
+        self.apiKeyLocation = apiKeyLocation
+        self.preflight = preflight
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ServiceSettings: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeServiceSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ServiceSettings {
+        return
+            try ServiceSettings(
+                name: FfiConverterString.read(from: &buf), 
+                isAuthenticated: FfiConverterBool.read(from: &buf), 
+                authType: FfiConverterString.read(from: &buf), 
+                basicUser: FfiConverterString.read(from: &buf), 
+                basicPass: FfiConverterString.read(from: &buf), 
+                bearerToken: FfiConverterString.read(from: &buf), 
+                apiKeyName: FfiConverterString.read(from: &buf), 
+                apiKeyValue: FfiConverterString.read(from: &buf), 
+                apiKeyLocation: FfiConverterString.read(from: &buf), 
+                preflight: FfiConverterOptionTypePreflight.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ServiceSettings, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterBool.write(value.isAuthenticated, into: &buf)
+        FfiConverterString.write(value.authType, into: &buf)
+        FfiConverterString.write(value.basicUser, into: &buf)
+        FfiConverterString.write(value.basicPass, into: &buf)
+        FfiConverterString.write(value.bearerToken, into: &buf)
+        FfiConverterString.write(value.apiKeyName, into: &buf)
+        FfiConverterString.write(value.apiKeyValue, into: &buf)
+        FfiConverterString.write(value.apiKeyLocation, into: &buf)
+        FfiConverterOptionTypePreflight.write(value.preflight, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeServiceSettings_lift(_ buf: RustBuffer) throws -> ServiceSettings {
+    return try FfiConverterTypeServiceSettings.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeServiceSettings_lower(_ value: ServiceSettings) -> RustBuffer {
+    return FfiConverterTypeServiceSettings.lower(value)
 }
 
 
@@ -3017,7 +3285,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_list_scratch() != 10678) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_preview() != 8533) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_promote_scratch() != 54879) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_save_environments() != 44341) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_secret_keys_in_use() != 21361) {
@@ -3051,6 +3325,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_update_scratch() != 51946) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_update_service_settings() != 1078) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_variable_names() != 35401) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_warnings() != 18924) {

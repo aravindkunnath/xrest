@@ -1014,3 +1014,40 @@ async fn test_preflight_unsafe_environment_needs_confirmation_before_any_io() {
     let r = f.ws.test_preflight(Some(pf), true).await.unwrap();
     assert_eq!(r.token.as_deref(), Some("t"));
 }
+
+#[tokio::test]
+async fn update_service_settings_clears_the_token_cache() {
+    let f = fixture().await;
+    let mut f = f;
+    let mut settings = f.ws.service_settings();
+    settings.is_authenticated = true;
+    settings.preflight = Some(preflight(&f.server));
+    f.ws.update_service_settings(settings.clone()).unwrap();
+    Mock::given(path("/oauth/token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"token": "t"}, "expires_in": 3600})),
+        )
+        .expect(2) // warm once; the settings update forces a second fetch
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/secure"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/secure");
+    s.authenticated = true;
+    for _ in 0..2 {
+        f.ws.prepare_send(&s, false)
+            .unwrap()
+            .execute()
+            .await
+            .unwrap(); // second one is cached
+    }
+    f.ws.update_service_settings(settings).unwrap();
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+}

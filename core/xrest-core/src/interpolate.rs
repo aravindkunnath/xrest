@@ -103,6 +103,43 @@ pub fn resolve_secrets(
     (out, missing.into_iter().collect())
 }
 
+/// What secret values are shown as in a preview.
+pub const SECRET_MASK: &str = "••••••";
+
+/// Result of [`preview`]: the text with variables resolved and secrets masked.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct InterpolationPreview {
+    pub resolved: String,
+    /// Placeholders with no value: plain names first (in order of appearance), then
+    /// `secret.KEY` for each missing secret (sorted). Each listed once.
+    pub unresolved: Vec<String>,
+}
+
+/// Resolve `text` for display. Secret values are never inserted: a secret that `has_secret`
+/// finds becomes [`SECRET_MASK`]; one it does not find stays as `{{secret.KEY}}` and is listed
+/// as unresolved.
+pub fn preview(
+    text: &str,
+    vars: &Variables,
+    has_secret: &dyn Fn(&str) -> bool,
+) -> InterpolationPreview {
+    let interpolated = interpolate(text, vars);
+    let mut unresolved = vec![];
+    for n in self::unresolved(&interpolated) {
+        if !unresolved.contains(&n) {
+            unresolved.push(n);
+        }
+    }
+    let (resolved, missing) = resolve_secrets(&interpolated, &|k| {
+        has_secret(k).then(|| SECRET_MASK.to_string())
+    });
+    unresolved.extend(missing.into_iter().map(|k| format!("secret.{k}")));
+    InterpolationPreview {
+        resolved,
+        unresolved,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

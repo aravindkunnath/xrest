@@ -310,12 +310,16 @@ XRestWorkspace
     open_workspace(path) -> XRestWorkspace            // Swift: XRestWorkspace.openWorkspace(path:)
     create_workspace(path, name) -> XRestWorkspace
   workspace
-    service() -> ServiceInfo
+    service() -> ServiceInfo                          // incl. auth fields and service preflight
+    update_service_settings(settings: ServiceSettings) // writes service.yaml (keeps id/gitUrl), clears token cache
     warnings() -> [String]                            // unparsable files skipped on load
   environments
     environments() -> [EnvironmentConfig]
     selected_environment() -> String?
     select_environment(name)                          // persisted in .xrest/state.yaml
+    save_environments(envs: [EnvironmentConfig])      // trimmed, non-empty, unique names else InvalidInput; selection kept or falls back to first
+    variable_names() -> [String]                      // enabled variables of the selected environment (autocomplete)
+    preview(text) -> InterpolationPreview             // { resolved, unresolved }; secrets shown as ••••••, never their value
     send_policy() -> SendPolicy                       // { environment, requires_confirmation }
   endpoints
     list_endpoints() / get_endpoint(id) -> Endpoint
@@ -343,7 +347,8 @@ XRestWorkspace
 `RequestSpec.options` is `RequestOptions`. `ServiceInfo.format_version` reports the on-disk format.
 
 Records: `NameValue`, `Preflight`, `RequestSpec`, `RequestOptions`, `Endpoint`, `ScratchRequest`, `EndpointVersion`,
-`EnvironmentConfig` (not `Environment`, which would clash with SwiftUI's), `ServiceInfo`, `SendPolicy`,
+`EnvironmentConfig` (not `Environment`, which would clash with SwiftUI's), `ServiceInfo`, `ServiceSettings`,
+`InterpolationPreview`, `SendPolicy`,
 `HeaderPair`, `HttpResponse`, `PreflightTestResult`.
 
 Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`,
@@ -355,6 +360,12 @@ Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`
 the Keychain and the FFI adapter (a `SecretStore`) asks it first, then the `set_secret` memory store.
 Missing keys still fail the send with `MissingSecrets(keys)` before any request. `secret_keys_in_use`
 scans the service, environments, endpoints and scratch requests for `{{secret.KEY}}` and `secretKey`.
+
+`preview` resolves `{{VAR}}` in the selected environment and looks `{{secret.KEY}}` up through the same
+chain as `send` (provider, then `set_secret`) only to decide whether a value exists: found secrets
+become `••••••`, missing ones stay as `{{secret.KEY}}` and are listed as `secret.KEY` in `unresolved`
+(after the plain names). `ServiceSettings.auth_type` is `none|basic|bearer|apikey`; unknown values and
+an empty name are `InvalidInput`.
 
 `send` takes the request spec rather than an id so the app can send the unsaved draft it is editing.
 `test_preflight` runs one preflight request (the given one, or the service's when `nil`) in the

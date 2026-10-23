@@ -139,7 +139,7 @@ pub(crate) fn prepare_test_preflight(
 }
 
 /// The environment's enabled variables; secret-backed ones become `{{secret.KEY}}` references.
-fn variables(env: Option<&Environment>) -> Variables {
+pub(crate) fn variables(env: Option<&Environment>) -> Variables {
     let mut vars = Variables::new();
     for v in env.map(|e| e.variables.as_slice()).unwrap_or_default() {
         if !v.enabled || v.name.is_empty() {

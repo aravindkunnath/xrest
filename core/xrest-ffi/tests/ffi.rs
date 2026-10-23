@@ -270,3 +270,69 @@ fn secret_keys_in_use_collects_every_reference_once() {
         vec!["env-key", "hdr", "scratch", "svc", "url"]
     );
 }
+
+fn env_cfg(name: &str, vars: Vec<NameValue>) -> EnvironmentConfig {
+    EnvironmentConfig {
+        name: name.into(),
+        is_unsafe: false,
+        variables: vars,
+    }
+}
+
+#[test]
+fn save_environments_and_service_settings_through_ffi() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = new_ws(&dir);
+    assert!(matches!(
+        ws.save_environments(vec![env_cfg("A", vec![]), env_cfg("A", vec![])]),
+        Err(XRestError::InvalidInput { .. })
+    ));
+    ws.save_environments(vec![env_cfg("QA", vec![nv("HOST", "h")])])
+        .unwrap();
+    assert_eq!(ws.selected_environment().as_deref(), Some("QA"));
+    assert_eq!(ws.variable_names(), vec!["HOST"]);
+
+    let info = ws.service();
+    assert_eq!(info.auth_kind, "none");
+    let settings = ServiceSettings {
+        name: "Renamed".into(),
+        is_authenticated: true,
+        auth_type: "bearer".into(),
+        basic_user: String::new(),
+        basic_pass: String::new(),
+        bearer_token: "{{secret.t}}".into(),
+        api_key_name: String::new(),
+        api_key_value: String::new(),
+        api_key_location: String::new(),
+        preflight: None,
+    };
+    ws.update_service_settings(settings.clone()).unwrap();
+    let info = ws.service();
+    assert_eq!(info.name, "Renamed");
+    assert_eq!(info.id, ws.service().id);
+    assert!(info.is_authenticated);
+    assert_eq!(info.auth_kind, "bearer");
+    assert_eq!(info.bearer_token, "{{secret.t}}");
+    assert!(info.preflight.is_none());
+
+    let mut bad = settings;
+    bad.auth_type = "kerberos".into();
+    assert!(matches!(
+        ws.update_service_settings(bad),
+        Err(XRestError::InvalidInput { .. })
+    ));
+}
+
+#[test]
+fn preview_uses_the_provider_chain_and_never_returns_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = new_ws(&dir);
+    ws.save_environments(vec![env_cfg("DEV", vec![nv("HOST", "api.test")])])
+        .unwrap();
+    ws.set_secret("mem".into(), "mem-value".into());
+    ws.set_secret_provider(provider(&[("kc", "kc-value")]));
+    let p = ws.preview("{{HOST}} {{secret.kc}} {{secret.mem}} {{secret.nope}} {{X}}".into());
+    assert_eq!(p.resolved, "api.test •••••• •••••• {{secret.nope}} {{X}}");
+    assert_eq!(p.unresolved, vec!["X", "secret.nope"]);
+    assert!(!p.resolved.contains("kc-value") && !p.resolved.contains("mem-value"));
+}

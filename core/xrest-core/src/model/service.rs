@@ -116,6 +116,39 @@ impl ServiceFile {
     }
 }
 
+/// The editable part of `service.yaml` (everything except `id`, `gitUrl` and the format version).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ServiceSettings {
+    pub name: String,
+    pub is_authenticated: bool,
+    pub auth_type: AuthKind,
+    pub basic_user: String,
+    pub basic_pass: String,
+    pub bearer_token: String,
+    pub api_key_name: String,
+    pub api_key_value: String,
+    pub api_key_location: String,
+    pub preflight: Option<Preflight>,
+}
+
+impl ServiceSettings {
+    pub fn from_service(s: &ServiceFile) -> Self {
+        let auth = s.auth.clone().unwrap_or_default();
+        Self {
+            name: s.name.clone(),
+            is_authenticated: s.is_authenticated,
+            auth_type: s.effective_auth_kind(),
+            basic_user: auth.basic_user,
+            basic_pass: auth.basic_pass,
+            bearer_token: auth.bearer_token,
+            api_key_name: auth.api_key_name,
+            api_key_value: auth.api_key_value,
+            api_key_location: auth.api_key_location,
+            preflight: s.preflight.clone(),
+        }
+    }
+}
+
 /// Per-user, per-workspace state (`.xrest/state.yaml`, gitignored).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

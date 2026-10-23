@@ -463,3 +463,234 @@ fn format_3_workspace_is_refused() {
         })
     ));
 }
+
+// ---- environments and service settings (write APIs) -----------------------------------------
+
+fn env(name: &str, vars: Vec<NameValue>) -> Environment {
+    Environment {
+        name: name.into(),
+        is_unsafe: false,
+        variables: vars,
+    }
+}
+
+#[test]
+fn save_environments_rejects_bad_names_and_leaves_the_file_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    let path = dir.path().join("environments.yaml");
+    let before = fs::read_to_string(&path).unwrap();
+    for bad in [
+        vec![env("", vec![])],
+        vec![env("   ", vec![])],
+        vec![env("A", vec![]), env(" A ", vec![])],
+        vec![env("A", vec![]), env("A", vec![])],
+    ] {
+        assert!(
+            matches!(ws.save_environments(bad), Err(Error::InvalidInput(_))),
+            "expected InvalidInput"
+        );
+    }
+    assert_eq!(before, fs::read_to_string(&path).unwrap());
+    assert_eq!(ws.environments().len(), 3);
+}
+
+#[test]
+fn save_environments_round_trips_trims_names_and_stamps_format() {
+    let dir = tempfile::tempdir().unwrap();
+    copy_dir(&fixture("legacy-service"), dir.path());
+    let mut ws = Workspace::open(dir.path()).unwrap();
+    assert_eq!(ws.format_version(), 0);
+    let mut secret = NameValue::new("API", "");
+    secret.secret_key = Some("k".into());
+    let mut prod = env("  PROD ", vec![NameValue::new("A", "1"), secret.clone()]);
+    prod.is_unsafe = true;
+    ws.save_environments(vec![prod, env("STAGE", vec![])])
+        .unwrap();
+    assert_eq!(ws.format_version(), FORMAT_VERSION);
+
+    let again = Workspace::open(dir.path()).unwrap();
+    assert_eq!(again.format_version(), FORMAT_VERSION);
+    let names: Vec<_> = again.environments().iter().map(|e| &e.name[..]).collect();
+    assert_eq!(names, vec!["PROD", "STAGE"]);
+    assert!(again.environments()[0].is_unsafe);
+    assert_eq!(again.environments()[0].variables[1], secret);
+}
+
+#[test]
+fn save_environments_keeps_selection_or_falls_back_to_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    ws.select_environment("STAGE").unwrap();
+    ws.save_environments(vec![env("X", vec![]), env("STAGE", vec![])])
+        .unwrap();
+    assert_eq!(ws.selected_environment().unwrap().name, "STAGE");
+    assert_eq!(
+        Workspace::open(dir.path())
+            .unwrap()
+            .selected_environment()
+            .unwrap()
+            .name,
+        "STAGE"
+    );
+
+    ws.save_environments(vec![env("X", vec![]), env("Y", vec![])])
+        .unwrap();
+    assert_eq!(ws.selected_environment().unwrap().name, "X");
+    // The stale choice must not come back if its name is re-added later.
+    ws.save_environments(vec![env("Y", vec![]), env("STAGE", vec![])])
+        .unwrap();
+    assert_eq!(ws.selected_environment().unwrap().name, "Y");
+    let again = Workspace::open(dir.path()).unwrap();
+    assert_eq!(again.selected_environment().unwrap().name, "Y");
+
+    ws.save_environments(vec![]).unwrap();
+    assert!(ws.selected_environment().is_none());
+}
+
+fn bearer_settings() -> ServiceSettings {
+    ServiceSettings {
+        name: "Renamed".into(),
+        is_authenticated: true,
+        auth_type: AuthKind::Apikey,
+        basic_user: "u".into(),
+        basic_pass: "p".into(),
+        bearer_token: "{{secret.t}}".into(),
+        api_key_name: "X-Key".into(),
+        api_key_value: "v".into(),
+        api_key_location: "query".into(),
+        preflight: Some(Preflight {
+            enabled: true,
+            method: "POST".into(),
+            url: "https://auth/token".into(),
+            token_key: "tok".into(),
+            ..Default::default()
+        }),
+    }
+}
+
+#[test]
+fn update_service_settings_round_trips_and_leaves_endpoints_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    copy_dir(&fixture("legacy-service"), dir.path());
+    let mut ws = Workspace::open(dir.path()).unwrap();
+    let id = ws.service().id.clone();
+    let git = ws.service().git_url.clone();
+    let ep = ws.create_endpoint("probe", spec("http://h.io/x")).unwrap();
+    let ep_file = dir.path().join(format!("endpoints/{}.yaml", ep.id));
+    let ep_before = fs::read_to_string(&ep_file).unwrap();
+    let n_endpoints = ws.endpoints().len();
+
+    ws.update_service_settings(bearer_settings()).unwrap();
+    assert_eq!(ws.service_settings(), bearer_settings());
+
+    let again = Workspace::open(dir.path()).unwrap();
+    assert_eq!(again.service_settings(), bearer_settings());
+    assert_eq!(again.service().id, id);
+    assert_eq!(again.service().git_url, git);
+    assert_eq!(again.format_version(), FORMAT_VERSION);
+    assert_eq!(again.service().effective_auth_kind(), AuthKind::Apikey);
+    assert_eq!(again.endpoints().len(), n_endpoints);
+    assert_eq!(ep_before, fs::read_to_string(&ep_file).unwrap());
+
+    // Switching auth off and dropping the preflight also persists.
+    let mut off = bearer_settings();
+    off.auth_type = AuthKind::None;
+    off.is_authenticated = false;
+    off.preflight = None;
+    let mut ws = again;
+    ws.update_service_settings(off.clone()).unwrap();
+    assert_eq!(Workspace::open(dir.path()).unwrap().service_settings(), off);
+}
+
+#[test]
+fn update_service_settings_rejects_empty_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    let mut s = ws.service_settings();
+    s.name = "  ".into();
+    assert!(matches!(
+        ws.update_service_settings(s),
+        Err(Error::InvalidInput(_))
+    ));
+    assert_eq!(ws.service().name, "svc");
+}
+
+// ---- interpolation preview ------------------------------------------------------------------
+
+fn preview_ws(dir: &tempfile::TempDir) -> (Workspace, std::sync::Arc<MemorySecretStore>) {
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    let store = std::sync::Arc::new(MemorySecretStore::default());
+    ws.set_secret_store(store.clone());
+    let mut backed = NameValue::new("TOKEN", "");
+    backed.secret_key = Some("env-tok".into());
+    let mut off = NameValue::new("OFF", "no");
+    off.enabled = false;
+    ws.save_environments(vec![env(
+        "DEV",
+        vec![
+            NameValue::new("HOST", "api.test"),
+            NameValue::new("PATH_", "{{HOST}}/v1"),
+            backed,
+            off,
+            NameValue::new("HOST", "dup"),
+        ],
+    )])
+    .unwrap();
+    (ws, store)
+}
+
+#[test]
+fn preview_resolves_variables_and_masks_secrets() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ws, store) = preview_ws(&dir);
+    store.set("direct", "hunter2-direct");
+    store.set("env-tok", "hunter2-env");
+    let p = ws.preview("https://{{PATH_}}?a={{secret.direct}}&b={{ TOKEN }}");
+    assert_eq!(p.resolved, "https://dup/v1?a=••••••&b=••••••");
+    assert!(p.unresolved.is_empty(), "{:?}", p.unresolved);
+    assert!(!p.resolved.contains("hunter2"));
+}
+
+#[test]
+fn preview_reports_unresolved_variables_and_missing_secrets() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ws, _store) = preview_ws(&dir);
+    let p = ws.preview("{{NOPE}} {{OFF}} {{secret.gone}} {{TOKEN}} {{NOPE}} {{secret.gone}}");
+    assert_eq!(
+        p.resolved,
+        "{{NOPE}} {{OFF}} {{secret.gone}} {{secret.env-tok}} {{NOPE}} {{secret.gone}}"
+    );
+    assert_eq!(
+        p.unresolved,
+        vec!["NOPE", "OFF", "secret.env-tok", "secret.gone"]
+    );
+}
+
+#[test]
+fn preview_without_environment_leaves_variables_unresolved() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    ws.save_environments(vec![]).unwrap();
+    let p = ws.preview("{{A}}/x");
+    assert_eq!(p.resolved, "{{A}}/x");
+    assert_eq!(p.unresolved, vec!["A"]);
+    assert!(ws.variable_names().is_empty());
+}
+
+#[test]
+fn variable_names_lists_enabled_names_of_the_selected_environment() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut ws, _) = preview_ws(&dir);
+    assert_eq!(ws.variable_names(), vec!["HOST", "PATH_", "TOKEN"]);
+    let mut e2 = env(
+        "Z",
+        vec![NameValue::new("ONLY_Z", "1"), NameValue::new("", "x")],
+    );
+    e2.is_unsafe = false;
+    let mut envs = ws.environments().to_vec();
+    envs.push(e2);
+    ws.save_environments(envs).unwrap();
+    ws.select_environment("Z").unwrap();
+    assert_eq!(ws.variable_names(), vec!["ONLY_Z"]);
+}

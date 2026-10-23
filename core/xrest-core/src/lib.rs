@@ -21,6 +21,7 @@ pub mod workspace;
 
 pub use error::{Error, Result};
 pub use exec::{HttpOptions, PreparedPreflightTest, PreparedSend};
+pub use interpolate::InterpolationPreview;
 pub use model::*;
 pub use policy::SendPolicy;
 pub use preflight::PreflightTestResult;
