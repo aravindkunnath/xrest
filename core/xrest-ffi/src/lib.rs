@@ -301,6 +301,37 @@ pub struct HttpResponse {
     pub final_url: String,
     pub environment: Option<String>,
     pub unresolved_variables: Vec<String>,
+    pub cookies: Vec<ResponseCookie>,
+}
+
+/// A cookie set by a `Set-Cookie` response header.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ResponseCookie {
+    pub name: String,
+    pub value: String,
+    pub domain: Option<String>,
+    pub path: Option<String>,
+    pub expires: Option<String>,
+    pub max_age: Option<i64>,
+    pub secure: bool,
+    pub http_only: bool,
+    pub same_site: Option<String>,
+}
+
+impl From<core::ResponseCookie> for ResponseCookie {
+    fn from(c: core::ResponseCookie) -> Self {
+        Self {
+            name: c.name,
+            value: c.value,
+            domain: c.domain,
+            path: c.path,
+            expires: c.expires,
+            max_age: c.max_age,
+            secure: c.secure,
+            http_only: c.http_only,
+            same_site: c.same_site,
+        }
+    }
 }
 
 // ---- history --------------------------------------------------------------------------------
@@ -928,6 +959,7 @@ impl From<core::HttpResponse> for HttpResponse {
             final_url: r.final_url,
             environment: r.environment,
             unresolved_variables: r.unresolved_variables,
+            cookies: r.cookies.into_iter().map(Into::into).collect(),
         }
     }
 }

@@ -1,5 +1,7 @@
 //! The result of a send.
 
+use super::ResponseCookie;
+
 /// Result of a send.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpResponse {
@@ -19,4 +21,6 @@ pub struct HttpResponse {
     pub environment: Option<String>,
     /// `{{VAR}}` placeholders that had no value and were sent verbatim.
     pub unresolved_variables: Vec<String>,
+    /// Parsed `Set-Cookie` headers, in response order.
+    pub cookies: Vec<ResponseCookie>,
 }

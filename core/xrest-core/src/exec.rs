@@ -12,7 +12,7 @@ use base64::Engine;
 use url::Url;
 
 use crate::error::{Error, Result};
-use crate::model::{HttpResponse, Preflight, RequestOptions};
+use crate::model::{parse_set_cookie, HttpResponse, Preflight, RequestOptions};
 use crate::preflight::{cache_ttl, extract_token, PreflightTestResult, TokenCache};
 
 /// App-wide transport defaults; a request's [`crate::RequestOptions`] override them per send.
@@ -279,6 +279,12 @@ impl PreparedSend {
         } else {
             pretty_json(&body, &content_type)
         };
+        let cookies = raw
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("set-cookie"))
+            .filter_map(|(_, v)| parse_set_cookie(v))
+            .collect();
         Ok(HttpResponse {
             status: raw.status,
             status_text: raw.status_text,
@@ -292,6 +298,7 @@ impl PreparedSend {
             final_url: raw.final_url,
             environment: self.environment,
             unresolved_variables: self.unresolved,
+            cookies,
         })
     }
 }

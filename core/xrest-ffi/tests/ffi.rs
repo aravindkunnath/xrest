@@ -592,3 +592,24 @@ async fn history_records_sends_and_is_queryable() {
     hist.clear().unwrap();
     assert_eq!(hist.count(none).unwrap(), 0);
 }
+
+#[tokio::test]
+async fn response_cookies_cross_the_ffi_boundary() {
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    let server = MockServer::start().await;
+    Mock::given(path("/c"))
+        .respond_with(
+            ResponseTemplate::new(200).append_header("Set-Cookie", "sid=abc; Path=/; Secure"),
+        )
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let ws = new_ws(&dir);
+    let resp = ws
+        .send(spec(&format!("{}/c", server.uri())), false)
+        .await
+        .unwrap();
+    assert_eq!(resp.cookies[0].name, "sid");
+    assert!(resp.cookies[0].secure);
+    assert_eq!(resp.cookies[0].path.as_deref(), Some("/"));
+}

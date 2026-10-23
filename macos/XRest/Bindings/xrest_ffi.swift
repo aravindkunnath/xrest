@@ -2953,6 +2953,7 @@ public struct HttpResponse: Equatable, Hashable {
     public var finalUrl: String
     public var environment: String?
     public var unresolvedVariables: [String]
+    public var cookies: [ResponseCookie]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2962,7 +2963,7 @@ public struct HttpResponse: Equatable, Hashable {
          */body: String, bodyIsBase64: Bool, 
         /**
          * Re-indented JSON when the body is JSON, else `None`.
-         */prettyBody: String?, sizeBytes: UInt64, timeMs: UInt64, finalUrl: String, environment: String?, unresolvedVariables: [String]) {
+         */prettyBody: String?, sizeBytes: UInt64, timeMs: UInt64, finalUrl: String, environment: String?, unresolvedVariables: [String], cookies: [ResponseCookie]) {
         self.status = status
         self.statusText = statusText
         self.headers = headers
@@ -2975,6 +2976,7 @@ public struct HttpResponse: Equatable, Hashable {
         self.finalUrl = finalUrl
         self.environment = environment
         self.unresolvedVariables = unresolvedVariables
+        self.cookies = cookies
     }
 
     
@@ -3004,7 +3006,8 @@ public struct FfiConverterTypeHttpResponse: FfiConverterRustBuffer {
                 timeMs: FfiConverterUInt64.read(from: &buf), 
                 finalUrl: FfiConverterString.read(from: &buf), 
                 environment: FfiConverterOptionString.read(from: &buf), 
-                unresolvedVariables: FfiConverterSequenceString.read(from: &buf)
+                unresolvedVariables: FfiConverterSequenceString.read(from: &buf), 
+                cookies: FfiConverterSequenceTypeResponseCookie.read(from: &buf)
         )
     }
 
@@ -3021,6 +3024,7 @@ public struct FfiConverterTypeHttpResponse: FfiConverterRustBuffer {
         FfiConverterString.write(value.finalUrl, into: &buf)
         FfiConverterOptionString.write(value.environment, into: &buf)
         FfiConverterSequenceString.write(value.unresolvedVariables, into: &buf)
+        FfiConverterSequenceTypeResponseCookie.write(value.cookies, into: &buf)
     }
 }
 
@@ -3600,6 +3604,91 @@ public func FfiConverterTypeRequestSpec_lift(_ buf: RustBuffer) throws -> Reques
 #endif
 public func FfiConverterTypeRequestSpec_lower(_ value: RequestSpec) -> RustBuffer {
     return FfiConverterTypeRequestSpec.lower(value)
+}
+
+
+/**
+ * A cookie set by a `Set-Cookie` response header.
+ */
+public struct ResponseCookie: Equatable, Hashable {
+    public var name: String
+    public var value: String
+    public var domain: String?
+    public var path: String?
+    public var expires: String?
+    public var maxAge: Int64?
+    public var secure: Bool
+    public var httpOnly: Bool
+    public var sameSite: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, value: String, domain: String?, path: String?, expires: String?, maxAge: Int64?, secure: Bool, httpOnly: Bool, sameSite: String?) {
+        self.name = name
+        self.value = value
+        self.domain = domain
+        self.path = path
+        self.expires = expires
+        self.maxAge = maxAge
+        self.secure = secure
+        self.httpOnly = httpOnly
+        self.sameSite = sameSite
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ResponseCookie: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeResponseCookie: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ResponseCookie {
+        return
+            try ResponseCookie(
+                name: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf), 
+                domain: FfiConverterOptionString.read(from: &buf), 
+                path: FfiConverterOptionString.read(from: &buf), 
+                expires: FfiConverterOptionString.read(from: &buf), 
+                maxAge: FfiConverterOptionInt64.read(from: &buf), 
+                secure: FfiConverterBool.read(from: &buf), 
+                httpOnly: FfiConverterBool.read(from: &buf), 
+                sameSite: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ResponseCookie, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+        FfiConverterOptionString.write(value.domain, into: &buf)
+        FfiConverterOptionString.write(value.path, into: &buf)
+        FfiConverterOptionString.write(value.expires, into: &buf)
+        FfiConverterOptionInt64.write(value.maxAge, into: &buf)
+        FfiConverterBool.write(value.secure, into: &buf)
+        FfiConverterBool.write(value.httpOnly, into: &buf)
+        FfiConverterOptionString.write(value.sameSite, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeResponseCookie_lift(_ buf: RustBuffer) throws -> ResponseCookie {
+    return try FfiConverterTypeResponseCookie.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeResponseCookie_lower(_ value: ResponseCookie) -> RustBuffer {
+    return FfiConverterTypeResponseCookie.lower(value)
 }
 
 
@@ -4477,6 +4566,30 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
+    typealias SwiftType = Int64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
     typealias SwiftType = Bool?
 
@@ -4790,6 +4903,31 @@ fileprivate struct FfiConverterSequenceTypeNameValue: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeNameValue.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeResponseCookie: FfiConverterRustBuffer {
+    typealias SwiftType = [ResponseCookie]
+
+    public static func write(_ value: [ResponseCookie], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeResponseCookie.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ResponseCookie] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ResponseCookie]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeResponseCookie.read(from: &buf))
         }
         return seq
     }

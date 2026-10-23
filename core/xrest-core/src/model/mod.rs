@@ -6,13 +6,16 @@
 //! - [`request`]: what a request is (`RequestSpec`, `Body`, `RequestOptions`, `Preflight`).
 //! - [`service`]: the workspace's service file, auth and environments.
 //! - [`endpoint`]: versioned endpoints, scratch requests and version snapshots.
+//! - [`cookie`]: parsed `Set-Cookie` response cookies.
 //! - [`response`]: the result of a send.
 
+mod cookie;
 mod endpoint;
 mod request;
 mod response;
 mod service;
 
+pub use cookie::*;
 pub use endpoint::*;
 pub use request::*;
 pub use response::*;

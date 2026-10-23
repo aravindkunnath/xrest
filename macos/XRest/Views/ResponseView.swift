@@ -5,7 +5,13 @@ enum ResponseTab: String, CaseIterable, Identifiable {
     case pretty = "Pretty"
     case raw = "Raw"
     case headers = "Headers"
+    case cookies = "Cookies"
     var id: String { rawValue }
+
+    /// Tabs to offer for a response; Cookies only when it set any.
+    static func visibleCases(for response: HttpResponse) -> [ResponseTab] {
+        allCases.filter { $0 != .cookies || !response.cookies.isEmpty }
+    }
 }
 
 struct ResponseView: View {
@@ -85,11 +91,16 @@ struct ResponseContent: View {
                 }
             case .headers:
                 headersView(response)
+            case .cookies:
+                cookiesView(response)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.response)
-        .onChange(of: response) { showAll = false }
+        .onChange(of: response) {
+            showAll = false
+            if !ResponseTab.visibleCases(for: response).contains(tab) { tab = .pretty }
+        }
     }
 
     private func placeholder(_ title: String, detail: String, symbol: String, tint: Color) -> some View {
@@ -130,7 +141,7 @@ struct ResponseContent: View {
                 .buttonStyle(.plain).help("Copy body")
             Button { saveBody(r) } label: { Image(systemName: "square.and.arrow.down") }
                 .buttonStyle(.plain).help("Save body…")
-            ForEach(ResponseTab.allCases) { item in
+            ForEach(ResponseTab.visibleCases(for: r)) { item in
                 Button(item.rawValue) { tab = item }
                     .buttonStyle(.plain)
                     .font(.ui(13))
@@ -208,6 +219,40 @@ struct ResponseContent: View {
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         try? data.write(to: url)
+    }
+
+    private func cookiesView(_ r: HttpResponse) -> some View {
+        func expiry(_ c: ResponseCookie) -> String {
+            [c.expires, c.maxAge.map { "Max-Age=\($0)" }].compactMap { $0 }.joined(separator: " · ")
+        }
+        func flags(_ c: ResponseCookie) -> String {
+            [c.secure ? "Secure" : nil, c.httpOnly ? "HttpOnly" : nil, c.sameSite.map { "SameSite=\($0)" }]
+                .compactMap { $0 }.joined(separator: " ")
+        }
+        return ScrollView {
+            VStack(spacing: 0) {
+                ForEach(r.cookies.indices, id: \.self) { index in
+                    let c = r.cookies[index]
+                    HStack(alignment: .top, spacing: 12) {
+                        Text(c.name).foregroundStyle(Theme.blue)
+                            .frame(width: 140, alignment: .leading)
+                        Text(c.value).foregroundStyle(Theme.textSoft)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(c.domain ?? "").frame(width: 120, alignment: .leading)
+                        Text(c.path ?? "").frame(width: 80, alignment: .leading)
+                        Text(expiry(c)).frame(width: 180, alignment: .leading)
+                        Text(flags(c)).frame(width: 160, alignment: .leading)
+                    }
+                    .font(.mono(12))
+                    .foregroundStyle(Theme.muted)
+                    .textSelection(.enabled)
+                    .padding(.vertical, 6)
+                    .hairline(.top, color: Theme.rowDivider)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+        }
     }
 
     private func headersView(_ r: HttpResponse) -> some View {
