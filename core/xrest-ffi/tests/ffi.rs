@@ -1,5 +1,6 @@
 //! Exercises the FFI object the way the Swift app does (through the public Rust API).
 
+use std::sync::Arc;
 use wiremock::matchers::{header, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 use xrest_ffi::*;
@@ -169,4 +170,103 @@ fn newer_workspace_format_maps_to_its_own_error() {
         Err(e) => panic!("unexpected error {e:?}"),
         Ok(_) => panic!("a newer format must not open"),
     }
+}
+
+struct MapProvider(std::collections::HashMap<String, String>);
+
+impl SecretProvider for MapProvider {
+    fn get(&self, key: String) -> Option<String> {
+        self.0.get(&key).cloned()
+    }
+}
+
+fn provider(pairs: &[(&str, &str)]) -> Arc<dyn SecretProvider> {
+    Arc::new(MapProvider(
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+    ))
+}
+
+fn new_ws(dir: &tempfile::TempDir) -> Arc<XRestWorkspace> {
+    XRestWorkspace::create_workspace(dir.path().to_string_lossy().into_owned(), "Demo".into())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn secret_provider_wins_over_memory_store_and_falls_back() {
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    let server = MockServer::start().await;
+    Mock::given(path("/ping"))
+        .and(header("x-a", "from-provider"))
+        .and(header("x-b", "from-memory"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let ws = new_ws(&dir);
+    ws.set_secret("a".into(), "from-memory-loser".into());
+    ws.set_secret("b".into(), "from-memory".into());
+    ws.set_secret_provider(provider(&[("a", "from-provider")]));
+
+    let mut s = spec(&format!("{}/ping", server.uri()));
+    s.headers.push(nv("X-A", "{{secret.a}}"));
+    s.headers.push(nv("X-B", "{{secret.b}}"));
+    let r = ws.send(s, false).await.unwrap();
+    assert_eq!(r.status, 200);
+}
+
+#[tokio::test]
+async fn missing_secrets_lists_exactly_the_missing_keys_before_any_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = new_ws(&dir);
+    ws.set_secret_provider(provider(&[("have", "1")]));
+    ws.set_secret("mem".into(), "2".into());
+    let mut s = spec("http://127.0.0.1:9/never");
+    s.headers.push(nv("X-1", "{{secret.have}}"));
+    s.headers.push(nv("X-2", "{{secret.mem}}"));
+    s.headers.push(nv("X-3", "{{secret.gone1}}"));
+    s.headers.push(nv("X-4", "{{secret.gone2}}"));
+    match ws.send(s, false).await {
+        Err(XRestError::MissingSecrets { mut keys }) => {
+            keys.sort();
+            assert_eq!(keys, vec!["gone1", "gone2"]);
+        }
+        other => panic!("expected MissingSecrets, got {other:?}"),
+    }
+}
+
+#[test]
+fn secret_keys_in_use_collects_every_reference_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    drop(new_ws(&dir));
+    let svc = std::fs::read_to_string(root.join("service.yaml")).unwrap();
+    let patched = svc.replacen("bearerToken: ''", "bearerToken: '{{secret.svc}}'", 1);
+    assert_ne!(svc, patched, "fixture patch must apply");
+    std::fs::write(root.join("service.yaml"), patched).unwrap();
+    let envs = std::fs::read_to_string(root.join("environments.yaml")).unwrap();
+    let patched = envs.replacen(
+        "  - name: BASE_URL\n",
+        "  - name: API\n    value: ''\n    enabled: true\n    secretKey: env-key\n    type: secret\n  - name: BASE_URL\n",
+        1,
+    );
+    assert_ne!(envs, patched, "fixture patch must apply");
+    let envs = patched;
+    std::fs::write(root.join("environments.yaml"), envs).unwrap();
+
+    let ws = XRestWorkspace::open_workspace(root.to_string_lossy().into_owned()).unwrap();
+    let mut e = spec("https://x/{{secret.url}}");
+    e.headers.push(nv("A", "{{secret.hdr}} {{secret.svc}}"));
+    ws.create_endpoint("e".into(), e).unwrap();
+    let mut s = spec("https://y");
+    s.params.push(nv("q", "{{secret.scratch}}"));
+    s.params.push(nv("r", "{{secret.hdr}}"));
+    ws.create_scratch("s".into(), s).unwrap();
+
+    assert_eq!(
+        ws.secret_keys_in_use(),
+        vec!["env-key", "hdr", "scratch", "svc", "url"]
+    );
 }

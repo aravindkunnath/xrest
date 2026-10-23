@@ -131,6 +131,18 @@ impl Workspace {
         self.secrets = store;
     }
 
+    /// Every distinct secret key referenced by the service, environments, endpoints and scratch
+    /// requests: `{{secret.KEY}}` placeholders in any string, and any `secretKey` field. Sorted.
+    pub fn secret_keys_in_use(&self) -> Vec<String> {
+        let mut keys = std::collections::BTreeSet::new();
+        let mut scan = |v: serde_json::Value| collect_secret_keys(&v, &mut keys);
+        scan(serde_json::to_value(&self.service).unwrap_or_default());
+        scan(serde_json::to_value(&self.environments).unwrap_or_default());
+        scan(serde_json::to_value(&self.endpoints).unwrap_or_default());
+        scan(serde_json::to_value(&self.scratch).unwrap_or_default());
+        keys.into_iter().collect()
+    }
+
     pub fn set_http_options(&mut self, opts: HttpOptions) {
         self.http = opts;
     }
@@ -205,5 +217,30 @@ impl Workspace {
 
     pub fn send_policy(&self) -> SendPolicy {
         SendPolicy::for_environment(self.selected_environment())
+    }
+}
+
+fn collect_secret_keys(v: &serde_json::Value, out: &mut std::collections::BTreeSet<String>) {
+    use serde_json::Value;
+    match v {
+        Value::String(s) => {
+            for name in crate::interpolate::placeholders(s) {
+                if let Some(k) = name.strip_prefix("secret.") {
+                    out.insert(k.to_string());
+                }
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| collect_secret_keys(x, out)),
+        Value::Object(m) => {
+            for (k, x) in m {
+                match x {
+                    Value::String(s) if k == "secretKey" && !s.is_empty() => {
+                        out.insert(s.clone());
+                    }
+                    _ => collect_secret_keys(x, out),
+                }
+            }
+        }
+        _ => {}
     }
 }

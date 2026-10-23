@@ -510,6 +510,36 @@ impl From<core::HttpResponse> for HttpResponse {
     }
 }
 
+// ---- secrets ------------------------------------------------------------------------------
+
+/// Implemented by the app (e.g. over the Keychain) to supply secret values for
+/// `{{secret.KEY}}` placeholders and `secretKey` variables. Returns `None` when the key is
+/// unknown. Called synchronously from the sending thread, so it should be quick.
+#[uniffi::export(with_foreign)]
+pub trait SecretProvider: Send + Sync {
+    fn get(&self, key: String) -> Option<String>;
+}
+
+/// Looks keys up in the foreign provider first, then in the in-memory store.
+struct SecretChain {
+    provider: Mutex<Option<Arc<dyn SecretProvider>>>,
+    memory: core::MemorySecretStore,
+}
+
+impl core::SecretStore for SecretChain {
+    fn get(&self, key: &str) -> Option<String> {
+        // Clone the Arc so the foreign call runs without holding our lock.
+        let provider = self
+            .provider
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        provider
+            .and_then(|p| p.get(key.to_string()))
+            .or_else(|| self.memory.get(key))
+    }
+}
+
 // ---- the workspace object -----------------------------------------------------------------
 
 /// One open workspace (a service directory with its endpoints and scratchpad).
@@ -520,12 +550,15 @@ impl From<core::HttpResponse> for HttpResponse {
 #[derive(uniffi::Object)]
 pub struct XRestWorkspace {
     inner: Mutex<core::Workspace>,
-    secrets: Arc<core::MemorySecretStore>,
+    secrets: Arc<SecretChain>,
 }
 
 impl XRestWorkspace {
     fn wrap(mut ws: core::Workspace) -> Arc<Self> {
-        let secrets = Arc::new(core::MemorySecretStore::default());
+        let secrets = Arc::new(SecretChain {
+            provider: Mutex::new(None),
+            memory: core::MemorySecretStore::default(),
+        });
         ws.set_secret_store(secrets.clone());
         Arc::new(Self {
             inner: Mutex::new(ws),
@@ -686,10 +719,25 @@ impl XRestWorkspace {
 
     // secrets and caches
 
-    /// Store a secret for `{{secret.KEY}}` placeholders. In memory only for now.
-    /// TODO(keychain): back this with the platform credential store.
+    /// Store a secret in memory for `{{secret.KEY}}` placeholders (tests and fallback). The
+    /// provider set with [`XRestWorkspace::set_secret_provider`] is consulted first.
     pub fn set_secret(&self, key: String, value: String) {
-        self.secrets.set(key, value);
+        self.secrets.memory.set(key, value);
+    }
+
+    /// Plug in the platform credential store. Lookup order: provider, then `set_secret`.
+    pub fn set_secret_provider(&self, provider: Arc<dyn SecretProvider>) {
+        *self
+            .secrets
+            .provider
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(provider);
+    }
+
+    /// Every distinct secret key referenced by the service, environments, endpoints and scratch
+    /// requests, sorted.
+    pub fn secret_keys_in_use(&self) -> Vec<String> {
+        self.lock().secret_keys_in_use()
     }
 
     pub fn clear_token_cache(&self) {

@@ -1,10 +1,9 @@
 //! Secret lookup for `{{secret.KEY}}` placeholders and variables with a `secretKey`.
 //!
 //! The core only defines the trait. Platform apps are expected to supply an implementation backed
-//! by the OS credential store (macOS Keychain, libsecret on Linux).
-//!
-//! TODO(keychain): add a foreign-implementable callback interface in `xrest-ffi` so the macOS app
-//! can plug `SecItemCopyMatching` in. Until then [`MemorySecretStore`] is the only implementation.
+//! by the OS credential store (macOS Keychain, libsecret on Linux). `xrest-ffi` exposes a
+//! foreign-implementable `SecretProvider` callback interface and adapts it to [`SecretStore`];
+//! no credential-store code lives in Rust. [`MemorySecretStore`] backs tests.
 
 use std::collections::HashMap;
 use std::sync::Mutex;

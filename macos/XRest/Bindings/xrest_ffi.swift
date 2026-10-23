@@ -460,7 +460,13 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 
 
 // Public interface members begin here.
-
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+private let IDX_CALLBACK_FREE: Int32 = 0
+// Callback return codes
+private let UNIFFI_CALLBACK_SUCCESS: Int32 = 0
+private let UNIFFI_CALLBACK_ERROR: Int32 = 1
+private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -600,6 +606,215 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 
 /**
+ * Implemented by the app (e.g. over the Keychain) to supply secret values for
+ * `{{secret.KEY}}` placeholders and `secretKey` variables. Returns `None` when the key is
+ * unknown. Called synchronously from the sending thread, so it should be quick.
+ */
+public protocol SecretProvider: AnyObject, Sendable {
+    
+    func get(key: String)  -> String?
+    
+}
+/**
+ * Implemented by the app (e.g. over the Keychain) to supply secret values for
+ * `{{secret.KEY}}` placeholders and `secretKey` variables. Returns `None` when the key is
+ * unknown. Called synchronously from the sending thread, so it should be quick.
+ */
+open class SecretProviderImpl: SecretProvider, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_xrest_ffi_fn_clone_secretprovider(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_xrest_ffi_fn_free_secretprovider(handle, $0) }
+    }
+
+    
+
+    
+open func get(key: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_secretprovider_get(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(key),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceSecretProvider {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceSecretProvider = UniffiVTableCallbackInterfaceSecretProvider(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeSecretProvider.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface SecretProvider: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeSecretProvider.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface SecretProvider: handle missing in uniffiClone")
+            }
+        },
+        get: { (
+            uniffiHandle: UInt64,
+            key: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> String? in
+                guard let uniffiObj = try? FfiConverterTypeSecretProvider.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.get(
+                     key: try FfiConverterString.lift(key)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionString.lower($0) }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceSecretProvider> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceSecretProvider>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitSecretProvider() {
+    uniffi_xrest_ffi_fn_init_callback_vtable_secretprovider(UniffiCallbackInterfaceSecretProvider.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSecretProvider: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<SecretProvider>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = SecretProvider
+
+    public static func lift(_ handle: UInt64) throws -> SecretProvider {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return SecretProviderImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: SecretProvider) -> UInt64 {
+         if let rustImpl = value as? SecretProviderImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SecretProvider {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: SecretProvider, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSecretProvider_lift(_ handle: UInt64) throws -> SecretProvider {
+    return try FfiConverterTypeSecretProvider.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSecretProvider_lower(_ value: SecretProvider) -> UInt64 {
+    return FfiConverterTypeSecretProvider.lower(value)
+}
+
+
+
+
+
+
+/**
  * One open workspace (a service directory with its endpoints and scratchpad).
  *
  * Thread-safe: methods may be called from any thread. Synchronous methods only touch local
@@ -643,6 +858,12 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
      */
     func promoteScratch(id: String, name: String?) throws  -> Endpoint
     
+    /**
+     * Every distinct secret key referenced by the service, environments, endpoints and scratch
+     * requests, sorted.
+     */
+    func secretKeysInUse()  -> [String]
+    
     func selectEnvironment(name: String) throws 
     
     func selectedEnvironment()  -> String?
@@ -663,10 +884,15 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func service()  -> ServiceInfo
     
     /**
-     * Store a secret for `{{secret.KEY}}` placeholders. In memory only for now.
-     * TODO(keychain): back this with the platform credential store.
+     * Store a secret in memory for `{{secret.KEY}}` placeholders (tests and fallback). The
+     * provider set with [`XRestWorkspace::set_secret_provider`] is consulted first.
      */
     func setSecret(key: String, value: String) 
+    
+    /**
+     * Plug in the platform credential store. Lookup order: provider, then `set_secret`.
+     */
+    func setSecretProvider(provider: SecretProvider) 
     
     /**
      * Run a preflight request once (`None`: the service preflight) and report the exchange and
@@ -909,6 +1135,19 @@ open func promoteScratch(id: String, name: String?)throws  -> Endpoint  {
 })
 }
     
+    /**
+     * Every distinct secret key referenced by the service, environments, endpoints and scratch
+     * requests, sorted.
+     */
+open func secretKeysInUse() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_secret_keys_in_use(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
 open func selectEnvironment(name: String)throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
         uniffiCallStatus in
     uniffi_xrest_ffi_fn_method_xrestworkspace_select_environment(
@@ -971,8 +1210,8 @@ open func service() -> ServiceInfo  {
 }
     
     /**
-     * Store a secret for `{{secret.KEY}}` placeholders. In memory only for now.
-     * TODO(keychain): back this with the platform credential store.
+     * Store a secret in memory for `{{secret.KEY}}` placeholders (tests and fallback). The
+     * provider set with [`XRestWorkspace::set_secret_provider`] is consulted first.
      */
 open func setSecret(key: String, value: String)  {try! rustCall() {
         uniffiCallStatus in
@@ -980,6 +1219,18 @@ open func setSecret(key: String, value: String)  {try! rustCall() {
             self.uniffiCloneHandle(),
         FfiConverterString.lower(key),
         FfiConverterString.lower(value),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Plug in the platform credential store. Lookup order: provider, then `set_secret`.
+     */
+open func setSecretProvider(provider: SecretProvider)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_set_secret_provider(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeSecretProvider_lower(provider),uniffiCallStatus
     )
 }
 }
@@ -2727,6 +2978,9 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_secretprovider_get() != 64551) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_clear_token_cache() != 21902) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2766,6 +3020,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_promote_scratch() != 54879) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_secret_keys_in_use() != 21361) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_select_environment() != 53875) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2781,7 +3038,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_service() != 43918) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_secret() != 64015) {
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_secret() != 43588) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_secret_provider() != 34748) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_test_preflight() != 39750) {
@@ -2803,6 +3063,7 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
 
+    uniffiCallbackInitSecretProvider()
     return InitializationResult.ok
 }()
 

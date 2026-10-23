@@ -329,7 +329,9 @@ XRestWorkspace
     promote_scratch(id, name?) -> Endpoint            // removes the scratch file
     import_curl_as_scratch(command) -> ScratchRequest
   secrets / caches
-    set_secret(key, value)                            // in memory; Keychain is a TODO
+    set_secret_provider(provider: SecretProvider)     // app-implemented (Keychain); consulted first
+    set_secret(key, value)                            // in-memory fallback (tests)
+    secret_keys_in_use() -> [String]                  // sorted, distinct keys referenced by the workspace
     clear_token_cache()
   sending
     async send(request: RequestSpec, confirmed: Bool) -> HttpResponse
@@ -348,6 +350,11 @@ Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`
 `UnsupportedFormat(found, supported)`, `NotFound(message)`,
 `InvalidInput(message)`, `Io(message)`, `Http(message)`, `Preflight(message)`, `MissingSecrets(keys)`,
 `NotImplemented(message)`.
+
+`SecretProvider` is a foreign-implementable protocol (`get(key) -> String?`); the app implements it over
+the Keychain and the FFI adapter (a `SecretStore`) asks it first, then the `set_secret` memory store.
+Missing keys still fail the send with `MissingSecrets(keys)` before any request. `secret_keys_in_use`
+scans the service, environments, endpoints and scratch requests for `{{secret.KEY}}` and `secretKey`.
 
 `send` takes the request spec rather than an id so the app can send the unsaved draft it is editing.
 `test_preflight` runs one preflight request (the given one, or the service's when `nil`) in the
@@ -369,6 +376,5 @@ also emits the C header and `module.modulemap` that `build-xcframework.sh` packs
 * `history`: request history (legacy: SQLite at `~/.xrest/history.db`).
 * `git`: status/commit/sync (legacy: `internal/adapters/git.go`).
 * `swagger`: Swagger/OpenAPI import (legacy: `internal/import/swagger.go`).
-* Keychain-backed `SecretStore` (needs a foreign-implementable callback interface in `xrest-ffi`).
 * cURL `-u/--user` (deliberately dropped, as in Go, so credentials do not end up in committed files).
 * App Sandbox + security-scoped bookmarks for the macOS app.
