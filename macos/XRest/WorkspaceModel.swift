@@ -16,6 +16,7 @@ enum SidebarSelection: Hashable {
 final class WorkspaceModel {
     let core: XRestWorkspace
     let rootURL: URL
+    let secrets: KeychainSecretStore
 
     private(set) var service: ServiceInfo
     private(set) var endpoints: [Endpoint] = []
@@ -31,20 +32,28 @@ final class WorkspaceModel {
 
     private(set) var response: HttpResponse?
     private(set) var sendError: String?
+    /// Keys named by a `MissingSecrets` send error (drives the "Open Secrets" button).
+    private(set) var missingSecretKeys: [String] = []
     private(set) var isSending = false
 
     // UI state driven from the model so menu commands can reach it.
     var showUnsafeConfirmation = false
     var showImportCurl = false
+    var showSecrets = false
+    /// Key to prefill in the Secrets screen's add form.
+    var secretsPrefill: String?
     var pendingDelete: SidebarSelection?
     var errorMessage: String?
     /// Filters the sidebar lists.
     var searchText = ""
 
-    init(url: URL) throws {
+    init(url: URL, secrets: KeychainSecretStore = KeychainSecretStore()) throws {
         let opened = try XRestWorkspace.openWorkspace(path: url.path)
         rootURL = url
         core = opened
+        self.secrets = secrets
+        // Installed on every open so `{{secret.KEY}}` placeholders resolve from the Keychain.
+        opened.setSecretProvider(provider: secrets)
         service = opened.service()
         reload()
     }
@@ -209,6 +218,18 @@ final class WorkspaceModel {
         }
     }
 
+    // MARK: Secrets
+
+    func openSecrets(prefill: String? = nil) {
+        secretsPrefill = prefill
+        showSecrets = true
+    }
+
+    /// Secret keys the current service references, with whether each is stored.
+    func neededSecrets() -> [SecretsState.Needed] {
+        SecretsState.needed(inUse: core.secretKeysInUse(), stored: secrets.keys())
+    }
+
     // MARK: Sending
 
     /// Entry point for the Send button and menu command. The core is the authority on whether
@@ -236,6 +257,7 @@ final class WorkspaceModel {
     private func perform(spec: RequestSpec, confirmed: Bool) async {
         isSending = true
         sendError = nil
+        missingSecretKeys = []
         defer { isSending = false }
         do {
             response = try await core.send(request: spec, confirmed: confirmed)
@@ -245,6 +267,7 @@ final class WorkspaceModel {
                 // The environment changed under us; ask again.
                 showUnsafeConfirmation = true
             } else {
+                missingSecretKeys = SecretsState.missingKeys(in: error)
                 sendError = error.message
             }
         } catch {

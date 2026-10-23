@@ -8,7 +8,7 @@ struct WorkspaceView: View {
         VStack(spacing: 0) {
             TitleBar(model: model)
             HStack(spacing: 0) {
-                ActivityRail()
+                ActivityRail(openSecrets: { model.openSecrets() })
                 SidebarView(model: model)
                     .frame(width: 280)
                 MainColumn(model: model)
@@ -53,6 +53,9 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $model.showImportCurl) {
             ImportCurlSheet(model: model)
+        }
+        .sheet(isPresented: $model.showSecrets) {
+            SecretsSheet(model: model)
         }
     }
 

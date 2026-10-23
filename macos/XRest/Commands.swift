@@ -49,6 +49,9 @@ struct WorkspaceCommands: Commands {
             Button("Promote to Endpoint") { model?.promoteSelected() }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
                 .disabled(model == nil)
+            Button("Secrets…") { model?.openSecrets() }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .disabled(model == nil)
             Divider()
             Menu("Switch Environment") {
                 if let model {

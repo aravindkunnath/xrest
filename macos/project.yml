@@ -19,12 +19,18 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Automatic
+  configs:
+    Debug:
+      ENABLE_TESTABILITY: YES
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
 targets:
   XRest:
     type: application
     platform: macOS
     # Generate a shared scheme so `xcodebuild -scheme XRest` works in CI.
-    scheme: {}
+    scheme:
+      testTargets:
+        - XRestTests
     sources:
       - path: XRest
     dependencies:
@@ -48,3 +54,17 @@ targets:
         # TODO(sandbox): enable App Sandbox (user-selected read/write + network client) once
         # workspace access is persisted with security-scoped bookmarks.
         ENABLE_APP_SANDBOX: NO
+  XRestTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: XRestTests
+    dependencies:
+      - target: XRest
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.xrest.XRestTests
+        PRODUCT_NAME: XRestTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/XRest.app/Contents/MacOS/XRest"
+        BUNDLE_LOADER: "$(TEST_HOST)"

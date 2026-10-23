@@ -2,10 +2,13 @@ import SwiftUI
 
 /// Narrow icon rail on the far left. Only Explorer is wired up so far.
 struct ActivityRail: View {
+    let openSecrets: () -> Void
+
     private struct Item: Identifiable {
         let id: String
         let symbol: String
         var active = false
+        var enabled = false
     }
 
     private let items = [
@@ -13,12 +16,13 @@ struct ActivityRail: View {
         Item(id: "History", symbol: "clock"),
         Item(id: "Environments and variables", symbol: "curlybraces"),
         Item(id: "Git", symbol: "arrow.triangle.branch"),
+        Item(id: "Secrets", symbol: "key", enabled: true),
     ]
 
     var body: some View {
         VStack(spacing: 6) {
             ForEach(items) { item in
-                railButton(item.id, symbol: item.symbol, active: item.active)
+                railButton(item.id, symbol: item.symbol, active: item.active, enabled: item.enabled)
             }
             Spacer()
             railButton("Settings", symbol: "gearshape", active: false)
@@ -30,8 +34,11 @@ struct ActivityRail: View {
         .hairline(.trailing)
     }
 
-    private func railButton(_ label: String, symbol: String, active: Bool) -> some View {
+    private func railButton(_ label: String, symbol: String, active: Bool, enabled: Bool = false)
+        -> some View
+    {
         Button {
+            if label == "Secrets" { openSecrets() }
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 15))
@@ -41,7 +48,7 @@ struct ActivityRail: View {
         }
         .buttonStyle(HoverButtonStyle(radius: 8))
         .accessibilityLabel(label)
-        .help(active ? label : "\(label) (coming soon)")
+        .help(active || enabled ? label : "\(label) (coming soon)")
     }
 }
 

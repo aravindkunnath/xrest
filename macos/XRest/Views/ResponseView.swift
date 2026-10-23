@@ -26,7 +26,14 @@ struct ResponseView: View {
             } else if let error = model.sendError {
                 placeholder(
                     "Request failed", detail: error, symbol: "exclamationmark.octagon",
-                    tint: Theme.red)
+                    tint: Theme.red
+                ) {
+                    if let first = model.missingSecretKeys.first {
+                        Button("Open Secrets…") { model.openSecrets(prefill: first) }
+                            .buttonStyle(.bordered)
+                            .padding(.top, 4)
+                    }
+                }
             } else if model.isSending {
                 ProgressView()
                     .controlSize(.small)
@@ -41,9 +48,10 @@ struct ResponseView: View {
         .background(Theme.response)
     }
 
-    private func placeholder(_ title: String, detail: String, symbol: String, tint: Color)
-        -> some View
-    {
+    private func placeholder<Extra: View>(
+        _ title: String, detail: String, symbol: String, tint: Color,
+        @ViewBuilder extra: () -> Extra = { EmptyView() }
+    ) -> some View {
         VStack(spacing: 8) {
             Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(tint)
             Text(title).font(.ui(13, weight: .medium)).foregroundStyle(Theme.text)
@@ -52,6 +60,7 @@ struct ResponseView: View {
                 .foregroundStyle(Theme.muted)
                 .multilineTextAlignment(.center)
                 .textSelection(.enabled)
+            extra()
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
