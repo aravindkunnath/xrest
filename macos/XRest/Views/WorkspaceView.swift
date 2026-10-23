@@ -71,6 +71,12 @@ struct WorkspaceView: View {
         .sheet(isPresented: $model.showSecrets) {
             SecretsSheet(model: model)
         }
+        .sheet(isPresented: $model.showExportCode) {
+            ExportCodeSheet(model: model)
+        }
+        .sheet(isPresented: $model.showReimport) {
+            ReimportOpenAPISheet(model: model)
+        }
     }
 
     private var errorBinding: Binding<Bool> {

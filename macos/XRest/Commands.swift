@@ -20,6 +20,7 @@ enum WorkspacePicker {
 struct WorkspaceCommands: Commands {
     @FocusedValue(\.workspaceModel) private var model
     @FocusedValue(\.windowURLSetter) private var urlSetter
+    @FocusedValue(\.newServiceAction) private var newService
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
@@ -31,6 +32,8 @@ struct WorkspaceCommands: Commands {
             Button("Import cURL…") { model?.showImportCurl = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(model == nil)
+            Button("New Service from OpenAPI…") { newService?.run() }
+                .disabled(newService == nil)
             Divider()
             Button("Open Workspace…") { openWorkspace() }
                 .keyboardShortcut("o", modifiers: .command)
@@ -52,6 +55,11 @@ struct WorkspaceCommands: Commands {
                 .disabled(model == nil)
         }
 
+        CommandMenu("Service") {
+            Button("Re-import OpenAPI…") { model?.showReimport = true }
+                .disabled(model == nil)
+        }
+
         CommandMenu("Request") {
             Button("Send") { model?.requestSend() }
                 .keyboardShortcut(.return, modifiers: .command)
@@ -62,6 +70,9 @@ struct WorkspaceCommands: Commands {
             Button("Secrets…") { model?.openSecrets() }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
                 .disabled(model == nil)
+            Button("Export Code…") { model?.showExportCode = true }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(model?.draft == nil)
             Divider()
             Menu("Switch Environment") {
                 if let model {

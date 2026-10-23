@@ -60,6 +60,8 @@ final class WorkspaceModel {
     var pendingConfirmation: PendingConfirmation?
     var showImportCurl = false
     var showSecrets = false
+    var showExportCode = false
+    var showReimport = false
     /// Environments / service settings editor shown instead of the request.
     private(set) var panel: DetailPanel?
     /// Set by the open panel while it holds unsaved edits.
@@ -411,6 +413,20 @@ final class WorkspaceModel {
         } catch {
             errorMessage = describe(error)
         }
+    }
+
+    /// Merges an OpenAPI spec into this workspace; refreshes the lists and git status.
+    func reimportOpenapi(_ content: String) throws -> ImportSummary {
+        let summary = try core.mergeOpenapi(content: content)
+        reload()
+        afterSave()
+        return summary
+    }
+
+    /// Code for the current in-memory draft (unsaved edits included).
+    func exportCode(language: CodeLanguage, includeSecrets: Bool) throws -> String {
+        guard let draft else { throw OpenAPIInputError(message: "Select a request first.") }
+        return try core.exportCode(spec: draft.spec, language: language, includeSecrets: includeSecrets)
     }
 
     func importCurl(_ command: String) {

@@ -4,19 +4,28 @@ import SwiftUI
 struct WorkspaceWindow: View {
     @Binding var url: URL?
     @State private var model: WorkspaceModel?
+    @Environment(\.openWindow) private var openWindow
     @State private var errorMessage: String?
     /// A folder that is not a workspace yet; the user is asked whether to initialise it.
     @State private var folderToInitialise: URL?
+    @State private var showNewService = false
 
     var body: some View {
         Group {
             if let model {
                 WorkspaceView(model: model)
             } else {
-                WelcomeView(open: chooseWorkspace, openRecent: { url = $0 })
+                WelcomeView(open: chooseWorkspace, newFromOpenAPI: { showNewService = true }, openRecent: { url = $0 })
             }
         }
         .focusedSceneValue(\.windowURLSetter, WindowURLSetter { url = $0 })
+        .focusedSceneValue(\.newServiceAction, NewServiceAction { showNewService = true })
+        .sheet(isPresented: $showNewService) {
+            NewServiceSheet { created in
+                RecentStore.shared.record(created)
+                if model == nil { url = created } else { openWindow(value: created) }
+            }
+        }
         .task(id: url) { load() }
         .alert("Could not open workspace", isPresented: errorBinding) {
             Button("OK", role: .cancel) {}
@@ -79,6 +88,7 @@ struct WorkspaceWindow: View {
 
 struct WelcomeView: View {
     let open: () -> Void
+    let newFromOpenAPI: () -> Void
     let openRecent: (URL) -> Void
     private var recents: RecentStore { RecentStore.shared }
 
@@ -100,6 +110,9 @@ struct WelcomeView: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(Theme.amber))
             }
             .buttonStyle(.plain)
+            Button("New Service from OpenAPI…", action: newFromOpenAPI)
+                .buttonStyle(.link)
+                .font(.ui(12))
 
             if !recents.items.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
