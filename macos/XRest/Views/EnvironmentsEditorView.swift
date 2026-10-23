@@ -42,6 +42,10 @@ struct EnvironmentsEditorView: View {
             }
         }
         .onChange(of: isDirty) { _, dirty in model.panelDirty = dirty }
+        .onAppear {
+            model.registerPanelSave { if isDirty && errors.isEmpty { save() } }
+        }
+        .onDisappear { model.registerPanelSave(nil) }
         .confirmationDialog("Discard unsaved changes?", isPresented: $confirmClose) {
             Button("Discard", role: .destructive) { model.closePanel() }
             Button("Keep editing", role: .cancel) {}
@@ -188,7 +192,6 @@ struct EnvironmentsEditorView: View {
                 }
                 .disabled(!isDirty)
                 Button("Save") { save() }
-                    .keyboardShortcut("s", modifiers: .command)
                     .disabled(!isDirty || !errors.isEmpty)
             }
         }

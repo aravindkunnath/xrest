@@ -27,7 +27,7 @@ struct RequestDetailView: View {
                 UnsafeBanner(environment: model.selectedEnvironment ?? "")
             }
             urlBar
-            URLPreview(model: model, url: draft.wrappedValue.url)
+            URLPreview(model: model, spec: draft.wrappedValue.spec)
             HStack(spacing: 0) {
                 requestPane
                     .frame(minWidth: 320, maxWidth: .infinity)
@@ -324,32 +324,52 @@ struct URLField: View {
 /// that did not resolve highlighted. Recomputed when the URL or the environment changes.
 struct URLPreview: View {
     let model: WorkspaceModel
-    let url: String
+    let spec: RequestSpec
+
+    /// Everything the preview depends on; a change restarts the debounced recompute.
+    private struct Key: Hashable {
+        let spec: RequestSpec
+        let environment: String?
+        let environments: [EnvironmentConfig]
+        let secretsOpen: Bool
+    }
+
+    /// Computed off the render path (never during `body`) and cached.
+    @State private var preview: InterpolationPreview?
 
     var body: some View {
-        // Read so a change of environment or its variables re-renders the preview.
-        let _ = (model.selectedEnvironment, model.environments)
-        if !url.isEmpty {
-            let preview = model.preview(url)
-            let segments = PreviewSegments.split(preview.resolved)
-            segments.reduce(Text("")) { acc, seg in
-                acc
-                    + Text(seg.text)
-                    .foregroundColor(seg.isUnresolved ? Theme.amber : Theme.muted)
-                    .underline(seg.isUnresolved, color: Theme.amber)
+        Group {
+            if !spec.url.isEmpty, let preview {
+                let segments = PreviewSegments.split(preview.resolved)
+                segments.reduce(Text("")) { acc, seg in
+                    acc
+                        + Text(seg.text)
+                        .foregroundColor(seg.isUnresolved ? Theme.amber : Theme.muted)
+                        .underline(seg.isUnresolved, color: Theme.amber)
+                }
+                .font(.mono(11))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+                .hairline(.bottom)
+                .accessibilityLabel("Resolved URL")
+                .accessibilityValue(
+                    preview.unresolved.isEmpty
+                        ? preview.resolved
+                        : "\(preview.resolved). Unresolved: \(preview.unresolved.joined(separator: ", "))")
             }
-            .font(.mono(11))
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .textSelection(.enabled)
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
-            .hairline(.bottom)
-            .accessibilityLabel("Resolved URL")
-            .accessibilityValue(
-                preview.unresolved.isEmpty
-                    ? preview.resolved
-                    : "\(preview.resolved). Unresolved: \(preview.unresolved.joined(separator: ", "))")
+        }
+        .task(
+            id: Key(
+                spec: spec, environment: model.selectedEnvironment, environments: model.environments,
+                secretsOpen: model.showSecrets)
+        ) {
+            guard !spec.url.isEmpty else { return preview = nil }
+            try? await Task.sleep(for: .milliseconds(150))
+            if Task.isCancelled { return }
+            preview = model.previewRequestURL(spec)
         }
     }
 }

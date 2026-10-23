@@ -19,6 +19,7 @@ struct VariableTextField: View {
     @State private var trigger: CompletionTrigger?
     @State private var items: [String] = []
     @State private var selected = 0
+    @State private var submitGate = SubmitGate()
     @FocusState private var focused: Bool
 
     private var isOpen: Bool { trigger != nil && !items.isEmpty }
@@ -30,7 +31,7 @@ struct VariableTextField: View {
             .foregroundStyle(textColor)
             .tint(Theme.amber)
             .focused($focused)
-            .onSubmit { onSubmit?() }
+            .onSubmit { if submitGate.shouldSubmit() { onSubmit?() } }
             .onChange(of: text) { refresh() }
             .onChange(of: focused) { if !focused { close() } }
             .onKeyPress(.downArrow) { move(1) }
@@ -112,6 +113,9 @@ struct VariableTextField: View {
     private func accept() -> KeyPress.Result {
         guard isOpen, items.indices.contains(selected) else { return .ignored }
         insert(items[selected])
+        // Return also fires `onSubmit`; swallow that one, and drop the flag if it never comes.
+        submitGate.markAccepted()
+        DispatchQueue.main.async { submitGate.clear() }
         return .handled
     }
 

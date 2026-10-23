@@ -15,6 +15,8 @@ struct EnvironmentGrid {
         let id = UUID()
         var name: String
         var cells: [String: NameValue]
+        /// Position of this variable within each environment's own list.
+        var ranks: [String: Int] = [:]
     }
 
     private(set) var columns: [Column]
@@ -22,34 +24,45 @@ struct EnvironmentGrid {
 
     init(environments: [EnvironmentConfig]) {
         columns = environments.map { Column(name: $0.name, isUnsafe: $0.isUnsafe) }
-        var order: [String] = []
-        var byName: [String: Row] = [:]
+        var rows: [Row] = []
         for env in environments {
-            for v in env.variables {
-                if byName[v.name] == nil {
-                    order.append(v.name)
-                    byName[v.name] = Row(name: v.name, cells: [:])
+            for (index, v) in env.variables.enumerated() {
+                // Reuse a row of the same name unless this environment already has a cell there
+                // (a duplicate inside one environment gets its own row so nothing is dropped).
+                if let i = rows.firstIndex(where: { $0.name == v.name && $0.cells[env.name] == nil }) {
+                    rows[i].cells[env.name] = v
+                    rows[i].ranks[env.name] = index
+                } else {
+                    rows.append(Row(name: v.name, cells: [env.name: v], ranks: [env.name: index]))
                 }
-                byName[v.name]?.cells[env.name] = v
             }
         }
-        rows = order.compactMap { byName[$0] }
+        self.rows = rows
     }
 
+    /// Variable names are trimmed; each environment keeps its own variable order.
     func toConfigs() -> [EnvironmentConfig] {
         columns.map { col in
-            EnvironmentConfig(
+            let ordered = rows.enumerated()
+                .filter { $0.element.cells[col.name] != nil }
+                .sorted {
+                    let l = $0.element.ranks[col.name] ?? Int.max
+                    let r = $1.element.ranks[col.name] ?? Int.max
+                    return l != r ? l < r : $0.offset < $1.offset
+                }
+            return EnvironmentConfig(
                 name: col.name, isUnsafe: col.isUnsafe,
-                variables: rows.compactMap { row in
-                    guard var cell = row.cells[col.name] else { return nil }
-                    cell.name = row.name
+                variables: ordered.map { _, row in
+                    var cell = row.cells[col.name]!
+                    cell.name = row.name.trimmingCharacters(in: .whitespaces)
                     return cell
                 })
         }
     }
 
     func isDirty(comparedTo original: [EnvironmentConfig]) -> Bool {
-        toConfigs() != original
+        // Compare against the grid's own normalized form so loading never looks edited.
+        toConfigs() != EnvironmentGrid(environments: original).toConfigs()
     }
 
     /// Problems that would make the core reject or mangle the save.
@@ -117,11 +130,15 @@ struct EnvironmentGrid {
     }
 
     private mutating func updateCell(_ id: UUID, _ env: String, _ change: (inout NameValue) -> Void) {
+        let nextRank = (rows.compactMap { $0.ranks[env] }.max() ?? -1) + 1
         update(id) { row in
             var cell =
                 row.cells[env]
                 ?? NameValue(name: row.name, value: "", enabled: true, secretKey: nil, kind: "plain")
             change(&cell)
+            if row.cells[env] == nil {
+                row.ranks[env] = nextRank
+            }
             row.cells[env] = cell
         }
     }

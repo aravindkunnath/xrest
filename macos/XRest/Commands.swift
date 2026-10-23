@@ -47,7 +47,7 @@ struct WorkspaceCommands: Commands {
         }
 
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { model?.saveCurrent() }
+            Button("Save") { model?.saveActive() }
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(model == nil)
         }

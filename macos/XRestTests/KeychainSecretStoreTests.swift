@@ -50,6 +50,17 @@ final class KeychainSecretStoreTests: XCTestCase {
         XCTAssertNil(provider.get(key: "NOPE"))
     }
 
+    func testContainsAnswersFromIndexWithoutKeychainItems() throws {
+        // Index lists the key but the keychain service holds nothing: contains must trust the index.
+        try FileManager.default.createDirectory(
+            at: indexURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(["INDEXED"]).write(to: indexURL)
+        let store = makeStore()
+        XCTAssertTrue(store.contains(key: "INDEXED"))
+        XCTAssertFalse(store.contains(key: "OTHER"))
+        XCTAssertNil(store.get(key: "INDEXED"))
+    }
+
     func testPersistedAcrossStoreInstances() throws {
         try makeStore().set(key: "PERSIST", value: "v1")
         let second = makeStore()

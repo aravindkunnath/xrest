@@ -182,6 +182,22 @@ final class WorkspaceModel {
         flush()
     }
 
+    /// Registered by the open panel: saves its edits (no-op when it has none or is invalid).
+    @ObservationIgnored private var panelSave: (() -> Void)?
+
+    func registerPanelSave(_ save: (() -> Void)?) {
+        panelSave = save
+    }
+
+    /// The single Save entry point (menu, ⌘S): the open panel's save, else the request draft.
+    func saveActive() {
+        if panel != nil {
+            panelSave?()
+        } else {
+            flush()
+        }
+    }
+
     // MARK: Scratch requests and endpoints
 
     func newScratch() {
@@ -266,6 +282,7 @@ final class WorkspaceModel {
 
     func closePanel() {
         panel = nil
+        panelSave = nil
         panelDirty = false
         preflightTest = .idle
     }
@@ -308,6 +325,11 @@ final class WorkspaceModel {
         core.preview(text: text)
     }
 
+    /// The request URL as it will be sent (path params, query, variables; secrets masked).
+    func previewRequestURL(_ spec: RequestSpec) -> InterpolationPreview {
+        core.previewRequestUrl(spec: spec)
+    }
+
     /// Names offered after typing `{{`: environment variables, then `secret.<key>` entries.
     func completions(prefix: String) -> [String] {
         CompletionTrigger.candidates(
@@ -335,7 +357,7 @@ final class WorkspaceModel {
 
     /// Entry point for the Send button and menu command.
     func requestSend() {
-        guard draft != nil, !isSending else { return }
+        guard panel == nil, draft != nil, !isSending else { return }
         runGuarded { [weak self] confirmed in self?.start(confirmed: confirmed) }
     }
 
@@ -356,11 +378,21 @@ final class WorkspaceModel {
         method: String? = nil, url: String? = nil, _ action: @escaping () -> Void
     ) {
         let rawURL = url ?? draft?.url ?? ""
+        // Without an explicit url this is the draft request: show the URL as it will be sent
+        // (path params and query merged). Test Preflight passes its own url.
+        let resolved: String?
+        if rawURL.isEmpty {
+            resolved = nil
+        } else if url == nil, let draft {
+            resolved = core.previewRequestUrl(spec: draft.spec).resolved
+        } else {
+            resolved = core.preview(text: rawURL).resolved
+        }
         pendingConfirmation = PendingConfirmation(
             environment: selectedEnvironment ?? "environment",
             method: method ?? draft?.method ?? "",
             url: rawURL,
-            resolvedURL: rawURL.isEmpty ? nil : core.preview(text: rawURL).resolved,
+            resolvedURL: resolved,
             action: action)
     }
 

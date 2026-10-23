@@ -83,4 +83,32 @@ final class EnvironmentGridTests: XCTestCase {
         XCTAssertTrue(grid.isDirty(comparedTo: sample))
         XCTAssertTrue(grid.toConfigs()[0].isUnsafe)
     }
+
+    func testPerEnvironmentOrderIsPreserved() {
+        let envs = [
+            EnvironmentConfig(name: "dev", isUnsafe: false, variables: [nv("A", "1"), nv("B", "2")]),
+            EnvironmentConfig(name: "prod", isUnsafe: false, variables: [nv("B", "3"), nv("A", "4")]),
+        ]
+        let grid = EnvironmentGrid(environments: envs)
+        XCTAssertEqual(grid.toConfigs(), envs)
+        XCTAssertFalse(grid.isDirty(comparedTo: envs))
+    }
+
+    func testDuplicateNameInOneEnvironmentIsKeptAndRejected() {
+        let envs = [
+            EnvironmentConfig(name: "dev", isUnsafe: false, variables: [nv("A", "1"), nv("A", "2")])
+        ]
+        let grid = EnvironmentGrid(environments: envs)
+        XCTAssertEqual(grid.toConfigs(), envs, "nothing may be silently dropped")
+        XCTAssertFalse(grid.validationErrors.isEmpty)
+    }
+
+    func testNamesAreTrimmedOnSaveAndLoadIsNotDirty() {
+        let envs = [EnvironmentConfig(name: "dev", isUnsafe: false, variables: [nv("X ", "1")])]
+        var grid = EnvironmentGrid(environments: envs)
+        XCTAssertFalse(grid.isDirty(comparedTo: envs))
+        XCTAssertEqual(grid.toConfigs()[0].variables.map(\.name), ["X"])
+        grid.setName(rowID: grid.rows[0].id, "  Y  ")
+        XCTAssertEqual(grid.toConfigs()[0].variables.map(\.name), ["Y"])
+    }
 }

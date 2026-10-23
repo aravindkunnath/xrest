@@ -48,8 +48,7 @@ struct ServiceSettingsView: View {
                     }
                     .disabled(!isDirty)
                     Button("Save") { save() }
-                        .keyboardShortcut("s", modifiers: .command)
-                        .disabled(!isDirty || !errors.isEmpty)
+                            .disabled(!isDirty || !errors.isEmpty)
                 }
             }
             .padding(.horizontal, 16)
@@ -57,6 +56,10 @@ struct ServiceSettingsView: View {
             .hairline(.top)
         }
         .onChange(of: isDirty) { _, dirty in model.panelDirty = dirty }
+        .onAppear {
+            model.registerPanelSave { if isDirty && errors.isEmpty { save() } }
+        }
+        .onDisappear { model.registerPanelSave(nil) }
         .confirmationDialog("Discard unsaved changes?", isPresented: $confirmClose) {
             Button("Discard", role: .destructive) { model.closePanel() }
             Button("Keep editing", role: .cancel) {}
