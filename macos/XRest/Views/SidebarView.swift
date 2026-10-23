@@ -188,7 +188,7 @@ struct SidebarView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
                                 .strokeBorder(
-                                    Color(hex: 0x343A45),
+                                    Theme.controlOffStrong,
                                     style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                         )
                 }

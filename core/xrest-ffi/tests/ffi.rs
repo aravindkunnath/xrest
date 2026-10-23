@@ -126,6 +126,38 @@ fn restore_diff_and_max_versions_across_ffi() {
     ));
 }
 
+#[tokio::test]
+async fn http_option_defaults_apply_and_requests_override() {
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    let server = MockServer::start().await;
+    Mock::given(path("/slow"))
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_millis(800)))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let ws = new_ws(&dir);
+    let url = format!("{}/slow", server.uri());
+
+    ws.set_http_options(HttpOptions {
+        timeout_ms: 150,
+        follow_redirects: true,
+        verify_tls: true,
+        proxy: None,
+    });
+    assert!(
+        ws.send(spec(&url), false).await.is_err(),
+        "default timeout applies"
+    );
+
+    let mut overridden = spec(&url);
+    overridden.options.timeout_ms = Some(5000);
+    let resp = ws.send(overridden, false).await.unwrap();
+    assert_eq!(
+        resp.status, 200,
+        "per-request timeout overrides the default"
+    );
+}
+
 #[test]
 fn errors_map_to_ffi_variants() {
     let dir = tempfile::tempdir().unwrap();

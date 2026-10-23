@@ -1232,6 +1232,11 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func setHistory(history: XRestHistory) 
     
     /**
+     * App-wide transport defaults for subsequent sends.
+     */
+    func setHttpOptions(options: HttpOptions) 
+    
+    /**
      * Cap on retained versions per endpoint (clamped to 5-50).
      */
     func setMaxVersions(n: UInt32) 
@@ -1862,6 +1867,18 @@ open func setHistory(history: XRestHistory)  {try! rustCall() {
     uniffi_xrest_ffi_fn_method_xrestworkspace_set_history(
             self.uniffiCloneHandle(),
         FfiConverterTypeXRestHistory_lower(history),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * App-wide transport defaults for subsequent sends.
+     */
+open func setHttpOptions(options: HttpOptions)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_set_http_options(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeHttpOptions_lower(options),uniffiCallStatus
     )
 }
 }
@@ -2831,6 +2848,89 @@ public func FfiConverterTypeHistorySummary_lift(_ buf: RustBuffer) throws -> His
 #endif
 public func FfiConverterTypeHistorySummary_lower(_ value: HistorySummary) -> RustBuffer {
     return FfiConverterTypeHistorySummary.lower(value)
+}
+
+
+/**
+ * App-wide transport defaults (Settings); a request's own options override them per send.
+ */
+public struct HttpOptions: Equatable, Hashable {
+    /**
+     * Milliseconds; 0 means the built-in default (30 s).
+     */
+    public var timeoutMs: UInt64
+    public var followRedirects: Bool
+    /**
+     * `false` accepts invalid TLS certificates.
+     */
+    public var verifyTls: Bool
+    /**
+     * `None` uses the system proxy; empty forces a direct connection.
+     */
+    public var proxy: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Milliseconds; 0 means the built-in default (30 s).
+         */timeoutMs: UInt64, followRedirects: Bool, 
+        /**
+         * `false` accepts invalid TLS certificates.
+         */verifyTls: Bool, 
+        /**
+         * `None` uses the system proxy; empty forces a direct connection.
+         */proxy: String?) {
+        self.timeoutMs = timeoutMs
+        self.followRedirects = followRedirects
+        self.verifyTls = verifyTls
+        self.proxy = proxy
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HttpOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHttpOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HttpOptions {
+        return
+            try HttpOptions(
+                timeoutMs: FfiConverterUInt64.read(from: &buf), 
+                followRedirects: FfiConverterBool.read(from: &buf), 
+                verifyTls: FfiConverterBool.read(from: &buf), 
+                proxy: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HttpOptions, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.timeoutMs, into: &buf)
+        FfiConverterBool.write(value.followRedirects, into: &buf)
+        FfiConverterBool.write(value.verifyTls, into: &buf)
+        FfiConverterOptionString.write(value.proxy, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHttpOptions_lift(_ buf: RustBuffer) throws -> HttpOptions {
+    return try FfiConverterTypeHttpOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHttpOptions_lower(_ value: HttpOptions) -> RustBuffer {
+    return FfiConverterTypeHttpOptions.lower(value)
 }
 
 
@@ -4931,6 +5031,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_history() != 16640) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_http_options() != 18147) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_max_versions() != 61830) {

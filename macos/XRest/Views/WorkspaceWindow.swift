@@ -9,15 +9,27 @@ struct WorkspaceWindow: View {
     /// A folder that is not a workspace yet; the user is asked whether to initialise it.
     @State private var folderToInitialise: URL?
     @State private var showNewService = false
+    @AppStorage(AppPreferences.Key.appearance) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(AppPreferences.Key.zoom) private var zoom = 1.0
+
+    /// Launch restore runs once, in the first window the app opens.
+    @MainActor private static var launchRestoreDone = false
 
     var body: some View {
         Group {
             if let model {
-                WorkspaceView(model: model)
+                // The zoom is part of the identity so every font and editor is rebuilt at the new
+                // size; the model (selection, draft, response) lives above and is untouched.
+                WorkspaceView(model: model).id(zoom)
             } else {
                 WelcomeView(open: chooseWorkspace, newFromOpenAPI: { showNewService = true }, openRecent: { url = $0 })
             }
         }
+        .preferredColorScheme(AppearanceMode(rawValue: appearance)?.colorScheme)
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            model?.applyPreferences()
+        }
+        .onDisappear { model?.windowClosed() }
         .focusedSceneValue(\.windowURLSetter, WindowURLSetter { url = $0 })
         .focusedSceneValue(\.newServiceAction, NewServiceAction { showNewService = true })
         .sheet(isPresented: $showNewService) {
@@ -54,14 +66,33 @@ struct WorkspaceWindow: View {
         if let picked = WorkspacePicker.chooseDirectory() { url = picked }
     }
 
+    /// On launch, the first (welcome) window takes over the first workspace that was open at quit
+    /// and the others get their own windows. Returns true when this window was given a workspace.
+    private func restoreLaunchWorkspaces() -> Bool {
+        guard url == nil, !Self.launchRestoreDone else { return false }
+        Self.launchRestoreDone = true
+        let urls = SessionStore.standard.workspacesToReopen()
+        guard let first = urls.first else { return false }
+        url = first
+        for other in urls.dropFirst() { openWindow(value: other) }
+        return true
+    }
+
+    private func attachSession(_ opened: WorkspaceModel) {
+        opened.attachHistory(HistoryStore.shared)
+        opened.attachSession(SessionStore.standard)
+        opened.restoreSession()
+    }
+
     private func load() {
+        if restoreLaunchWorkspaces() { return }
         guard let url else {
             model = nil
             return
         }
         do {
             let opened = try WorkspaceModel(url: url)
-            opened.attachHistory(HistoryStore.shared)
+            attachSession(opened)
             model = opened
             RecentStore.shared.record(url)
         } catch XRestError.InvalidInput {
@@ -80,7 +111,7 @@ struct WorkspaceWindow: View {
         folderToInitialise = nil
         do {
             let created = try WorkspaceModel.create(at: target)
-            created.attachHistory(HistoryStore.shared)
+            attachSession(created)
             model = created
             RecentStore.shared.record(target)
         } catch {
@@ -150,7 +181,6 @@ struct WelcomeView: View {
         .frame(minWidth: 480, minHeight: 320)
         .background(Theme.bg)
         .foregroundStyle(Theme.text)
-        .preferredColorScheme(.dark)
         .ignoresSafeArea()
     }
 

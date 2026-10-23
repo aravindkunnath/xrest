@@ -139,6 +139,35 @@ pub struct RequestOptions {
     pub proxy: Option<String>,
 }
 
+/// App-wide transport defaults (Settings); a request's own options override them per send.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HttpOptions {
+    /// Milliseconds; 0 means the built-in default (30 s).
+    pub timeout_ms: u64,
+    pub follow_redirects: bool,
+    /// `false` accepts invalid TLS certificates.
+    pub verify_tls: bool,
+    /// `None` uses the system proxy; empty forces a direct connection.
+    pub proxy: Option<String>,
+}
+
+impl From<HttpOptions> for core::HttpOptions {
+    fn from(o: HttpOptions) -> Self {
+        let base = core::HttpOptions::default();
+        Self {
+            timeout: if o.timeout_ms > 0 {
+                std::time::Duration::from_millis(o.timeout_ms)
+            } else {
+                base.timeout
+            },
+            follow_redirects: o.follow_redirects,
+            insecure_skip_verify: !o.verify_tls,
+            use_system_proxy: true,
+            proxy: o.proxy,
+        }
+    }
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct RequestSpec {
     pub method: String,
@@ -1225,6 +1254,11 @@ impl XRestWorkspace {
     /// Cap on retained versions per endpoint (clamped to 5-50).
     pub fn set_max_versions(&self, n: u32) {
         self.lock().set_max_versions(n as usize);
+    }
+
+    /// App-wide transport defaults for subsequent sends.
+    pub fn set_http_options(&self, options: HttpOptions) {
+        self.lock().set_http_options(options.into());
     }
 
     // scratchpad

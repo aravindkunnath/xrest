@@ -1,36 +1,40 @@
 import AppKit
 import SwiftUI
 
-/// Design tokens from the "A · Workbench" mockup. The app is dark-only.
+/// Design tokens from the "A · Workbench" mockup. Every token is a dark/light pair resolved from the window appearance (Settings: System/Light/Dark).
 enum Theme {
-    static let bg = Color(hex: 0x0F1115)
-    static let panel = Color(hex: 0x13161C)
-    static let sidebar = Color(hex: 0x161920)
-    static let raised = Color(hex: 0x1A1E26)
-    static let selected = Color(hex: 0x232833)
-    static let hover = Color(hex: 0x1E222A)
-    static let response = Color(hex: 0x0C0E12)
+    static let bg = Color(nsColor: .dynamic(dark: 0x0F1115, light: 0xF7F8FA))
+    static let panel = Color(nsColor: .dynamic(dark: 0x13161C, light: 0xFFFFFF))
+    static let sidebar = Color(nsColor: .dynamic(dark: 0x161920, light: 0xEFF1F5))
+    static let raised = Color(nsColor: .dynamic(dark: 0x1A1E26, light: 0xF3F4F7))
+    static let selected = Color(nsColor: .dynamic(dark: 0x232833, light: 0xDFE4EC))
+    static let hover = Color(nsColor: .dynamic(dark: 0x1E222A, light: 0xE8EBF1))
+    static let response = Color(nsColor: .dynamic(dark: 0x0C0E12, light: 0xFBFBFD))
 
-    static let border = Color(hex: 0x262A33)
-    static let borderStrong = Color(hex: 0x2E333D)
-    static let rowDivider = Color(hex: 0x1E222A)
+    static let border = Color(nsColor: .dynamic(dark: 0x262A33, light: 0xD8DCE3))
+    static let borderStrong = Color(nsColor: .dynamic(dark: 0x2E333D, light: 0xC4CAD4))
+    static let rowDivider = Color(nsColor: .dynamic(dark: 0x1E222A, light: 0xE8EBF1))
 
-    static let text = Color(hex: 0xE6E8EC)
-    static let textSoft = Color(hex: 0xC9CDD4)
-    static let muted = Color(hex: 0x9AA1AD)
+    static let text = Color(nsColor: .dynamic(dark: 0xE6E8EC, light: 0x1B1E24))
+    static let textSoft = Color(nsColor: .dynamic(dark: 0xC9CDD4, light: 0x3A404B))
+    static let muted = Color(nsColor: .dynamic(dark: 0x9AA1AD, light: 0x626A78))
 
-    static let amber = Color(hex: 0xF2A93B)
-    static let amberSoft = Color(hex: 0xFFC56B)
-    static let amberFill = Color(hex: 0x2A2217)
-    static let amberBorder = Color(hex: 0x5A4520)
-    static let green = Color(hex: 0x5EC28A)
-    static let lightGreen = Color(hex: 0xA6DB8A)
-    static let greenFill = Color(hex: 0x18201A)
-    static let greenBorder = Color(hex: 0x3B4A2E)
-    static let blue = Color(hex: 0x6CB6FF)
-    static let red = Color(hex: 0xF07178)
-    static let redFill = Color(hex: 0x241517)
-    static let redBorder = Color(hex: 0x5C2A30)
+    static let amber = Color(nsColor: .dynamic(dark: 0xF2A93B, light: 0xB26A00))
+    static let amberSoft = Color(nsColor: .dynamic(dark: 0xFFC56B, light: 0x935700))
+    static let amberFill = Color(nsColor: .dynamic(dark: 0x2A2217, light: 0xFFF1D6))
+    static let amberBorder = Color(nsColor: .dynamic(dark: 0x5A4520, light: 0xE6C27A))
+    static let green = Color(nsColor: .dynamic(dark: 0x5EC28A, light: 0x1D8750))
+    static let lightGreen = Color(nsColor: .dynamic(dark: 0xA6DB8A, light: 0x3B8A27))
+    static let greenFill = Color(nsColor: .dynamic(dark: 0x18201A, light: 0xE4F4EA))
+    static let greenBorder = Color(nsColor: .dynamic(dark: 0x3B4A2E, light: 0xA6D4B8))
+    static let blue = Color(nsColor: .dynamic(dark: 0x6CB6FF, light: 0x1C6AC0))
+    static let red = Color(nsColor: .dynamic(dark: 0xF07178, light: 0xC9313D))
+    static let redFill = Color(nsColor: .dynamic(dark: 0x241517, light: 0xFCE9EB))
+    static let redBorder = Color(nsColor: .dynamic(dark: 0x5C2A30, light: 0xEDB0B6))
+
+    /// Disabled-toggle track and similar neutral controls.
+    static let controlOff = Color(nsColor: .dynamic(dark: 0x3A3F4A, light: 0xB9BFCA))
+    static let controlOffStrong = Color(nsColor: .dynamic(dark: 0x343A45, light: 0xAAB1BD))
 
     static func methodColor(_ method: String) -> Color {
         switch method.uppercased() {
@@ -73,6 +77,8 @@ extension NSColor {
 extension Font {
     /// JetBrains Mono when installed, otherwise the system monospaced face.
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        // Zoom (Settings) scales code and body text; chrome stays at its designed size.
+        let size = size * CGFloat(AppPreferences.currentZoom)
         if NSFont(name: "JetBrains Mono", size: size) != nil {
             return .custom("JetBrains Mono", size: size).weight(weight)
         }
@@ -200,5 +206,15 @@ struct Tag: View {
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.borderStrong, lineWidth: 1))
+    }
+}
+
+extension NSColor {
+    /// A color that resolves per appearance (dark / light) at draw time.
+    static func dynamic(dark: UInt32, light: UInt32) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(hex: dark) : NSColor(hex: light)
+        }
     }
 }

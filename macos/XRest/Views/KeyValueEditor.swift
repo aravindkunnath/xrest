@@ -36,7 +36,7 @@ struct KeyValueEditor: View {
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 3)
                                         .stroke(
-                                            row.enabled ? Theme.amber : Color(hex: 0x3A3F4A),
+                                            row.enabled ? Theme.amber : Theme.controlOff,
                                             lineWidth: 1)
                                 )
                                 .overlay {

@@ -22,6 +22,7 @@ struct WorkspaceCommands: Commands {
     @FocusedValue(\.windowURLSetter) private var urlSetter
     @FocusedValue(\.newServiceAction) private var newService
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(AppPreferences.Key.zoom) private var zoom = 1.0
 
     var body: some Commands {
         // Replaces File > New Window: ⌘N creates a scratch request.
@@ -53,6 +54,15 @@ struct WorkspaceCommands: Commands {
             Button("Save") { model?.saveActive() }
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(model == nil)
+        }
+
+        CommandGroup(after: .toolbar) {
+            Button("Zoom In") { zoom = AppPreferences.stepped(from: zoom, up: true) }
+                .keyboardShortcut("+", modifiers: .command)
+            Button("Zoom Out") { zoom = AppPreferences.stepped(from: zoom, up: false) }
+                .keyboardShortcut("-", modifiers: .command)
+            Button("Actual Size") { zoom = 1.0 }
+                .keyboardShortcut("0", modifiers: .command)
         }
 
         CommandMenu("Service") {

@@ -332,6 +332,7 @@ XRestWorkspace
     restore_endpoint_version(id, version) -> Endpoint // past config becomes the current request, saved as a NEW version (MAX+1); restoring the current config is a no-op
     diff_versions(id, from, to) -> [FieldChange]      // field-level changes from -> to; NotFound for an unknown version
     set_max_versions(n)                               // retained versions per endpoint, clamped 5-50
+    set_http_options(HttpOptions)                     // app-wide transport defaults (Settings); per-request options still override
   scratchpad
     list_scratch() / get_scratch(id) -> ScratchRequest
     create_scratch(name, spec) / update_scratch(id, name, spec) -> ScratchRequest
@@ -484,6 +485,19 @@ Table `history` (`id` autoincrement, newest = highest): `created_at` (unix ms), 
   `get(id:)` the full `HistoryEntry`, `count(filter:)`, `clear()`. `HistoryFilter` has `serviceId`,
   `endpointId`, `method`, `statusClass` (2-5, or 0 for failed requests). A 50-row first page over
   10,000 entries takes well under 1 ms (index scan).
+
+## Preferences and session restore (macOS app)
+
+* Settings (⌘,) are `UserDefaults` keys (`AppPreferences`): appearance (System/Light/Dark, applied with
+  `.preferredColorScheme`; `Theme` tokens are dark/light pairs), zoom (scales monospaced/code text and
+  the editors), default HTTP options (`HttpOptions` via `set_http_options`) and max versions. They are
+  pushed into every open workspace on open and on change. Never stored in a workspace.
+* Session files: `~/Library/Application Support/XRest/sessions/<sha256(path)>.json` holds the workspace
+  path, selected item and the unsaved draft. Written (debounced) on change and on
+  `willTerminate`; deleted on a clean window close with no unsaved draft. At launch the first window
+  takes the first stored workspace and the rest get their own windows. A draft is stored exactly as
+  typed: a plain secret typed into an unsaved draft is persisted locally (use `{{secret.KEY}}`).
+  If the item was deleted on disk, the draft is kept as a new scratch request with a notice.
 
 ## Deferred (stubbed with TODOs)
 

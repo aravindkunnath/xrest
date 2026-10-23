@@ -23,8 +23,8 @@ struct CodeEditor: NSViewRepresentable {
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.drawsBackground = false
-        textView.insertionPointColor = NSColor(hex: 0xF2A93B)
-        textView.selectedTextAttributes = [.backgroundColor: NSColor(hex: 0x3A3F4A)]
+        textView.insertionPointColor = NSColor.dynamic(dark: 0xF2A93B, light: 0xB26A00)
+        textView.selectedTextAttributes = [.backgroundColor: NSColor.dynamic(dark: 0x3A3F4A, light: 0xBBD3F2)]
         textView.textContainerInset = NSSize(width: 10, height: 12)
         textView.isEditable = isEditable
         textView.usesFindBar = true
@@ -74,18 +74,18 @@ enum JSONHighlighter {
     static func apply(to textView: NSTextView) {
         guard let storage = textView.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let font = NSFont.monospacedSystemFont(ofSize: 12 * CGFloat(AppPreferences.currentZoom), weight: .regular)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineHeightMultiple = 1.35
 
         storage.beginEditing()
         storage.setAttributes(
             [
-                .font: font, .foregroundColor: NSColor(hex: 0xC9CDD4),
+                .font: font, .foregroundColor: NSColor.dynamic(dark: 0xC9CDD4, light: 0x3A404B),
                 .paragraphStyle: paragraph,
             ], range: full)
         textView.typingAttributes = [
-            .font: font, .foregroundColor: NSColor(hex: 0xC9CDD4), .paragraphStyle: paragraph,
+            .font: font, .foregroundColor: NSColor.dynamic(dark: 0xC9CDD4, light: 0x3A404B), .paragraphStyle: paragraph,
         ]
 
         let string = storage.string
@@ -96,12 +96,12 @@ enum JSONHighlighter {
                 if match.range(at: 1).location != NSNotFound {
                     let isKey = match.range(at: 2).location != NSNotFound
                     storage.addAttribute(
-                        .foregroundColor, value: NSColor(hex: isKey ? 0x6CB6FF : 0xA6DB8A),
+                        .foregroundColor, value: (isKey ? NSColor.dynamic(dark: 0x6CB6FF, light: 0x1C6AC0) : NSColor.dynamic(dark: 0xA6DB8A, light: 0x3B8A27)),
                         range: match.range(at: 1))
                 } else {
                     let group = match.range(at: 3).location != NSNotFound ? 3 : 4
                     storage.addAttribute(
-                        .foregroundColor, value: NSColor(hex: 0xF2A93B),
+                        .foregroundColor, value: NSColor.dynamic(dark: 0xF2A93B, light: 0xB26A00),
                         range: match.range(at: group))
                 }
             }

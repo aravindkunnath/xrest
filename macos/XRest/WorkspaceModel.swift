@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -41,9 +42,13 @@ final class WorkspaceModel {
     private(set) var selectedEnvironment: String?
     private(set) var warnings: [String] = []
 
-    private(set) var selection: SidebarSelection?
+    private(set) var selection: SidebarSelection? {
+        didSet { scheduleSessionSave() }
+    }
     /// The request being edited. Written by the editor views.
-    var draft: RequestDraft?
+    var draft: RequestDraft? {
+        didSet { scheduleSessionSave() }
+    }
     private var savedDraft: RequestDraft?
 
     private(set) var response: HttpResponse?
@@ -117,11 +122,105 @@ final class WorkspaceModel {
         self.secrets = secrets
         // Installed on every open so `{{secret.KEY}}` placeholders resolve from the Keychain.
         opened.setSecretProvider(provider: secrets)
-        let stored = defaults.object(forKey: Self.maxVersionsKey) as? Int ?? Self.defaultMaxVersions
-        opened.setMaxVersions(n: UInt32(clamping: max(stored, 0)))
         service = opened.service()
         autoCommit = opened.gitMode() == .auto
+        applyPreferences(defaults: defaults)
         reload()
+    }
+
+    /// Push the app-wide defaults (HTTP options, retained versions) into the core. Called on open
+    /// and whenever the Settings change.
+    func applyPreferences(defaults: UserDefaults = .standard) {
+        let prefs = AppPreferences(defaults: defaults)
+        core.setHttpOptions(options: prefs.httpOptions)
+        core.setMaxVersions(n: UInt32(prefs.maxVersions))
+    }
+
+    // MARK: Session restore
+
+    /// True once the app is quitting; windows torn down by quit must keep their session.
+    static var isTerminating = false
+
+    @ObservationIgnored private var sessionStore: SessionStore?
+    @ObservationIgnored var sessionSaveDelay: Duration = .milliseconds(500)
+    @ObservationIgnored private var sessionSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var terminationObserver: NSObjectProtocol?
+
+    private var sessionPath: String { SessionStore.normalize(rootURL.path) }
+
+    /// Start recording this window's session (selection and unsaved draft) in `store`.
+    /// Nothing is written until `restoreSession()` or `persistSessionNow()`.
+    func attachSession(_ store: SessionStore) {
+        sessionStore = store
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                WorkspaceModel.isTerminating = true
+                self?.persistSessionNow()
+            }
+        }
+    }
+
+    func persistSessionNow() {
+        guard let sessionStore else { return }
+        let state = SessionState(
+            workspacePath: sessionPath, selection: selection.map(SessionSelection.init),
+            draft: isDirty ? draft.map(DraftSnapshot.init) : nil)
+        try? sessionStore.save(state)
+    }
+
+    /// Debounced write; call after every selection or draft change.
+    func scheduleSessionSave() {
+        guard sessionStore != nil else { return }
+        sessionSaveTask?.cancel()
+        let delay = sessionSaveDelay
+        sessionSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            self?.persistSessionNow()
+        }
+    }
+
+    /// Re-select what was open and bring back the unsaved draft (as an unsaved edit). If the item
+    /// was deleted on disk meanwhile, a draft is kept as a new scratch request, with a notice.
+    func restoreSession() {
+        defer { persistSessionNow() }
+        guard let state = sessionStore?.load(path: sessionPath), let ref = state.selection else { return }
+        let target = ref.sidebar
+        let exists: Bool
+        switch target {
+        case .endpoint(let id): exists = endpoints.contains { $0.id == id }
+        case .scratch(let id): exists = scratch.contains { $0.id == id }
+        }
+        if exists {
+            selection = target
+            loadDraft(for: target)
+            if let snapshot = state.draft, let base = draft { draft = snapshot.apply(to: base) }
+            return
+        }
+        guard let snapshot = state.draft else { return }
+        let recovered = snapshot.apply(to: .blank)
+        do {
+            let created = try core.createScratch(name: recovered.name, spec: recovered.spec)
+            reload()
+            selection = .scratch(created.id)
+            loadDraft(for: selection)
+            warningBanner =
+                "\"\(recovered.name)\" no longer exists on disk. Your unsaved edits were kept as a scratch request."
+        } catch {
+            errorMessage = describe(error)
+        }
+    }
+
+    /// The window closed. A clean close with nothing unsaved forgets the session; unsaved edits
+    /// are kept. Windows torn down by quitting are never forgotten.
+    func windowClosed() {
+        sessionSaveTask?.cancel()
+        if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
+        terminationObserver = nil
+        guard let sessionStore, !Self.isTerminating else { return }
+        if isDirty { persistSessionNow() } else { sessionStore.remove(path: sessionPath) }
     }
 
     /// Create a new workspace in `url` (the folder must not contain a service.yaml yet).
@@ -218,6 +317,7 @@ final class WorkspaceModel {
             endpoints = core.listEndpoints()
             scratch = core.listScratch()
             afterSave()
+            scheduleSessionSave()
             return true
         } catch {
             errorMessage = describe(error)

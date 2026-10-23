@@ -36,7 +36,6 @@ struct WorkspaceView: View {
         .background(Theme.bg)
         .foregroundStyle(Theme.text)
         .font(.ui(13))
-        .preferredColorScheme(.dark)
         .tint(Theme.amber)
         .ignoresSafeArea()
         .navigationTitle(model.service.name)
