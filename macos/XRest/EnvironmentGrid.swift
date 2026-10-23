@@ -78,10 +78,61 @@ struct EnvironmentGrid {
                 errors.append("Variable \(name) appears more than once.")
             }
         }
+        var names = Set<String>()
+        var reportedEnvs = Set<String>()
+        for col in columns {
+            let name = col.name.trimmingCharacters(in: .whitespaces)
+            if name.isEmpty {
+                if !errors.contains("An environment has no name.") { errors.append("An environment has no name.") }
+            } else if !names.insert(name).inserted, reportedEnvs.insert(name).inserted {
+                errors.append("Environment \(name) appears more than once.")
+            }
+        }
+        if columns.isEmpty { errors.append("At least one environment is required.") }
         return errors
     }
 
     // MARK: Editing
+
+    /// Append a safe, empty environment.
+    mutating func addColumn(name: String) {
+        columns.append(Column(name: name.trimmingCharacters(in: .whitespaces), isUnsafe: false))
+    }
+
+    /// Re-key the column's cells and ranks under the new name. Uniqueness is not enforced here
+    /// (`validationErrors` reports it); if the new name is already taken, the existing
+    /// environment's cells win so nothing of theirs is overwritten.
+    mutating func renameColumn(from old: String, to new: String) {
+        guard old != new, let i = columns.firstIndex(where: { $0.name == old }) else { return }
+        columns[i].name = new
+        let stillUsesOld = columns.contains { $0.name == old }
+        for r in rows.indices {
+            if let cell = rows[r].cells[old] {
+                if rows[r].cells[new] == nil {
+                    rows[r].cells[new] = cell
+                    rows[r].ranks[new] = rows[r].ranks[old]
+                }
+                if !stillUsesOld {
+                    rows[r].cells[old] = nil
+                    rows[r].ranks[old] = nil
+                }
+            }
+        }
+    }
+
+    mutating func removeColumn(name: String) {
+        guard let i = columns.firstIndex(where: { $0.name == name }) else { return }
+        columns.remove(at: i)
+        guard !columns.contains(where: { $0.name == name }) else { return }
+        for r in rows.indices {
+            rows[r].cells[name] = nil
+            rows[r].ranks[name] = nil
+        }
+    }
+
+    mutating func moveColumn(from source: IndexSet, to destination: Int) {
+        columns.move(fromOffsets: source, toOffset: destination)
+    }
 
     mutating func addRow() {
         rows.append(Row(name: "", cells: [:]))

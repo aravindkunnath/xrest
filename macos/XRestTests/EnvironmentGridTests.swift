@@ -111,4 +111,63 @@ final class EnvironmentGridTests: XCTestCase {
         grid.setName(rowID: grid.rows[0].id, "  Y  ")
         XCTAssertEqual(grid.toConfigs()[0].variables.map(\.name), ["Y"])
     }
+
+    func testAddColumnAppendsSafeEmptyEnvironment() {
+        var grid = EnvironmentGrid(environments: sample)
+        grid.addColumn(name: "  qa  ")
+        let last = grid.toConfigs().last!
+        XCTAssertEqual(last.name, "qa")
+        XCTAssertFalse(last.isUnsafe)
+        XCTAssertTrue(last.variables.isEmpty)
+    }
+
+    func testRenameColumnKeepsValuesRanksSecretsAndUnsafe() {
+        var grid = EnvironmentGrid(environments: sample)
+        grid.renameColumn(from: "prod", to: "live")
+        var expected = sample
+        expected[1].name = "live"
+        XCTAssertEqual(grid.toConfigs(), expected)
+        grid.renameColumn(from: "dev", to: "local")
+        expected[0].name = "local"
+        XCTAssertEqual(grid.toConfigs(), expected)
+        XCTAssertTrue(grid.validationErrors.isEmpty)
+    }
+
+    func testRenameToDuplicateOrEmptyIsAValidationError() {
+        var grid = EnvironmentGrid(environments: sample)
+        grid.renameColumn(from: "prod", to: "dev")
+        XCTAssertTrue(grid.validationErrors.contains { $0.contains("dev") && $0.contains("more than once") })
+        var empty = EnvironmentGrid(environments: sample)
+        empty.renameColumn(from: "prod", to: "  ")
+        XCTAssertTrue(empty.validationErrors.contains("An environment has no name."))
+    }
+
+    func testRemoveColumnDropsItsCellsOnly() {
+        var grid = EnvironmentGrid(environments: sample)
+        grid.removeColumn(name: "prod")
+        XCTAssertEqual(grid.toConfigs(), [sample[0]])
+        XCTAssertNil(grid.rows.first { $0.name == "BASE_URL" }?.cells["prod"])
+    }
+
+    func testRemovingLastColumnIsAValidationError() {
+        var grid = EnvironmentGrid(environments: sample)
+        grid.removeColumn(name: "dev")
+        grid.removeColumn(name: "prod")
+        XCTAssertTrue(grid.validationErrors.contains("At least one environment is required."))
+    }
+
+    func testMoveColumnReordersToConfigs() {
+        var grid = EnvironmentGrid(environments: sample)
+        grid.moveColumn(from: IndexSet(integer: 1), to: 0)
+        XCTAssertEqual(grid.toConfigs().map(\.name), ["prod", "dev"])
+    }
+
+    func testIsDirtyAfterAddAndRename() {
+        var grid = EnvironmentGrid(environments: sample)
+        grid.addColumn(name: "qa")
+        XCTAssertTrue(grid.isDirty(comparedTo: sample))
+        var renamed = EnvironmentGrid(environments: sample)
+        renamed.renameColumn(from: "dev", to: "local")
+        XCTAssertTrue(renamed.isDirty(comparedTo: sample))
+    }
 }

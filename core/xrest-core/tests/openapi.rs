@@ -266,6 +266,26 @@ fn create_workspace_empty_name_falls_back_to_title() {
 }
 
 #[test]
+fn reimport_keeps_custom_and_deleted_environments() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create_from_openapi(dir.path().join("w"), "W", V3).unwrap();
+    let env = |name: &str, is_unsafe: bool| Environment {
+        name: name.into(),
+        is_unsafe,
+        variables: vec![],
+    };
+    ws.save_environments(vec![env("qa-eu", false), env("perf", true)])
+        .unwrap();
+    ws.merge_openapi(V3).unwrap();
+    let got: Vec<_> = ws
+        .environments()
+        .iter()
+        .map(|e| (e.name.as_str(), e.is_unsafe))
+        .collect();
+    assert_eq!(got, [("qa-eu", false), ("perf", true)]);
+}
+
+#[test]
 fn merge_adds_only_new_and_leaves_edited_endpoint_untouched() {
     let dir = tempfile::tempdir().unwrap();
     let mut ws = Workspace::create_from_openapi(dir.path().join("w"), "W", V3).unwrap();
