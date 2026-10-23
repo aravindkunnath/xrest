@@ -452,3 +452,35 @@ async fn git_through_ffi() {
     ws.reload().unwrap();
     assert_eq!(ws.list_endpoints().len(), 1);
 }
+
+#[tokio::test]
+async fn openapi_import_and_fetch_through_ffi() {
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    let server = MockServer::start().await;
+    let spec = r#"{"openapi":"3.0.0","info":{"title":"Pets"},"servers":[{"url":"https://x.test/v1"}],
+        "paths":{"/pets":{"get":{"summary":"List"},"post":{"summary":"Add"}}}}"#;
+    Mock::given(path("/spec.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(spec))
+        .mount(&server)
+        .await;
+    let text = fetch_text(format!("{}/spec.json", server.uri()))
+        .await
+        .unwrap();
+    assert!(matches!(
+        fetch_text("file:///etc/hosts".into()).await,
+        Err(XRestError::InvalidInput { .. })
+    ));
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("svc").to_string_lossy().into_owned();
+    let ws =
+        XRestWorkspace::create_workspace_from_openapi(root, "Pets".into(), text.clone()).unwrap();
+    assert_eq!(ws.list_endpoints().len(), 2);
+    assert_eq!(ws.environments()[0].variables[0].value, "https://x.test/v1");
+    let sum = ws.merge_openapi(text).unwrap();
+    assert_eq!((sum.added, sum.skipped), (0, 2));
+    assert!(matches!(
+        ws.merge_openapi("junk".into()),
+        Err(XRestError::InvalidInput { .. })
+    ));
+}

@@ -1,0 +1,67 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Swagger Petstore", "version": "1.0.0" },
+  "host": "petstore.swagger.io",
+  "basePath": "/v2",
+  "schemes": ["https", "http"],
+  "parameters": {
+    "petId": {
+      "name": "petId", "in": "path", "required": true, "type": "integer", "default": 1
+    }
+  },
+  "paths": {
+    "/pet": {
+      "post": {
+        "summary": "Add a new pet",
+        "operationId": "addPet",
+        "consumes": ["application/json"],
+        "parameters": [
+          {
+            "in": "body", "name": "body", "required": true,
+            "schema": { "type": "object", "example": { "name": "doggie", "status": "available" } }
+          }
+        ]
+      },
+      "put": {
+        "operationId": "updatePet",
+        "parameters": [
+          { "in": "body", "name": "body", "schema": { "$ref": "#/definitions/Pet" } }
+        ]
+      }
+    },
+    "/pet/findByStatus": {
+      "get": {
+        "operationId": "findPetsByStatus",
+        "parameters": [
+          { "name": "status", "in": "query", "type": "string", "default": "available" },
+          { "name": "limit", "in": "query", "type": "integer" }
+        ]
+      }
+    },
+    "/pet/{petId}": {
+      "parameters": [ { "$ref": "#/parameters/petId" } ],
+      "get": { "summary": "Find pet by ID" },
+      "delete": {
+        "summary": "Deletes a pet",
+        "parameters": [ { "name": "api_key", "in": "header", "type": "string" } ]
+      },
+      "post": {
+        "summary": "Updates a pet with form data",
+        "consumes": ["application/x-www-form-urlencoded"],
+        "parameters": [
+          { "name": "name", "in": "formData", "type": "string" },
+          { "name": "status", "in": "formData", "type": "string", "default": "sold" }
+        ]
+      }
+    },
+    "/store/inventory": {
+      "get": { "responses": { "200": { "description": "ok" } } }
+    }
+  },
+  "definitions": {
+    "Pet": {
+      "type": "object",
+      "example": { "id": 7, "name": "rex" }
+    }
+  }
+}

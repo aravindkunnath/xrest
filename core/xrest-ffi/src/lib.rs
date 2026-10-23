@@ -323,6 +323,22 @@ pub struct GitFileStatus {
     pub status: String,
 }
 
+/// Result of merging an OpenAPI document into a workspace.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ImportSummary {
+    /// Operations added as new endpoints.
+    pub added: u32,
+    /// Operations whose method + path already existed.
+    pub skipped: u32,
+}
+
+/// Fetch an OpenAPI/Swagger document (or any text) from an `http(s)` URL: 10 MiB cap enforced
+/// while streaming, 30 s timeout, UTF-8 only. Other schemes fail with `InvalidInput`.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn fetch_text(url: String) -> Result<String> {
+    Ok(core::swagger::fetch_text(&url).await?)
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct GitStatus {
     pub is_repo: bool,
@@ -802,6 +818,30 @@ impl XRestWorkspace {
     #[uniffi::constructor]
     pub fn create_workspace(path: String, name: String) -> Result<Arc<Self>> {
         Ok(Self::wrap(core::Workspace::create(path, &name)?))
+    }
+
+    /// Create a workspace in `path` from an OpenAPI 3 / Swagger 2 document (JSON or YAML):
+    /// DEV/STAGE/PROD with `BASE_URL`, one endpoint per operation. Invalid content fails with
+    /// `InvalidInput` and creates nothing. Check `warnings()` (e.g. no server in the spec).
+    #[uniffi::constructor]
+    pub fn create_workspace_from_openapi(
+        path: String,
+        name: String,
+        content: String,
+    ) -> Result<Arc<Self>> {
+        Ok(Self::wrap(core::Workspace::create_from_openapi(
+            path, &name, &content,
+        )?))
+    }
+
+    /// Add the operations of an OpenAPI document that are not yet endpoints (matched by method
+    /// + path). Never modifies existing endpoints; one commit in auto git mode.
+    pub fn merge_openapi(&self, content: String) -> Result<ImportSummary> {
+        let s = self.lock().merge_openapi(&content)?;
+        Ok(ImportSummary {
+            added: s.added,
+            skipped: s.skipped,
+        })
     }
 
     pub fn service(&self) -> ServiceInfo {

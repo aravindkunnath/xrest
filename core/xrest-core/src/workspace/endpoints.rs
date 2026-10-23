@@ -31,6 +31,17 @@ impl Workspace {
     }
 
     pub fn create_endpoint(&mut self, name: &str, spec: RequestSpec) -> Result<Endpoint> {
+        let ep = self.create_endpoint_quiet(name, spec)?;
+        self.auto_commit_endpoint(&ep.id, &format!("Create endpoint: {}", ep.name));
+        Ok(ep)
+    }
+
+    /// [`Self::create_endpoint`] without the auto-commit, for batch operations that commit once.
+    pub(super) fn create_endpoint_quiet(
+        &mut self,
+        name: &str,
+        spec: RequestSpec,
+    ) -> Result<Endpoint> {
         self.ensure_current_format()?;
         let now = now_secs();
         let mut ep = Endpoint {
@@ -64,7 +75,6 @@ impl Workspace {
         storage::save_endpoint(&self.root, &ep)?;
         self.endpoints.push(ep.clone());
         self.sort_endpoints();
-        self.auto_commit_endpoint(&ep.id, &format!("Create endpoint: {}", ep.name));
         Ok(ep)
     }
 

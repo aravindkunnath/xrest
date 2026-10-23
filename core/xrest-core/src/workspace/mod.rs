@@ -10,6 +10,7 @@
 
 mod endpoints;
 mod git;
+mod import;
 mod scratch;
 mod send;
 

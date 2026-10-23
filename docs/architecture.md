@@ -417,9 +417,32 @@ also emits the C header and `module.modulemap` that `build-xcframework.sh` packs
   git off the workspace lock (serialised by a separate gate); `git_mode`, `set_git_mode`, `reload`
   are synchronous.
 
+## OpenAPI / Swagger import
+
+`xrest_core::swagger::parse` reads OpenAPI 3.x and Swagger 2.0 (JSON or YAML, walking
+`serde_json::Value`, local `$ref`s only) into `ImportedSpec { title, base_url, endpoints }`.
+
+* Base URL: Swagger 2 `schemes[0]://host basePath` (scheme defaults to https); OpenAPI 3
+  `servers[0].url` with server variables replaced by their defaults. Trailing `/` is trimmed.
+* One endpoint per path x method (GET, PUT, POST, DELETE, OPTIONS, HEAD, PATCH). Name: `summary`,
+  else `operationId`, else `METHOD path`. URL `{{BASE_URL}}<path>` with `{param}` tokens kept; path,
+  query and header parameters (path-item level and `$ref`ed ones included; an operation parameter
+  overrides a path-item one) become `pathParams` / `params` / `headers` rows, value = default,
+  else example, else empty.
+* Body: first JSON media type's example (media `example`, first of `examples`, or the schema's
+  `example`) becomes a `json` body; no example means no body. `application/x-www-form-urlencoded`
+  (and Swagger 2 `formData`) become a `form` body from the schema properties.
+* `Workspace::create_from_openapi` (FFI `XRestWorkspace.createWorkspaceFromOpenapi`): validates
+  first, then creates DEV/STAGE/PROD (PROD unsafe) with `BASE_URL`, and saves each endpoint at
+  version 1. No server in the spec: `https://api.example.com` plus a workspace warning.
+* `Workspace::merge_openapi` (FFI `mergeOpenapi`) returns `ImportSummary { added, skipped }`; it
+  matches by method + path (URL after `{{BASE_URL}}`, query ignored) and never modifies existing
+  endpoints. In auto git mode the additions are one commit, `Import OpenAPI: N endpoints`.
+* FFI `fetchText(url)` (async, free function): http/https only, 10 MiB cap enforced while
+  streaming, 30 s timeout, UTF-8 or an error. Invalid content is `InvalidInput`.
+
 ## Deferred (stubbed with TODOs)
 
 * `history`: request history (legacy: SQLite at `~/.xrest/history.db`).
-* `swagger`: Swagger/OpenAPI import (legacy: `internal/import/swagger.go`).
 * cURL `-u/--user` (deliberately dropped, as in Go, so credentials do not end up in committed files).
 * App Sandbox + security-scoped bookmarks for the macOS app.

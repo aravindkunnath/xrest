@@ -933,6 +933,12 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func listScratch()  -> [ScratchRequest]
     
     /**
+     * Add the operations of an OpenAPI document that are not yet endpoints (matched by method
+     * + path). Never modifies existing endpoints; one commit in auto git mode.
+     */
+    func mergeOpenapi(content: String) throws  -> ImportSummary
+    
+    /**
      * Resolve `text` in the selected environment for display. Secrets (looked up through the
      * provider, then the memory store) are masked as `••••••`; their values are never returned.
      */
@@ -1107,6 +1113,22 @@ public static func createWorkspace(path: String, name: String)throws  -> XRestWo
     uniffi_xrest_ffi_fn_constructor_xrestworkspace_create_workspace(
         FfiConverterString.lower(path),
         FfiConverterString.lower(name),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Create a workspace in `path` from an OpenAPI 3 / Swagger 2 document (JSON or YAML):
+     * DEV/STAGE/PROD with `BASE_URL`, one endpoint per operation. Invalid content fails with
+     * `InvalidInput` and creates nothing. Check `warnings()` (e.g. no server in the spec).
+     */
+public static func createWorkspaceFromOpenapi(path: String, name: String, content: String)throws  -> XRestWorkspace  {
+    return try  FfiConverterTypeXRestWorkspace_lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_constructor_xrestworkspace_create_workspace_from_openapi(
+        FfiConverterString.lower(path),
+        FfiConverterString.lower(name),
+        FfiConverterString.lower(content),uniffiCallStatus
     )
 })
 }
@@ -1379,6 +1401,20 @@ open func listScratch() -> [ScratchRequest]  {
         uniffiCallStatus in
     uniffi_xrest_ffi_fn_method_xrestworkspace_list_scratch(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Add the operations of an OpenAPI document that are not yet endpoints (matched by method
+     * + path). Never modifies existing endpoints; one commit in auto git mode.
+     */
+open func mergeOpenapi(content: String)throws  -> ImportSummary  {
+    return try  FfiConverterTypeImportSummary_lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_merge_openapi(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(content),uniffiCallStatus
     )
 })
 }
@@ -2300,6 +2336,75 @@ public func FfiConverterTypeHttpResponse_lift(_ buf: RustBuffer) throws -> HttpR
 #endif
 public func FfiConverterTypeHttpResponse_lower(_ value: HttpResponse) -> RustBuffer {
     return FfiConverterTypeHttpResponse.lower(value)
+}
+
+
+/**
+ * Result of merging an OpenAPI document into a workspace.
+ */
+public struct ImportSummary: Equatable, Hashable {
+    /**
+     * Operations added as new endpoints.
+     */
+    public var added: UInt32
+    /**
+     * Operations whose method + path already existed.
+     */
+    public var skipped: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Operations added as new endpoints.
+         */added: UInt32, 
+        /**
+         * Operations whose method + path already existed.
+         */skipped: UInt32) {
+        self.added = added
+        self.skipped = skipped
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ImportSummary: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeImportSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ImportSummary {
+        return
+            try ImportSummary(
+                added: FfiConverterUInt32.read(from: &buf), 
+                skipped: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ImportSummary, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.added, into: &buf)
+        FfiConverterUInt32.write(value.skipped, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeImportSummary_lift(_ buf: RustBuffer) throws -> ImportSummary {
+    return try FfiConverterTypeImportSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeImportSummary_lower(_ value: ImportSummary) -> RustBuffer {
+    return FfiConverterTypeImportSummary.lower(value)
 }
 
 
@@ -3896,6 +4001,24 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
         print("uniffiFutureContinuationCallback invalid handle")
     }
 }
+/**
+ * Fetch an OpenAPI/Swagger document (or any text) from an `http(s)` URL: 10 MiB cap enforced
+ * while streaming, 30 s timeout, UTF-8 only. Other schemes fail with `InvalidInput`.
+ */
+public func fetchText(url: String)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_func_fetch_text(FfiConverterString.lower(url)
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_xrest_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
+}
 
 private enum InitializationResult {
     case ok
@@ -3911,6 +4034,9 @@ private let initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_xrest_ffi_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_func_fetch_text() != 53833) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_secretprovider_get() != 64551) {
         return InitializationResult.apiChecksumMismatch
@@ -3976,6 +4102,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_list_scratch() != 10678) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_merge_openapi() != 12192) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_preview() != 8533) {
@@ -4045,6 +4174,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_constructor_xrestworkspace_create_workspace() != 32511) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_constructor_xrestworkspace_create_workspace_from_openapi() != 32155) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_constructor_xrestworkspace_open_workspace() != 7728) {

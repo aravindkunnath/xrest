@@ -29,4 +29,5 @@ pub use policy::SendPolicy;
 pub use preflight::PreflightTestResult;
 pub use resolve::MAX_BODY_FILE_BYTES;
 pub use secrets::{MemorySecretStore, SecretStore};
+pub use swagger::{ImportSummary, ImportedEndpoint, ImportedSpec};
 pub use workspace::Workspace;
