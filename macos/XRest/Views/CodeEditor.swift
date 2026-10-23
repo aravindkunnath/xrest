@@ -27,6 +27,8 @@ struct CodeEditor: NSViewRepresentable {
         textView.selectedTextAttributes = [.backgroundColor: NSColor(hex: 0x3A3F4A)]
         textView.textContainerInset = NSSize(width: 10, height: 12)
         textView.isEditable = isEditable
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
         textView.string = text
         JSONHighlighter.apply(to: textView)
         return scroll
@@ -87,7 +89,8 @@ enum JSONHighlighter {
         ]
 
         let string = storage.string
-        if let first = string.first(where: { !$0.isWhitespace }), first == "{" || first == "[" {
+        // Skip token coloring on big bodies so the main thread never stalls.
+        if storage.length <= 256 * 1024, let first = string.first(where: { !$0.isWhitespace }), first == "{" || first == "[" {
             token.enumerateMatches(in: string, range: full) { match, _, _ in
                 guard let match else { return }
                 if match.range(at: 1).location != NSNotFound {

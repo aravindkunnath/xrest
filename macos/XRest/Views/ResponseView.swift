@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private enum ResponseTab: String, CaseIterable, Identifiable {
@@ -10,19 +11,29 @@ private enum ResponseTab: String, CaseIterable, Identifiable {
 struct ResponseView: View {
     let model: WorkspaceModel
     @State private var tab: ResponseTab = .pretty
+    @State private var showAll = false
 
     var body: some View {
         VStack(spacing: 0) {
             if let response = model.response {
                 summary(response)
+                if !response.unresolvedVariables.isEmpty { unresolvedStrip(response) }
                 switch tab {
                 case .pretty:
-                    bodyView(response, text: response.prettyBody ?? response.body)
+                    prettyView(response)
                 case .raw:
-                    bodyView(response, text: response.body)
+                    if response.bodyIsBase64 {
+                        rawBinaryView(response)
+                    } else {
+                        textBody(response.body)
+                    }
                 case .headers:
                     headersView(response)
                 }
+            } else if model.wasCancelled {
+                placeholder(
+                    "Cancelled", detail: "The request was cancelled before a response arrived.",
+                    symbol: "xmark.circle", tint: Theme.muted)
             } else if let error = model.sendError {
                 placeholder(
                     "Request failed", detail: error, symbol: "exclamationmark.octagon",
@@ -46,6 +57,23 @@ struct ResponseView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.response)
+        .onChange(of: model.response) { showAll = false }
+    }
+
+    private func unresolvedStrip(_ r: HttpResponse) -> some View {
+        Label(
+            "Unresolved variables: " + r.unresolvedVariables.map { "{{\($0)}}" }.joined(separator: " "),
+            systemImage: "exclamationmark.triangle"
+        )
+        .font(.ui(12))
+        .foregroundStyle(Theme.amber)
+        .lineLimit(2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(Theme.amber.opacity(0.1))
+        .hairline(.bottom)
+        .textSelection(.enabled)
     }
 
     private func placeholder<Extra: View>(
@@ -79,15 +107,11 @@ struct ResponseView: View {
             if let env = r.environment {
                 Text(env)
             }
-            if !r.unresolvedVariables.isEmpty {
-                Label(
-                    "Unresolved: " + r.unresolvedVariables.map { "{{\($0)}}" }.joined(separator: " "),
-                    systemImage: "exclamationmark.triangle"
-                )
-                .font(.ui(12))
-                .foregroundStyle(Theme.amber)
-            }
             Spacer()
+            Button { copyBody(r) } label: { Image(systemName: "doc.on.doc") }
+                .buttonStyle(.plain).help("Copy body")
+            Button { saveBody(r) } label: { Image(systemName: "square.and.arrow.down") }
+                .buttonStyle(.plain).help("Save body…")
             ForEach(ResponseTab.allCases) { item in
                 Button(item.rawValue) { tab = item }
                     .buttonStyle(.plain)
@@ -104,14 +128,68 @@ struct ResponseView: View {
     }
 
     @ViewBuilder
-    private func bodyView(_ r: HttpResponse, text: String) -> some View {
-        if r.bodyIsBase64 {
-            placeholder(
-                "Binary response", detail: "\(r.contentType) · \(r.sizeBytes) bytes",
-                symbol: "doc", tint: Theme.muted)
-        } else {
-            CodeEditor(text: .constant(text), isEditable: false)
+    private func prettyView(_ r: HttpResponse) -> some View {
+        switch ResponseKind.classify(contentType: r.contentType, bodyIsBase64: r.bodyIsBase64) {
+        case .json:
+            textBody(r.prettyBody ?? r.body)
+        case .html:
+            HTMLPreview(html: r.body)
+        case .image:
+            if let data = ResponseBodyBytes.decode(body: r.body, isBase64: true),
+                let image = NSImage(data: data)
+            {
+                ScrollView([.horizontal, .vertical]) {
+                    Image(nsImage: image).padding(16)
+                }
+            } else {
+                placeholder(
+                    "Image could not be decoded", detail: "\(r.contentType) · \(r.sizeBytes) bytes",
+                    symbol: "photo", tint: Theme.muted)
+            }
+        case .text:
+            textBody(r.body)
+        case .binary:
+            rawBinaryView(r)
         }
+    }
+
+    private func rawBinaryView(_ r: HttpResponse) -> some View {
+        let data = ResponseBodyBytes.decode(body: r.body, isBase64: true) ?? Data()
+        return CodeEditor(text: .constant(HexDump.format(data)), isEditable: false)
+    }
+
+    /// Text body, truncated above 2 MiB until "Show all" is pressed.
+    private func textBody(_ text: String) -> some View {
+        let result = showAll ? (text: text, truncated: false) : BodyTruncation.apply(text)
+        return VStack(spacing: 0) {
+            if result.truncated {
+                HStack {
+                    Text("Showing the first 2 MiB of \(ByteCountFormatter.string(fromByteCount: Int64(text.utf8.count), countStyle: .file)).")
+                    Button("Show all") { showAll = true }
+                }
+                .font(.ui(12))
+                .foregroundStyle(Theme.amber)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity)
+                .hairline(.bottom)
+            }
+            CodeEditor(text: .constant(result.text), isEditable: false)
+        }
+    }
+
+    private func copyBody(_ r: HttpResponse) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(r.prettyBody ?? r.body, forType: .string)
+    }
+
+    private func saveBody(_ r: HttpResponse) {
+        guard let data = ResponseBodyBytes.decode(body: r.body, isBase64: r.bodyIsBase64) else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "response"
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? data.write(to: url)
     }
 
     private func headersView(_ r: HttpResponse) -> some View {

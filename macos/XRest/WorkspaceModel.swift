@@ -35,6 +35,10 @@ final class WorkspaceModel {
     /// Keys named by a `MissingSecrets` send error (drives the "Open Secrets" button).
     private(set) var missingSecretKeys: [String] = []
     private(set) var isSending = false
+    /// True after the user cancelled the last send (shown as "Cancelled", not as a failure).
+    private(set) var wasCancelled = false
+    private var sendTask: Task<Void, Never>?
+    private var sendGeneration = 0
 
     // UI state driven from the model so menu commands can reach it.
     /// Set while an action waits behind the unsafe-environment confirmation sheet.
@@ -93,6 +97,7 @@ final class WorkspaceModel {
 
     private func loadDraft(for selection: SidebarSelection?) {
         response = nil
+        wasCancelled = false
         sendError = nil
         guard let selection else {
             draft = nil
@@ -261,17 +266,52 @@ final class WorkspaceModel {
     private func start(confirmed: Bool) {
         guard let draft, !isSending else { return }
         if case .scratch? = selection { flush() }
-        Task { await perform(spec: draft.spec, confirmed: confirmed) }
+        sendGeneration += 1
+        let generation = sendGeneration
+        sendTask = Task { await perform(spec: draft.spec, confirmed: confirmed, generation: generation) }
     }
 
-    private func perform(spec: RequestSpec, confirmed: Bool) async {
-        isSending = true
+    /// Cancels the in-flight send; the core future is dropped when the task is cancelled.
+    func cancelSend() {
+        guard isSending else { return }
+        sendGeneration += 1  // any late result from the cancelled task is ignored
+        sendTask?.cancel()
+        sendTask = nil
+        isSending = false
+        response = nil
         sendError = nil
         missingSecretKeys = []
-        defer { isSending = false }
+        wasCancelled = true
+    }
+
+    private func perform(spec: RequestSpec, confirmed: Bool, generation: Int) async {
+        isSending = true
+        wasCancelled = false
+        sendError = nil
+        missingSecretKeys = []
+        defer {
+            if generation == sendGeneration {
+                isSending = false
+                sendTask = nil
+            }
+        }
         do {
-            response = try await core.send(request: spec, confirmed: confirmed)
-        } catch let error as XRestError {
+            let result = try await core.send(request: spec, confirmed: confirmed)
+            guard generation == sendGeneration, !Task.isCancelled else { return }
+            response = result
+        } catch {
+            guard generation == sendGeneration else { return }
+            if SendCancellation.isCancellation(error) || Task.isCancelled {
+                response = nil
+                wasCancelled = true
+                return
+            }
+            handleSendFailure(error)
+        }
+    }
+
+    private func handleSendFailure(_ error: Error) {
+        if let error = error as? XRestError {
             response = nil
             if case .ConfirmationRequired = error {
                 // The environment changed under us; ask again.
@@ -280,7 +320,7 @@ final class WorkspaceModel {
                 missingSecretKeys = SecretsState.missingKeys(in: error)
                 sendError = error.message
             }
-        } catch {
+        } else {
             response = nil
             sendError = error.localizedDescription
         }

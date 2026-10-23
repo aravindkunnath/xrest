@@ -83,11 +83,12 @@ struct RequestDetailView: View {
             .help("Save (⌘S)")
 
             Button {
-                model.requestSend()
+                if model.isSending { model.cancelSend() } else { model.requestSend() }
             } label: {
                 HStack(spacing: 6) {
                     if model.isSending {
                         ProgressView().controlSize(.small).tint(Theme.bg)
+                        Text("Cancel").font(.ui(13, weight: .semibold))
                     } else {
                         Text("Send").font(.ui(13, weight: .semibold))
                         Text("⌘↵").font(.mono(11)).opacity(0.7).fixedSize()
@@ -102,8 +103,7 @@ struct RequestDetailView: View {
                 )
             }
             .buttonStyle(.plain)
-            .disabled(model.isSending)
-            .help("Send (⌘↩)")
+            .help(model.isSending ? "Cancel request" : "Send (⌘↩)")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

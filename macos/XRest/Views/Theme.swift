@@ -43,11 +43,10 @@ enum Theme {
     }
 
     static func statusColor(_ status: UInt16) -> Color {
-        switch status {
-        case 200..<300: return green
-        case 300..<400: return blue
-        case 400..<500: return amber
-        default: return red
+        switch StatusTone.of(status) {
+        case .success: return green
+        case .redirect: return amber
+        case .error: return red
         }
     }
 }
