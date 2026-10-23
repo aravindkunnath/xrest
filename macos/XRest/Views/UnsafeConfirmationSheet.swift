@@ -14,7 +14,15 @@ struct UnsafeConfirmationSheet: View {
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(pending.method).font(.mono(12, weight: .bold)).foregroundStyle(Theme.red)
-                Text(pending.url).font(.mono(12)).lineLimit(3).textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(pending.resolvedURL ?? pending.url)
+                        .font(.mono(12)).lineLimit(3).textSelection(.enabled)
+                    if let resolved = pending.resolvedURL, resolved != pending.url {
+                        Text(pending.url)
+                            .font(.mono(11)).foregroundStyle(Theme.muted)
+                            .lineLimit(2).textSelection(.enabled)
+                    }
+                }
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)

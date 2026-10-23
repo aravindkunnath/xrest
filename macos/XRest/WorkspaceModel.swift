@@ -301,6 +301,19 @@ final class WorkspaceModel {
         }
     }
 
+    // MARK: Interpolation
+
+    /// Resolved text with secrets masked, for the URL preview and the unsafe confirmation.
+    func preview(_ text: String) -> InterpolationPreview {
+        core.preview(text: text)
+    }
+
+    /// Names offered after typing `{{`: environment variables, then `secret.<key>` entries.
+    func completions(prefix: String) -> [String] {
+        CompletionTrigger.candidates(
+            prefix: prefix, variables: core.variableNames(), secretKeys: secretKeyChoices())
+    }
+
     // MARK: Secrets
 
     func openSecrets(prefill: String? = nil) {
@@ -342,10 +355,12 @@ final class WorkspaceModel {
     private func presentConfirmation(
         method: String? = nil, url: String? = nil, _ action: @escaping () -> Void
     ) {
+        let rawURL = url ?? draft?.url ?? ""
         pendingConfirmation = PendingConfirmation(
             environment: selectedEnvironment ?? "environment",
             method: method ?? draft?.method ?? "",
-            url: url ?? draft?.url ?? "",
+            url: rawURL,
+            resolvedURL: rawURL.isEmpty ? nil : core.preview(text: rawURL).resolved,
             action: action)
     }
 

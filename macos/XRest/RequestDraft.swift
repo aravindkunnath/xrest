@@ -51,11 +51,17 @@ enum BodyKind: String, CaseIterable, Identifiable {
 struct RequestDraft: Equatable {
     var name: String
     var method: String
-    var url: String
+    var url: String {
+        // `{name}` tokens in the URL path drive the Path rows: new tokens get a row, removed ones lose theirs.
+        didSet {
+            guard url != oldValue else { return }
+            pathParams = PathTokens.synced(pathParams, tokens: PathTokens.extract(from: url))
+        }
+    }
     var authenticated: Bool
     var params: [KeyValueRow]
     var headers: [KeyValueRow]
-    /// Not editable here yet; carried along untouched.
+    /// One row per `{name}` token in the URL path (kept in sync by `url`'s observer).
     var pathParams: [NameValue]
 
     var bodyKind: BodyKind = .none
@@ -109,6 +115,16 @@ struct RequestDraft: Equatable {
             binaryPath = path
             bodyContentType = contentType ?? ""
         }
+    }
+
+    func pathParamValue(_ name: String) -> String {
+        pathParams.first { $0.name == name }?.value ?? ""
+    }
+
+    /// Set the value of an existing path token's row; unknown names are ignored.
+    mutating func setPathParam(_ name: String, to value: String) {
+        guard let i = pathParams.firstIndex(where: { $0.name == name }) else { return }
+        pathParams[i].value = value
     }
 
     static var blank: RequestDraft {

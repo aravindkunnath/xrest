@@ -27,6 +27,7 @@ struct RequestDetailView: View {
                 UnsafeBanner(environment: model.selectedEnvironment ?? "")
             }
             urlBar
+            URLPreview(model: model, url: draft.wrappedValue.url)
             HStack(spacing: 0) {
                 requestPane
                     .frame(minWidth: 320, maxWidth: .infinity)
@@ -62,7 +63,9 @@ struct RequestDetailView: View {
                 .hairline(.trailing, color: Theme.borderStrong)
                 .accessibilityLabel("HTTP method")
 
-                URLField(text: draft.url, onSubmit: model.requestSend)
+                URLField(
+                    text: draft.url, completions: model.completions(prefix:),
+                    onSubmit: model.requestSend)
                     .padding(.horizontal, 12)
             }
             .frame(height: 36)
@@ -120,11 +123,15 @@ struct RequestDetailView: View {
                 label: { AnyView(tabLabel($0)) })
             switch tab {
             case .params:
-                KeyValueEditor(rows: draft.params, namePlaceholder: "Parameter")
+                paramsPane
             case .headers:
-                KeyValueEditor(rows: draft.headers, namePlaceholder: "Header")
+                KeyValueEditor(
+                    rows: draft.headers, namePlaceholder: "Header",
+                    completions: model.completions(prefix:))
             case .body:
-                BodyEditor(draft: draft, workspaceRoot: model.service.rootPath)
+                BodyEditor(
+                    draft: draft, workspaceRoot: model.service.rootPath,
+                    completions: model.completions(prefix:))
             case .auth:
                 authPane
             case .options:
@@ -132,6 +139,45 @@ struct RequestDetailView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Path section (one row per `{name}` token in the URL path) above the query parameters.
+    private var paramsPane: some View {
+        VStack(spacing: 0) {
+            let tokens = PathTokens.extract(from: draft.wrappedValue.url)
+            if !tokens.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("PATH")
+                        .font(.ui(11)).tracking(0.7).foregroundStyle(Theme.muted)
+                        .padding(.vertical, 6)
+                    ForEach(tokens, id: \.self) { name in
+                        HStack(spacing: 8) {
+                            Text("{\(name)}")
+                                .font(.mono(12)).foregroundStyle(Theme.amber)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            VariableTextField(
+                                placeholder: "Value",
+                                text: Binding(
+                                    get: { draft.wrappedValue.pathParamValue(name) },
+                                    set: { draft.wrappedValue.setPathParam(name, to: $0) }),
+                                completions: model.completions(prefix:),
+                                accessibilityLabel: "Value for path parameter \(name)"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .padding(.vertical, 4)
+                        .hairline(.top, color: Theme.rowDivider)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+                .hairline(.bottom)
+            }
+            KeyValueEditor(
+                rows: draft.params, namePlaceholder: "Parameter",
+                completions: model.completions(prefix:))
+        }
     }
 
     private var nameRow: some View {
@@ -230,6 +276,7 @@ struct RequestDetailView: View {
 /// editing, selection and the caret stay native.
 struct URLField: View {
     @Binding var text: String
+    var completions: CompletionProvider?
     let onSubmit: () -> Void
 
     var body: some View {
@@ -241,13 +288,10 @@ struct URLField: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-            TextField("https://… or {{BASE_URL}}/path", text: $text)
-                .textFieldStyle(.plain)
-                .font(.mono(13))
-                .foregroundStyle(.clear)
-                .tint(Theme.amber)
-                .onSubmit(onSubmit)
-                .accessibilityLabel("Request URL")
+            VariableTextField(
+                placeholder: "https://… or {{BASE_URL}}/path", text: $text,
+                completions: completions, font: .mono(13), textColor: .clear,
+                accessibilityLabel: "Request URL", onSubmit: onSubmit)
         }
     }
 
@@ -273,6 +317,40 @@ struct URLField: View {
             $0.backgroundColor = Theme.amberFill
         }
         return result
+    }
+}
+
+/// One-line resolved URL under the URL bar: variables substituted, secrets masked, and names
+/// that did not resolve highlighted. Recomputed when the URL or the environment changes.
+struct URLPreview: View {
+    let model: WorkspaceModel
+    let url: String
+
+    var body: some View {
+        // Read so a change of environment or its variables re-renders the preview.
+        let _ = (model.selectedEnvironment, model.environments)
+        if !url.isEmpty {
+            let preview = model.preview(url)
+            let segments = PreviewSegments.split(preview.resolved)
+            segments.reduce(Text("")) { acc, seg in
+                acc
+                    + Text(seg.text)
+                    .foregroundColor(seg.isUnresolved ? Theme.amber : Theme.muted)
+                    .underline(seg.isUnresolved, color: Theme.amber)
+            }
+            .font(.mono(11))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+            .hairline(.bottom)
+            .accessibilityLabel("Resolved URL")
+            .accessibilityValue(
+                preview.unresolved.isEmpty
+                    ? preview.resolved
+                    : "\(preview.resolved). Unresolved: \(preview.unresolved.joined(separator: ", "))")
+        }
     }
 }
 

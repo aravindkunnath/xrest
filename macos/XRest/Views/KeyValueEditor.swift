@@ -9,6 +9,8 @@ struct KeyValueEditor: View {
     @Binding var rows: [KeyValueRow]
     let namePlaceholder: String
     var chooseFile: (() -> String?)? = nil
+    /// Offers `{{…}}` completions in value fields when set.
+    var completions: CompletionProvider? = nil
 
     var body: some View {
         ScrollView {
@@ -66,12 +68,10 @@ struct KeyValueEditor: View {
                                 .labelsHidden()
                                 .fixedSize()
                             }
-                            TextField(
-                                row.isFile ? "path/inside/workspace" : "Value", text: $row.value
-                            )
-                            .textFieldStyle(.plain)
-                            .font(.mono(12))
-                            .foregroundStyle(Theme.textSoft)
+                            VariableTextField(
+                                placeholder: row.isFile ? "path/inside/workspace" : "Value",
+                                text: $row.value,
+                                completions: row.isFile ? nil : completions)
                             if row.isFile, let chooseFile {
                                 Button("Choose…") {
                                     if let path = chooseFile() { row.value = path }

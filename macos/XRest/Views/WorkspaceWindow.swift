@@ -13,7 +13,7 @@ struct WorkspaceWindow: View {
             if let model {
                 WorkspaceView(model: model)
             } else {
-                WelcomeView(open: chooseWorkspace)
+                WelcomeView(open: chooseWorkspace, openRecent: { url = $0 })
             }
         }
         .focusedSceneValue(\.windowURLSetter, WindowURLSetter { url = $0 })
@@ -52,6 +52,7 @@ struct WorkspaceWindow: View {
         }
         do {
             model = try WorkspaceModel(url: url)
+            RecentStore.shared.record(url)
         } catch XRestError.InvalidInput {
             // Not a workspace: offer to create one if the folder looks usable.
             model = nil
@@ -68,6 +69,7 @@ struct WorkspaceWindow: View {
         folderToInitialise = nil
         do {
             model = try WorkspaceModel.create(at: target)
+            RecentStore.shared.record(target)
         } catch {
             errorMessage = describe(error)
             url = nil
@@ -77,6 +79,8 @@ struct WorkspaceWindow: View {
 
 struct WelcomeView: View {
     let open: () -> Void
+    let openRecent: (URL) -> Void
+    private var recents: RecentStore { RecentStore.shared }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -96,12 +100,44 @@ struct WelcomeView: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(Theme.amber))
             }
             .buttonStyle(.plain)
+
+            if !recents.items.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("RECENT")
+                        .font(.ui(11)).tracking(0.7).foregroundStyle(Theme.muted)
+                        .padding(.bottom, 4)
+                    ForEach(recents.items, id: \.self) { url in
+                        Button { openRecent(url) } label: {
+                            HStack(spacing: 8) {
+                                Text(url.lastPathComponent)
+                                    .font(.ui(13)).foregroundStyle(Theme.text)
+                                Text(abbreviated(url))
+                                    .font(.mono(11)).foregroundStyle(Theme.muted)
+                                    .lineLimit(1).truncationMode(.head)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 8)
+                            .frame(height: 26)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(HoverButtonStyle(radius: 4))
+                        .accessibilityLabel("Open \(url.lastPathComponent)")
+                    }
+                }
+                .frame(width: 380)
+                .padding(.top, 10)
+            }
         }
+        .onAppear { recents.refresh() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(minWidth: 480, minHeight: 320)
         .background(Theme.bg)
         .foregroundStyle(Theme.text)
         .preferredColorScheme(.dark)
         .ignoresSafeArea()
+    }
+
+    private func abbreviated(_ url: URL) -> String {
+        (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
     }
 }

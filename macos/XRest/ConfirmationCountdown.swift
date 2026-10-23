@@ -70,17 +70,20 @@ final class PendingConfirmation: Identifiable {
     let environment: String
     let method: String
     let url: String
+    /// The URL with variables resolved and secrets masked, when known.
+    let resolvedURL: String?
     let countdown: ConfirmationCountdown
     @ObservationIgnored private var action: (() -> Void)?
 
     init(
-        environment: String, method: String, url: String,
+        environment: String, method: String, url: String, resolvedURL: String? = nil,
         countdown: ConfirmationCountdown? = nil,
         action: @escaping () -> Void
     ) {
         self.environment = environment
         self.method = method
         self.url = url
+        self.resolvedURL = resolvedURL
         self.countdown = countdown ?? ConfirmationCountdown()
         self.action = action
     }

@@ -77,3 +77,16 @@ final class ConfirmationCountdownTests: XCTestCase {
         XCTAssertEqual(b.countdown.state, .running(remaining: 10))
     }
 }
+
+@MainActor
+final class PendingConfirmationURLTests: XCTestCase {
+    func testCarriesResolvedURLAlongsideRaw() {
+        let p = PendingConfirmation(
+            environment: "prod", method: "GET", url: "{{BASE}}/x",
+            resolvedURL: "https://api.io/x", action: {})
+        XCTAssertEqual(p.url, "{{BASE}}/x")
+        XCTAssertEqual(p.resolvedURL, "https://api.io/x")
+        let q = PendingConfirmation(environment: "prod", method: "GET", url: "u", action: {})
+        XCTAssertNil(q.resolvedURL)
+    }
+}

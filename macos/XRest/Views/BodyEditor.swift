@@ -6,6 +6,7 @@ struct BodyEditor: View {
     @Binding var draft: RequestDraft
     /// Absolute path of the workspace; files are stored relative to it.
     let workspaceRoot: String
+    var completions: CompletionProvider? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,11 +43,12 @@ struct BodyEditor: View {
         case .text, .json:
             CodeEditor(text: $draft.bodyText)
         case .form:
-            KeyValueEditor(rows: $draft.formFields, namePlaceholder: "Field")
+            KeyValueEditor(
+                rows: $draft.formFields, namePlaceholder: "Field", completions: completions)
         case .multipart:
             KeyValueEditor(
                 rows: $draft.multipartFields, namePlaceholder: "Field",
-                chooseFile: { chooseFile() })
+                chooseFile: { chooseFile() }, completions: completions)
         case .binary:
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {

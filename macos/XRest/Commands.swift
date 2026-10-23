@@ -34,6 +34,16 @@ struct WorkspaceCommands: Commands {
             Divider()
             Button("Open Workspace…") { openWorkspace() }
                 .keyboardShortcut("o", modifiers: .command)
+            Menu("Open Recent") {
+                ForEach(RecentStore.shared.items, id: \.self) { url in
+                    Button(url.lastPathComponent) { open(url) }
+                        .help(url.path)
+                }
+                Divider()
+                Button("Clear Menu") { RecentStore.shared.clear() }
+                    .disabled(RecentStore.shared.items.isEmpty)
+            }
+            .disabled(RecentStore.shared.items.isEmpty)
         }
 
         CommandGroup(replacing: .saveItem) {
@@ -78,6 +88,10 @@ struct WorkspaceCommands: Commands {
 
     private func openWorkspace() {
         guard let url = WorkspacePicker.chooseDirectory() else { return }
+        open(url)
+    }
+
+    private func open(_ url: URL) {
         if model == nil, let urlSetter {
             urlSetter.set(url)
         } else {
