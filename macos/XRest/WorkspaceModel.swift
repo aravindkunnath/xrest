@@ -37,7 +37,8 @@ final class WorkspaceModel {
     private(set) var isSending = false
 
     // UI state driven from the model so menu commands can reach it.
-    var showUnsafeConfirmation = false
+    /// Set while an action waits behind the unsafe-environment confirmation sheet.
+    var pendingConfirmation: PendingConfirmation?
     var showImportCurl = false
     var showSecrets = false
     /// Key to prefill in the Secrets screen's add form.
@@ -232,20 +233,29 @@ final class WorkspaceModel {
 
     // MARK: Sending
 
-    /// Entry point for the Send button and menu command. The core is the authority on whether
-    /// the environment is unsafe; this only decides whether to show the confirmation dialog.
+    /// Entry point for the Send button and menu command.
     func requestSend() {
         guard draft != nil, !isSending else { return }
+        runGuarded { [weak self] confirmed in self?.start(confirmed: confirmed) }
+    }
+
+    /// Runs `action` straight away in a safe environment (`confirmed: false`), or behind the
+    /// countdown confirmation sheet in an unsafe one (`confirmed: true` once accepted). The core
+    /// is the authority on whether the environment is unsafe. Test Preflight uses this too.
+    func runGuarded(_ action: @escaping (_ confirmed: Bool) -> Void) {
         if core.sendPolicy().requiresConfirmation {
-            showUnsafeConfirmation = true
+            presentConfirmation { action(true) }
         } else {
-            start(confirmed: false)
+            action(false)
         }
     }
 
-    /// Called by the confirmation dialog's destructive button.
-    func confirmSend() {
-        start(confirmed: true)
+    private func presentConfirmation(_ action: @escaping () -> Void) {
+        pendingConfirmation = PendingConfirmation(
+            environment: selectedEnvironment ?? "environment",
+            method: draft?.method ?? "",
+            url: draft?.url ?? "",
+            action: action)
     }
 
     private func start(confirmed: Bool) {
@@ -265,7 +275,7 @@ final class WorkspaceModel {
             response = nil
             if case .ConfirmationRequired = error {
                 // The environment changed under us; ask again.
-                showUnsafeConfirmation = true
+                presentConfirmation { [weak self] in self?.start(confirmed: true) }
             } else {
                 missingSecretKeys = SecretsState.missingKeys(in: error)
                 sendError = error.message

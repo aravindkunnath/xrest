@@ -24,18 +24,6 @@ struct WorkspaceView: View {
         .ignoresSafeArea()
         .navigationTitle(model.service.name)
         .focusedSceneValue(\.workspaceModel, model)
-        .alert(
-            "Send to unsafe environment?", isPresented: $model.showUnsafeConfirmation
-        ) {
-            Button("Cancel", role: .cancel) {}
-            Button("Send to \(model.selectedEnvironment ?? "environment")", role: .destructive) {
-                model.confirmSend()
-            }
-        } message: {
-            Text(
-                "\(model.selectedEnvironment ?? "This environment") is marked unsafe. This request will be sent for real."
-            )
-        }
         .alert("Error", isPresented: errorBinding) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -53,6 +41,9 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $model.showImportCurl) {
             ImportCurlSheet(model: model)
+        }
+        .sheet(item: $model.pendingConfirmation) { pending in
+            UnsafeConfirmationSheet(pending: pending, dismiss: { model.pendingConfirmation = nil })
         }
         .sheet(isPresented: $model.showSecrets) {
             SecretsSheet(model: model)
