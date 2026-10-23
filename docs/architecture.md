@@ -322,6 +322,7 @@ XRestWorkspace
     variable_names() -> [String]                      // enabled variables of the selected environment (autocomplete)
     preview(text) -> InterpolationPreview             // { resolved, unresolved }; secrets shown as ••••••, never their value
     preview_request_url(spec) -> InterpolationPreview // the URL as send builds it (variables, path params, enabled query params), secrets masked; no I/O
+    export_code(spec, language: CodeLanguage, include_secrets) -> String // curl | axios | java | kotlin; no I/O, no unsafe-env confirmation
     send_policy() -> SendPolicy                       // { environment, requires_confirmation }
   endpoints
     list_endpoints() / get_endpoint(id) -> Endpoint
@@ -382,6 +383,18 @@ does, secrets shown as `••••••`. Unresolved lists variables, `{name}
 result is not yet a valid URL the partly resolved text is returned. A path param whose value is `.` or `..`
 is percent-encoded (`%2E`), but `send` refuses it with `InvalidInput` because the URL layer collapses
 the dot-segment even when encoded (the preview shows the collapsed URL). A preflight token lifetime is clamped to 30 days.
+
+`export_code(spec, language, include_secrets)` renders the request resolved for the selected environment
+(`CodeLanguage`: `Curl`, `Axios`, `Java` = `java.net.http`, `Kotlin` = OkHttp). Resolution does no I/O: no
+preflight request (the preflight header is `Bearer <preflight token>`, or `<preflight token>` for a custom
+header), no file reads (multipart/binary file fields keep their path: `-F name=@path` in curl, file reads in
+the others), and no unsafe-environment policy. Service auth is applied as a header (basic as
+`Basic <base64>`) or query key. By default every secret stays `{{secret.KEY}}` (secrets need not exist; basic
+auth with a secret shows `Basic base64(user:{{secret.PW}})`); `include_secrets` looks real values up and a
+missing one is `MissingSecrets`. Options: curl `-k -L -m <secs> -x <proxy>`; the others use the closest
+equivalent and a comment where there is none (TLS verification in Java/Kotlin). An unparseable URL is
+`InvalidUrl`. The curl output round-trips through `import_curl`, whose tokenizer removes shell quotes
+(`'it'\''s'` is `it's`).
 
 `send` takes the request spec rather than an id so the app can send the unsaved draft it is editing.
 `test_preflight` runs one preflight request (the given one, or the service's when `nil`) in the

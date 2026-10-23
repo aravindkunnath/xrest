@@ -9,10 +9,11 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::codegen::{ExportBody, ExportPart, ExportRequest};
 use crate::error::{Error, Result};
 use crate::exec::{
-    build_url, has_header, HttpOptions, PreparedPreflightTest, PreparedSend, ResolvedAuth,
-    ResolvedBody, ResolvedPart, ResolvedPreflight, ResolvedRequest,
+    build_url, has_header, set_header, set_query, HttpOptions, PreparedPreflightTest, PreparedSend,
+    ResolvedAuth, ResolvedBody, ResolvedPart, ResolvedPreflight, ResolvedRequest,
 };
 use crate::interpolate::{
     interpolate, resolve_secrets, unresolved, InterpolationPreview, Variables, SECRET_MASK,
@@ -114,6 +115,211 @@ pub(crate) fn prepare_send(
         tokens: ctx.tokens,
         http,
     })
+}
+
+/// Keeps every `{{secret.KEY}}` as its placeholder, whether or not the secret exists.
+struct PlaceholderStore;
+
+impl SecretStore for PlaceholderStore {
+    fn get(&self, key: &str) -> Option<String> {
+        Some(format!("{{{{secret.{key}}}}}"))
+    }
+}
+
+/// What export needs from a workspace (no root: nothing is read from disk).
+pub(crate) struct ExportContext<'a> {
+    pub service: &'a ServiceFile,
+    pub environment: Option<&'a Environment>,
+    pub secrets: &'a dyn SecretStore,
+}
+
+/// The request as it would be sent, for code export. Does no I/O (no preflight request, no file
+/// reads: file fields keep their path) and applies no unsafe-environment policy. Without
+/// `include_secrets` every secret stays a `{{secret.KEY}}` placeholder (a missing secret is
+/// fine); with it, secrets are looked up and a missing one is [`Error::MissingSecrets`].
+pub(crate) fn resolve_for_export(
+    ctx: ExportContext<'_>,
+    spec: &RequestSpec,
+    include_secrets: bool,
+) -> Result<ExportRequest> {
+    let env = ctx.environment;
+    let vars = variables(env);
+    let secrets: &dyn SecretStore = if include_secrets {
+        ctx.secrets
+    } else {
+        &PlaceholderStore
+    };
+    let mut r = Resolver {
+        vars: &vars,
+        secrets,
+        unresolved: BTreeSet::new(),
+        missing: BTreeSet::new(),
+        dot_segments: BTreeSet::new(),
+    };
+
+    let params = r.pairs(&spec.params);
+    let mut headers = r.pairs(&spec.headers);
+    let raw_url = r.text(&spec.url);
+    let raw_url = substitute_path_params(&raw_url, &spec.path_params, &mut r);
+    if let Some(name) = r.dot_segments.iter().next() {
+        return Err(Error::InvalidInput(format!(
+            "path parameter {name} cannot be '.' or '..'"
+        )));
+    }
+    let mut url = build_url(&raw_url, &params)?;
+    let method = normalize_method(&spec.method);
+
+    let mut body = match &spec.body {
+        Body::None => ExportBody::Empty,
+        Body::Raw { content, .. } | Body::Json { content } => ExportBody::Text(r.text(content)),
+        Body::Form { fields } => ExportBody::Form(r.pairs(fields)),
+        Body::Multipart { fields } => ExportBody::Multipart(
+            fields
+                .iter()
+                .filter(|f| f.enabled && !f.name.is_empty())
+                .map(|f| {
+                    let name = r.text(&f.name);
+                    let value = r.text(&f.value);
+                    if f.is_file() {
+                        ExportPart::File { name, path: value }
+                    } else {
+                        ExportPart::Text { name, value }
+                    }
+                })
+                .collect(),
+        ),
+        Body::Binary { path, .. } => ExportBody::File(r.text(path)),
+    };
+    if let (ExportBody::Text(c), Body::Raw { .. } | Body::Json { .. }) = (&mut body, &spec.body) {
+        if c.is_empty() {
+            body = ExportBody::Empty;
+        }
+    }
+    let default_ct = match (&spec.body, &body) {
+        (_, ExportBody::Empty | ExportBody::Multipart(_)) => None,
+        (Body::Json { .. }, _) => Some("application/json".to_string()),
+        (Body::Raw { content_type, .. }, ExportBody::Text(c)) => Some(
+            content_type
+                .as_deref()
+                .map(str::trim)
+                .filter(|ct| !ct.is_empty())
+                .map(|ct| r.text(ct))
+                .unwrap_or_else(|| {
+                    let t = c.trim_start();
+                    if t.starts_with('{') || t.starts_with('[') {
+                        "application/json".into()
+                    } else {
+                        "text/plain; charset=utf-8".into()
+                    }
+                }),
+        ),
+        (_, ExportBody::Form(_)) => Some("application/x-www-form-urlencoded".to_string()),
+        (Body::Binary { content_type, .. }, _) => Some(
+            content_type
+                .as_deref()
+                .map(str::trim)
+                .filter(|ct| !ct.is_empty())
+                .map(|ct| r.text(ct))
+                .unwrap_or_else(|| "application/octet-stream".into()),
+        ),
+        _ => None,
+    };
+
+    let mut options = spec.options.clone();
+    if let Some(p) = &options.proxy {
+        options.proxy = Some(r.text(p));
+    }
+
+    let use_service_auth = spec.authenticated && ctx.service.is_authenticated;
+    let pf_cfg = spec.preflight.as_ref().filter(|p| p.enabled).or_else(|| {
+        use_service_auth
+            .then_some(ctx.service.preflight.as_ref())
+            .flatten()
+            .filter(|p| p.enabled)
+    });
+    if let Some(cfg) = pf_cfg {
+        let header = cfg
+            .token_header
+            .as_deref()
+            .filter(|h| !h.is_empty())
+            .unwrap_or("Authorization")
+            .to_string();
+        let value = if header.eq_ignore_ascii_case("authorization") {
+            "Bearer <preflight token>".to_string()
+        } else {
+            "<preflight token>".to_string()
+        };
+        set_header(&mut headers, &header, value);
+    }
+    if use_service_auth {
+        match resolve_auth(ctx.service, &mut r) {
+            ResolvedAuth::None => {}
+            ResolvedAuth::Bearer(t) => {
+                set_header(&mut headers, "Authorization", format!("Bearer {t}"))
+            }
+            ResolvedAuth::Basic { user, pass } => {
+                let value = if !include_secrets && format!("{user}{pass}").contains("{{secret.") {
+                    // base64 would hide the placeholder.
+                    format!("Basic base64({user}:{pass})")
+                } else {
+                    use base64::Engine;
+                    let enc =
+                        base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
+                    format!("Basic {enc}")
+                };
+                set_header(&mut headers, "Authorization", value);
+            }
+            ResolvedAuth::ApiKey {
+                name,
+                value,
+                in_query,
+            } => {
+                if in_query {
+                    set_query(&mut url, &[(name, value)]);
+                } else {
+                    set_header(&mut headers, &name, value);
+                }
+            }
+        }
+    }
+    if !r.missing.is_empty() {
+        return Err(Error::MissingSecrets(r.missing.into_iter().collect()));
+    }
+
+    if matches!(body, ExportBody::Multipart(_)) {
+        // The client writes the boundary parameter.
+        headers.retain(|(k, _)| !k.eq_ignore_ascii_case("content-type"));
+    } else if let Some(ct) = default_ct {
+        if !has_header(&headers, "content-type") {
+            headers.push(("Content-Type".into(), ct));
+        }
+    }
+
+    Ok(ExportRequest {
+        method,
+        url: restore_placeholders(url.as_str()),
+        headers,
+        body,
+        options,
+    })
+}
+
+/// The URL layer percent-encodes `{{secret.KEY}}`; show those placeholders as written.
+fn restore_placeholders(url: &str) -> String {
+    const OPEN: &str = "%7B%7Bsecret.";
+    const CLOSE: &str = "%7D%7D";
+    let mut out = String::with_capacity(url.len());
+    let mut rest = url;
+    while let Some(i) = rest.find(OPEN) {
+        let after = &rest[i + OPEN.len()..];
+        let Some(j) = after.find(CLOSE) else { break };
+        out.push_str(&rest[..i]);
+        let key = &after[..j];
+        out.push_str(&format!("{{{{secret.{key}}}}}"));
+        rest = &after[j + CLOSE.len()..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Masks every secret that exists and never fetches a value.

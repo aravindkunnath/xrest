@@ -3,6 +3,7 @@
 //! Platform apps (SwiftUI today, GTK later) own all UI and talk to this crate through
 //! `xrest-ffi`. See `docs/architecture.md` for the boundary.
 
+pub mod codegen;
 pub mod curl;
 pub mod diff;
 pub mod error;
@@ -20,6 +21,7 @@ pub mod swagger;
 pub mod versions;
 pub mod workspace;
 
+pub use codegen::CodeLanguage;
 pub use diff::{diff_configs, ChangeKind, FieldChange};
 pub use error::{Error, Result};
 pub use exec::{HttpOptions, PreparedPreflightTest, PreparedSend};

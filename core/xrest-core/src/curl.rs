@@ -110,11 +110,12 @@ fn is_http_method(s: &str) -> bool {
     )
 }
 
-/// Split a shell-like command into tokens. Quote characters are kept (see [`unquote`]).
+/// Split a shell-like command into tokens, removing quotes as a POSIX shell does (adjacent
+/// quoted and unquoted pieces join; `''` is an empty token).
 fn tokenize(cmd: &str) -> Vec<String> {
     let mut tokens = vec![];
     let mut cur = String::new();
-    let (mut in_single, mut in_double, mut escape) = (false, false, false);
+    let (mut in_single, mut in_double, mut escape, mut quoted) = (false, false, false, false);
     let mut chars = cmd.chars();
     while let Some(ch) = chars.next() {
         if escape {
@@ -137,36 +138,27 @@ fn tokenize(cmd: &str) -> Vec<String> {
         }
         if ch == '\'' && !in_double {
             in_single = !in_single;
-            cur.push(ch);
+            quoted = true;
             continue;
         }
         if ch == '"' && !in_single {
             in_double = !in_double;
-            cur.push(ch);
+            quoted = true;
             continue;
         }
         if ch.is_whitespace() && !in_single && !in_double {
-            if !cur.is_empty() {
+            if !cur.is_empty() || quoted {
                 tokens.push(std::mem::take(&mut cur));
+                quoted = false;
             }
             continue;
         }
         cur.push(ch);
     }
-    if !cur.is_empty() {
+    if !cur.is_empty() || quoted {
         tokens.push(cur);
     }
     tokens
-}
-
-fn unquote(s: &str) -> &str {
-    let b = s.as_bytes();
-    if b.len() >= 2
-        && ((b[0] == b'"' && b[b.len() - 1] == b'"') || (b[0] == b'\'' && b[b.len() - 1] == b'\''))
-    {
-        return &s[1..s.len() - 1];
-    }
-    s
 }
 
 /// Human-readable endpoint name from a URL path (`/api/v2/users` -> `api v2 users`).
@@ -244,7 +236,7 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
             }
             "-H" | "--header" => {
                 if let Some(n) = next {
-                    let h = unquote(n);
+                    let h = n;
                     if let Some(c) = h.find(':').filter(|c| *c > 0) {
                         headers.push(NameValue::new(h[..c].trim(), h[c + 1..].trim()));
                     }
@@ -253,7 +245,7 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
             }
             "-d" | "--data" | "--data-raw" | "--data-binary" | "--data-ascii" => {
                 if let Some(n) = next {
-                    data.push(Data::Raw(unquote(n).to_string()));
+                    data.push(Data::Raw(n.to_string()));
                     if method == "GET" {
                         method = "POST".into();
                     }
@@ -262,7 +254,7 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
             }
             "--data-urlencode" => {
                 if let Some(n) = next {
-                    let arg = unquote(n);
+                    let arg = n;
                     data.push(match arg.split_once('=') {
                         Some(("", v)) => Data::Encode(None, v.to_string()),
                         Some((k, v)) => Data::Encode(Some(k.to_string()), v.to_string()),
@@ -276,7 +268,7 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
             }
             "-F" | "--form" | "--form-string" => {
                 if let Some(n) = next {
-                    if let Some(f) = form_field(unquote(n), tok == "--form-string") {
+                    if let Some(f) = form_field(n, tok == "--form-string") {
                         form.push(f);
                     }
                     if method == "GET" {
@@ -288,7 +280,7 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
             "-k" | "--insecure" => options.verify_tls = Some(false),
             "-m" | "--max-time" => {
                 if let Some(n) = next {
-                    if let Ok(secs) = unquote(n).parse::<f64>() {
+                    if let Ok(secs) = n.parse::<f64>() {
                         if secs > 0.0 {
                             options.timeout_ms = Some((secs * 1000.0).round() as u64);
                         }
@@ -298,14 +290,14 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
             }
             "-x" | "--proxy" => {
                 if let Some(n) = next {
-                    options.proxy = Some(unquote(n).to_string());
+                    options.proxy = Some(n.to_string());
                     i += 1;
                 }
             }
             "--url" => {
                 if let Some(n) = next {
                     if url.is_empty() {
-                        url = unquote(n).to_string();
+                        url = n.to_string();
                     }
                     i += 1;
                 }
@@ -335,7 +327,7 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
             }
             _ => {
                 if url.is_empty() {
-                    let raw = unquote(tok);
+                    let raw = tok;
                     match raw.split_once(' ') {
                         Some((m, u)) if is_http_method(m) && u.starts_with("http") => {
                             method = m.to_string();
@@ -371,6 +363,21 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_quote_escape_and_adjacent_quotes_join() {
+        let p = parse(r#"curl 'http://a.b/c' -H 'X: it'\''s' -d "a"'b'c"#).unwrap();
+        assert_eq!(p.headers, vec![NameValue::new("X", "it's")]);
+        assert_eq!(
+            p.body,
+            Body::Raw {
+                content: "abc".into(),
+                content_type: Some("application/x-www-form-urlencoded".into())
+            }
+        );
+        let p = parse("curl http://a.b/c -d ''").unwrap();
+        assert_eq!(p.method, "POST");
+    }
 
     #[test]
     fn simple_get() {

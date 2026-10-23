@@ -889,6 +889,15 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     
     func environments()  -> [EnvironmentConfig]
     
+    /**
+     * `spec` as code for the selected environment (variables, path/query params, service auth,
+     * options applied). No I/O: no preflight request (its header is `<preflight token>`), no
+     * file reads (file fields keep their path), no unsafe-environment confirmation. Secrets stay
+     * `{{secret.KEY}}` placeholders unless `include_secrets`, which fails with `MissingSecrets`
+     * when one has no value.
+     */
+    func exportCode(spec: RequestSpec, language: CodeLanguage, includeSecrets: Bool) throws  -> String
+    
     func getEndpoint(id: String) throws  -> Endpoint
     
     func getScratch(id: String) throws  -> ScratchRequest
@@ -1229,6 +1238,25 @@ open func environments() -> [EnvironmentConfig]  {
         uniffiCallStatus in
     uniffi_xrest_ffi_fn_method_xrestworkspace_environments(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * `spec` as code for the selected environment (variables, path/query params, service auth,
+     * options applied). No I/O: no preflight request (its header is `<preflight token>`), no
+     * file reads (file fields keep their path), no unsafe-environment confirmation. Secrets stay
+     * `{{secret.KEY}}` placeholders unless `include_secrets`, which fails with `MissingSecrets`
+     * when one has no value.
+     */
+open func exportCode(spec: RequestSpec, language: CodeLanguage, includeSecrets: Bool)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_export_code(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeRequestSpec_lower(spec),
+        FfiConverterTypeCodeLanguage_lower(language),
+        FfiConverterBool.lower(includeSecrets),uniffiCallStatus
     )
 })
 }
@@ -3237,6 +3265,98 @@ public func FfiConverterTypeServiceSettings_lower(_ value: ServiceSettings) -> R
 
 
 /**
+ * Target language for [`XRestWorkspace::export_code`].
+ */
+
+public enum CodeLanguage: Equatable, Hashable {
+    
+    case curl
+    /**
+     * Node.js, axios.
+     */
+    case axios
+    /**
+     * `java.net.http.HttpClient`.
+     */
+    case java
+    /**
+     * Kotlin, OkHttp.
+     */
+    case kotlin
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CodeLanguage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCodeLanguage: FfiConverterRustBuffer {
+    typealias SwiftType = CodeLanguage
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CodeLanguage {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .curl
+        
+        case 2: return .axios
+        
+        case 3: return .java
+        
+        case 4: return .kotlin
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CodeLanguage, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .curl:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .axios:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .java:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .kotlin:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCodeLanguage_lift(_ buf: RustBuffer) throws -> CodeLanguage {
+    return try FfiConverterTypeCodeLanguage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCodeLanguage_lower(_ value: CodeLanguage) -> RustBuffer {
+    return FfiConverterTypeCodeLanguage.lower(value)
+}
+
+
+
+/**
  * Whether saves commit to git by themselves (per user, per workspace; default `Manual`).
  */
 
@@ -4066,6 +4186,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_environments() != 12029) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_export_code() != 29455) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_get_endpoint() != 14278) {

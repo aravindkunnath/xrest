@@ -2,11 +2,12 @@
 //! hands it the workspace's state.
 
 use super::Workspace;
+use crate::codegen::{self, CodeLanguage};
 use crate::error::Result;
 use crate::exec::{PreparedPreflightTest, PreparedSend};
 use crate::model::{Preflight, RequestSpec};
 use crate::preflight::PreflightTestResult;
-use crate::resolve::{self, SendContext};
+use crate::resolve::{self, ExportContext, SendContext};
 
 impl Workspace {
     pub fn prepare_send_endpoint(&self, id: &str, confirmed: bool) -> Result<PreparedSend> {
@@ -68,5 +69,29 @@ impl Workspace {
         self.prepare_test_preflight(preflight, confirmed)?
             .execute()
             .await
+    }
+
+    /// Render `spec` as code for the selected environment: variables, path and query params,
+    /// service auth and options applied. Does no I/O (no preflight request, no file reads; file
+    /// fields keep their path), ignores the unsafe-environment policy, and writes the
+    /// preflight header as `<preflight token>`. Secrets stay `{{secret.KEY}}` placeholders
+    /// unless `include_secrets` is true, in which case a missing secret is
+    /// [`Error::MissingSecrets`](crate::Error::MissingSecrets).
+    pub fn export_code(
+        &self,
+        spec: &RequestSpec,
+        language: CodeLanguage,
+        include_secrets: bool,
+    ) -> Result<String> {
+        let req = resolve::resolve_for_export(
+            ExportContext {
+                service: &self.service,
+                environment: self.selected_environment(),
+                secrets: self.secrets.as_ref(),
+            },
+            spec,
+            include_secrets,
+        )?;
+        Ok(codegen::generate(&req, language))
     }
 }

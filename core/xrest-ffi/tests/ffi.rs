@@ -484,3 +484,29 @@ async fn openapi_import_and_fetch_through_ffi() {
         Err(XRestError::InvalidInput { .. })
     ));
 }
+
+#[test]
+fn export_code_masks_secrets_unless_asked() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws =
+        XRestWorkspace::create_workspace(dir.path().to_string_lossy().into_owned(), "Demo".into())
+            .unwrap();
+    let mut s = spec("http://localhost/x");
+    s.headers.push(nv("X-Key", "{{secret.K}}"));
+    let masked = ws
+        .export_code(s.clone(), CodeLanguage::Curl, false)
+        .unwrap();
+    assert_eq!(
+        masked,
+        "curl 'http://localhost/x' \\\n  -H 'X-Key: {{secret.K}}'"
+    );
+    assert!(matches!(
+        ws.export_code(s.clone(), CodeLanguage::Kotlin, true),
+        Err(XRestError::MissingSecrets { .. })
+    ));
+    ws.set_secret("K".into(), "v".into());
+    assert!(ws
+        .export_code(s, CodeLanguage::Java, true)
+        .unwrap()
+        .contains("\"X-Key\", \"v\""));
+}

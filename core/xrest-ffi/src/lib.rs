@@ -352,6 +352,29 @@ pub struct GitStatus {
     pub last_sync: Option<u64>,
 }
 
+/// Target language for [`XRestWorkspace::export_code`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum CodeLanguage {
+    Curl,
+    /// Node.js, axios.
+    Axios,
+    /// `java.net.http.HttpClient`.
+    Java,
+    /// Kotlin, OkHttp.
+    Kotlin,
+}
+
+impl From<CodeLanguage> for core::CodeLanguage {
+    fn from(l: CodeLanguage) -> Self {
+        match l {
+            CodeLanguage::Curl => core::CodeLanguage::Curl,
+            CodeLanguage::Axios => core::CodeLanguage::Axios,
+            CodeLanguage::Java => core::CodeLanguage::Java,
+            CodeLanguage::Kotlin => core::CodeLanguage::Kotlin,
+        }
+    }
+}
+
 /// Whether saves commit to git by themselves (per user, per workspace; default `Manual`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum GitMode {
@@ -919,6 +942,22 @@ impl XRestWorkspace {
             resolved: p.resolved,
             unresolved: p.unresolved,
         }
+    }
+
+    /// `spec` as code for the selected environment (variables, path/query params, service auth,
+    /// options applied). No I/O: no preflight request (its header is `<preflight token>`), no
+    /// file reads (file fields keep their path), no unsafe-environment confirmation. Secrets stay
+    /// `{{secret.KEY}}` placeholders unless `include_secrets`, which fails with `MissingSecrets`
+    /// when one has no value.
+    pub fn export_code(
+        &self,
+        spec: RequestSpec,
+        language: CodeLanguage,
+        include_secrets: bool,
+    ) -> Result<String> {
+        Ok(self
+            .lock()
+            .export_code(&spec.into(), language.into(), include_secrets)?)
     }
 
     pub fn selected_environment(&self) -> Option<String> {

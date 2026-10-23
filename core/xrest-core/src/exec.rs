@@ -369,7 +369,7 @@ pub(crate) fn build_url(raw: &str, params: &[(String, String)]) -> Result<Url> {
     Ok(url)
 }
 
-fn set_query(url: &mut Url, params: &[(String, String)]) {
+pub(crate) fn set_query(url: &mut Url, params: &[(String, String)]) {
     if params.is_empty() {
         return;
     }
