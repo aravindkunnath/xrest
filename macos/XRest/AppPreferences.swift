@@ -121,3 +121,29 @@ struct AppPreferences {
             verifyTls: verifyTLS, proxy: proxy)
     }
 }
+
+/// The app-wide zoom as an observable value. `Font.mono` and the code editor read it, so SwiftUI
+/// re-renders exactly the views that show zoomed text when it changes, without rebuilding the view
+/// tree (which would discard open panels' unsaved edits).
+@Observable
+final class ZoomStore {
+    static let shared = ZoomStore()
+
+    private(set) var zoom: Double
+    @ObservationIgnored private var observer: NSObjectProtocol?
+
+    init(defaults: UserDefaults = .standard) {
+        zoom = AppPreferences(defaults: defaults).zoom
+        observer = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: defaults, queue: .main
+        ) { [weak self] _ in
+            self?.refresh(from: defaults)
+        }
+    }
+
+    /// Re-read the zoom; observers are only invalidated when the value actually changed.
+    func refresh(from defaults: UserDefaults = .standard) {
+        let value = AppPreferences(defaults: defaults).zoom
+        if value != zoom { zoom = value }
+    }
+}

@@ -78,7 +78,8 @@ extension Font {
     /// JetBrains Mono when installed, otherwise the system monospaced face.
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         // Zoom (Settings) scales code and body text; chrome stays at its designed size.
-        let size = size * CGFloat(AppPreferences.currentZoom)
+        // Read from the observable store so views using this font re-render on a zoom change.
+        let size = size * CGFloat(ZoomStore.shared.zoom)
         if NSFont(name: "JetBrains Mono", size: size) != nil {
             return .custom("JetBrains Mono", size: size).weight(weight)
         }

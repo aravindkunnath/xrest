@@ -7,6 +7,11 @@ import SwiftUI
 struct CodeEditor: NSViewRepresentable {
     @Binding var text: String
     var isEditable = true
+    /// Read from the observable store while the parent builds this view, so a zoom change makes
+    /// SwiftUI call `updateNSView`.
+    var zoom = ZoomStore.shared.zoom
+
+    static func fontSize(zoom: Double) -> CGFloat { 12 * CGFloat(zoom) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
@@ -30,7 +35,7 @@ struct CodeEditor: NSViewRepresentable {
         textView.usesFindBar = true
         textView.isIncrementalSearchingEnabled = true
         textView.string = text
-        JSONHighlighter.apply(to: textView)
+        JSONHighlighter.apply(to: textView, zoom: zoom)
         return scroll
     }
 
@@ -40,7 +45,9 @@ struct CodeEditor: NSViewRepresentable {
         textView.isEditable = isEditable
         if textView.string != text {
             textView.string = text
-            JSONHighlighter.apply(to: textView)
+            JSONHighlighter.apply(to: textView, zoom: zoom)
+        } else if (textView.font?.pointSize).map({ abs($0 - Self.fontSize(zoom: zoom)) > 0.01 }) ?? true {
+            JSONHighlighter.apply(to: textView, zoom: zoom)
         }
     }
 
@@ -57,7 +64,7 @@ struct CodeEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            JSONHighlighter.apply(to: textView)
+            JSONHighlighter.apply(to: textView, zoom: parent.zoom)
             if parent.text != textView.string {
                 parent.text = textView.string
             }
@@ -71,10 +78,10 @@ enum JSONHighlighter {
         pattern:
             #"("(?:\\.|[^"\\])*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b"#)
 
-    static func apply(to textView: NSTextView) {
+    static func apply(to textView: NSTextView, zoom: Double = ZoomStore.shared.zoom) {
         guard let storage = textView.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
-        let font = NSFont.monospacedSystemFont(ofSize: 12 * CGFloat(AppPreferences.currentZoom), weight: .regular)
+        let font = NSFont.monospacedSystemFont(ofSize: CodeEditor.fontSize(zoom: zoom), weight: .regular)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineHeightMultiple = 1.35
 

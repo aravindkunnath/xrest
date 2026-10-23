@@ -40,6 +40,8 @@ struct EnvironmentsEditorView: View {
                 grid = EnvironmentGrid(environments: model.environments)
                 loaded = true
             }
+            // Defensive: a panel that appears clean must not leave a stale dirty flag behind.
+            model.panelDirty = isDirty
         }
         .onChange(of: isDirty) { _, dirty in model.panelDirty = dirty }
         .onAppear {

@@ -58,6 +58,8 @@ struct ServiceSettingsView: View {
         .onChange(of: isDirty) { _, dirty in model.panelDirty = dirty }
         .onAppear {
             model.registerPanelSave { if isDirty && errors.isEmpty { save() } }
+            // Defensive: a panel that appears clean must not leave a stale dirty flag behind.
+            model.panelDirty = isDirty
         }
         .onDisappear { model.registerPanelSave(nil) }
         .confirmationDialog("Discard unsaved changes?", isPresented: $confirmClose) {

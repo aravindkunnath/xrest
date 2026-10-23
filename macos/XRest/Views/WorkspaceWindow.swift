@@ -10,7 +10,6 @@ struct WorkspaceWindow: View {
     @State private var folderToInitialise: URL?
     @State private var showNewService = false
     @AppStorage(AppPreferences.Key.appearance) private var appearance = AppearanceMode.system.rawValue
-    @AppStorage(AppPreferences.Key.zoom) private var zoom = 1.0
 
     /// Launch restore runs once, in the first window the app opens.
     @MainActor private static var launchRestoreDone = false
@@ -18,9 +17,9 @@ struct WorkspaceWindow: View {
     var body: some View {
         Group {
             if let model {
-                // The zoom is part of the identity so every font and editor is rebuilt at the new
-                // size; the model (selection, draft, response) lives above and is untouched.
-                WorkspaceView(model: model).id(zoom)
+                // Zoom re-renders through `ZoomStore`; the tree is never rebuilt, so unsaved panel
+                // edits survive a zoom change.
+                WorkspaceView(model: model)
             } else {
                 WelcomeView(open: chooseWorkspace, newFromOpenAPI: { showNewService = true }, openRecent: { url = $0 })
             }

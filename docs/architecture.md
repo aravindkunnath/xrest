@@ -511,7 +511,9 @@ Table `history` (`id` autoincrement, newest = highest): `created_at` (unix ms), 
 * Settings (⌘,) are `UserDefaults` keys (`AppPreferences`): appearance (System/Light/Dark, applied with
   `.preferredColorScheme`; `Theme` tokens are dark/light pairs), zoom (scales monospaced/code text and
   the editors), default HTTP options (`HttpOptions` via `set_http_options`) and max versions. They are
-  pushed into every open workspace on open and on change. Never stored in a workspace.
+  pushed into every open workspace on open and on change. Never stored in a workspace. Zoom is
+  published through the observable `ZoomStore` (read by `Font.mono` and `CodeEditor`), so views re-render
+  in place; the view tree is never rebuilt, and open panels keep their unsaved edits.
 * Session files: `~/Library/Application Support/XRest/sessions/<sha256(path)>.json` holds the workspace
   path, selected item and the unsaved draft. Written (debounced) on change and on
   `willTerminate`; deleted on a clean window close with no unsaved draft. At launch the first window
