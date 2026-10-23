@@ -55,6 +55,8 @@ struct RequestDraft: Equatable {
     var authenticated: Bool
     var params: [KeyValueRow]
     var headers: [KeyValueRow]
+    /// Not editable here yet; carried along untouched.
+    var pathParams: [NameValue]
 
     var bodyKind: BodyKind = .none
     /// Content of a Text or JSON body.
@@ -82,6 +84,7 @@ struct RequestDraft: Equatable {
         authenticated = spec.authenticated
         params = spec.params.map(KeyValueRow.init)
         headers = spec.headers.map(KeyValueRow.init)
+        pathParams = spec.pathParams
         options = spec.options
         preflight = spec.preflight
 
@@ -113,7 +116,7 @@ struct RequestDraft: Equatable {
             name: "New Request",
             spec: RequestSpec(
                 method: "GET", url: "{{BASE_URL}}/", authenticated: false,
-                params: [], headers: [], body: .empty, options: defaultOptions,
+                params: [], pathParams: [], headers: [], body: .empty, options: defaultOptions,
                 preflight: nil))
     }
 
@@ -142,7 +145,7 @@ struct RequestDraft: Equatable {
     var spec: RequestSpec {
         RequestSpec(
             method: method, url: url, authenticated: authenticated,
-            params: params.map(\.nameValue), headers: headers.map(\.nameValue),
+            params: params.map(\.nameValue), pathParams: pathParams, headers: headers.map(\.nameValue),
             body: requestBody, options: options, preflight: preflight)
     }
 

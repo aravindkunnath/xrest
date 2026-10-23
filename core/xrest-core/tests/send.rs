@@ -152,6 +152,28 @@ async fn reports_unresolved_variables_but_still_sends() {
 }
 
 #[tokio::test]
+async fn path_params_fill_the_url_path_and_missing_ones_are_reported() {
+    let f = fixture().await;
+    Mock::given(wiremock::matchers::any())
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/users/{id}/files/{name}/{gone}?k={k}");
+    s.path_params = vec![
+        NameValue::new("id", "{{USER_ID}}"),
+        NameValue::new("name", "a b"),
+    ];
+    let prepared = f.ws.prepare_send(&s, false).unwrap();
+    assert_eq!(prepared.unresolved_variables(), ["{gone}"]);
+    prepared.execute().await.unwrap();
+    let got = f.server.received_requests().await.unwrap();
+    assert_eq!(
+        got[0].url.as_str().split_once("/users").unwrap().1,
+        "/42/files/a%20b/%7Bgone%7D?k={k}"
+    );
+}
+
+#[tokio::test]
 async fn unsafe_environment_requires_explicit_confirmation() {
     let mut f = fixture().await;
     Mock::given(path("/danger"))

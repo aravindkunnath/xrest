@@ -98,6 +98,7 @@ impl Workspace {
             url: parsed.url,
             authenticated: self.service.is_authenticated,
             params: parsed.params,
+            path_params: vec![],
             headers: parsed.headers,
             body: parsed.body,
             options: parsed.options,

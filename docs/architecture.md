@@ -75,7 +75,8 @@ Field names are `camelCase`, matching the legacy Go app. Unknown fields are igno
 | Version | Written by | Notes |
 | --- | --- | --- |
 | 0 (key absent) | legacy Go app | bodies are plain strings |
-| 1 | this core | typed `body`, per-request `options` |
+| 1 | earlier core | typed `body`, per-request `options` |
+| 2 | this core | `pathParams` on requests |
 
 * A workspace with a **newer** version is refused (`UnsupportedFormat`) instead of being partially
   read and then rewritten with data loss.
@@ -100,7 +101,7 @@ Field names are `camelCase`, matching the legacy Go app. Unknown fields are igno
 ### `service.yaml`
 
 ```yaml
-formatVersion: 1
+formatVersion: 2
 id: s-<uuid>
 name: Petstore
 isAuthenticated: true          # master switch for service-level auth
@@ -150,6 +151,7 @@ authenticated: true
 authType: bearer
 metadata: { version: "1.0", lastUpdated: 1700000001 }
 params:  [ { name: limit, value: "10", enabled: true, type: plain } ]
+pathParams: []                 # omitted when empty; values for {name} tokens in the URL path
 headers: []
 body: { type: json, content: '{"name": "Rex"}' }   # omitted when there is no body
 options: { timeoutMs: 5000 }   # omitted when empty; see "Request bodies and options"
@@ -279,14 +281,18 @@ ISO 8601; the core only reads a relative lifetime (`expires_in` style).
    `unresolved_variables`.
 4. Resolve `{{secret.KEY}}` through the `SecretStore`; any missing key fails the send with
    `MissingSecrets` before a request is made.
-5. Merge params into the URL query (a param replaces a same-named pair already in the URL;
+5. Replace `{name}` tokens in the URL **path** (not host, query, fragment or `{{...}}`) with the
+   enabled `pathParams` entry of that name: its value is interpolated (variables and secrets) and
+   percent-encoded as one path segment (`/` and space are escaped). A token with no enabled
+   param stays verbatim and is reported in `unresolved_variables` as `{name}`.
+6. Merge params into the URL query (a param replaces a same-named pair already in the URL;
    repeated params are kept). Only `http`/`https` URLs are accepted.
-6. Execute: preflight token (cached) is written to its header, then service auth
+7. Execute: preflight token (cached) is written to its header, then service auth
    (bearer/basic/apikey header or query) is applied, then a default `Content-Type` is added from
    the body type if none was set (see "Request bodies and options"). Files referenced by the body
    are read during preparation, inside the workspace only. The request's `options` are merged over
    the app's `HttpOptions`.
-7. Return the response. Non-2xx statuses are responses, not errors. Binary content types and
+8. Return the response. Non-2xx statuses are responses, not errors. Binary content types and
    non-UTF-8 bodies are base64 (`body_is_base64`); JSON bodies also get `pretty_body`.
 
 ## FFI API (`xrest-ffi`)

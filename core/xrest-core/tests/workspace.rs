@@ -420,3 +420,46 @@ fn typed_body_and_options_persist_through_endpoint_versions() {
     assert_eq!(versions.len(), 2);
     assert_eq!(versions[1].config.spec(), s);
 }
+
+#[test]
+fn format_1_workspace_opens_and_is_stamped_2_on_first_save() {
+    let dir = tempfile::tempdir().unwrap();
+    Workspace::create(dir.path(), "svc").unwrap();
+    let path = dir.path().join("service.yaml");
+    let yaml = fs::read_to_string(&path)
+        .unwrap()
+        .replace("formatVersion: 2", "formatVersion: 1");
+    fs::write(&path, yaml).unwrap();
+
+    let mut ws = Workspace::open(dir.path()).unwrap();
+    assert_eq!(ws.format_version(), 1);
+    let mut s = spec("http://h.io/u/{id}");
+    s.path_params = vec![NameValue::new("id", "7")];
+    let ep = ws.create_endpoint("by id", s.clone()).unwrap();
+    assert_eq!(ws.format_version(), 2);
+    let after = fs::read_to_string(&path).unwrap();
+    assert!(after.contains("formatVersion: 2"), "{after}");
+
+    let reopened = Workspace::open(dir.path()).unwrap();
+    let got = reopened.endpoint(&ep.id).unwrap();
+    assert_eq!(got.spec().path_params, s.path_params);
+}
+
+#[test]
+fn format_3_workspace_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    Workspace::create(dir.path(), "svc").unwrap();
+    let path = dir.path().join("service.yaml");
+    let yaml = fs::read_to_string(&path)
+        .unwrap()
+        .replace("formatVersion: 2", "formatVersion: 3");
+    fs::write(&path, yaml).unwrap();
+    assert!(matches!(
+        Workspace::open(dir.path()),
+        Err(Error::UnsupportedFormat {
+            found: 3,
+            supported: 2,
+            ..
+        })
+    ));
+}

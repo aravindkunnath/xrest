@@ -224,6 +224,9 @@ pub struct RequestSpec {
     pub authenticated: bool,
     #[serde(default)]
     pub params: Vec<NameValue>,
+    /// Values for `{name}` tokens in the URL path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path_params: Vec<NameValue>,
     #[serde(default)]
     pub headers: Vec<NameValue>,
     #[serde(
@@ -245,6 +248,7 @@ impl Default for RequestSpec {
             url: String::new(),
             authenticated: false,
             params: vec![],
+            path_params: vec![],
             headers: vec![],
             body: Body::None,
             options: RequestOptions::default(),
@@ -334,6 +338,21 @@ mod tests {
         .unwrap();
         assert!(!yaml.contains("body"), "{yaml}");
         assert!(!yaml.contains("options"), "{yaml}");
+    }
+
+    #[test]
+    fn path_params_round_trip_and_are_omitted_when_empty() {
+        let s = RequestSpec {
+            url: "http://x/{id}".into(),
+            path_params: vec![NameValue::new("id", "7")],
+            ..Default::default()
+        };
+        let yaml = serde_yaml_ng::to_string(&s).unwrap();
+        assert!(yaml.contains("pathParams"), "{yaml}");
+        assert_eq!(spec(&yaml).path_params, s.path_params);
+        assert!(spec("url: http://x\n").path_params.is_empty());
+        let plain = serde_yaml_ng::to_string(&RequestSpec::default()).unwrap();
+        assert!(!plain.contains("pathParams"), "{plain}");
     }
 
     #[test]

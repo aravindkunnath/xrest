@@ -10,6 +10,7 @@ fn spec(url: &str) -> RequestSpec {
         url: url.into(),
         authenticated: false,
         params: vec![],
+        path_params: vec![],
         headers: vec![],
         body: RequestBody::Empty,
         options: RequestOptions::default(),
@@ -122,13 +123,14 @@ fn typed_body_and_options_round_trip_through_ffi() {
     let dir = tempfile::tempdir().unwrap();
     let ws =
         XRestWorkspace::create_workspace(dir.path().display().to_string(), "svc".into()).unwrap();
-    assert_eq!(ws.service().format_version, 1);
+    assert_eq!(ws.service().format_version, 2);
     let mut s = spec("http://h.io/x");
     let mut file = nv("f", "data/a.png");
     file.kind = "file".into();
     s.body = RequestBody::Multipart {
         fields: vec![nv("a", "1"), file],
     };
+    s.path_params = vec![nv("id", "7")];
     s.options = RequestOptions {
         timeout_ms: Some(2000),
         follow_redirects: None,
@@ -145,6 +147,8 @@ fn typed_body_and_options_round_trip_through_ffi() {
         }
         other => panic!("unexpected body {other:?}"),
     }
+    assert_eq!(back.path_params.len(), 1);
+    assert_eq!(back.path_params[0].name, "id");
     assert_eq!(back.options.timeout_ms, Some(2000));
     assert_eq!(back.options.verify_tls, Some(false));
 }
@@ -156,11 +160,11 @@ fn newer_workspace_format_maps_to_its_own_error() {
     let path = dir.path().join("service.yaml");
     let yaml = std::fs::read_to_string(&path)
         .unwrap()
-        .replace("formatVersion: 1", "formatVersion: 99");
+        .replace("formatVersion: 2", "formatVersion: 99");
     std::fs::write(&path, yaml).unwrap();
     match XRestWorkspace::open_workspace(dir.path().display().to_string()) {
         Err(XRestError::UnsupportedFormat { found, supported }) => {
-            assert_eq!((found, supported), (99, 1))
+            assert_eq!((found, supported), (99, 2))
         }
         Err(e) => panic!("unexpected error {e:?}"),
         Ok(_) => panic!("a newer format must not open"),

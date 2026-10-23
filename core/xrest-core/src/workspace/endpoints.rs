@@ -45,6 +45,7 @@ impl Workspace {
                 last_updated: now,
             },
             params: vec![],
+            path_params: vec![],
             headers: vec![],
             body: Body::None,
             options: RequestOptions::default(),

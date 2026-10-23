@@ -22,9 +22,10 @@ pub use service::*;
 ///
 /// - `0`: written by the legacy Go app (no `formatVersion` key); bodies are plain strings.
 /// - `1`: typed request bodies and per-request options.
+/// - `2`: `pathParams` on requests.
 ///
 /// Workspaces with a newer version are refused rather than partially read and rewritten.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 pub(crate) fn yes() -> bool {
     true

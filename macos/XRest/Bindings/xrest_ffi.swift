@@ -1673,6 +1673,10 @@ public struct RequestSpec: Equatable, Hashable {
     public var url: String
     public var authenticated: Bool
     public var params: [NameValue]
+    /**
+     * Values for `{name}` tokens in the URL path.
+     */
+    public var pathParams: [NameValue]
     public var headers: [NameValue]
     public var body: RequestBody
     public var options: RequestOptions
@@ -1680,11 +1684,15 @@ public struct RequestSpec: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(method: String, url: String, authenticated: Bool, params: [NameValue], headers: [NameValue], body: RequestBody, options: RequestOptions, preflight: Preflight?) {
+    public init(method: String, url: String, authenticated: Bool, params: [NameValue], 
+        /**
+         * Values for `{name}` tokens in the URL path.
+         */pathParams: [NameValue], headers: [NameValue], body: RequestBody, options: RequestOptions, preflight: Preflight?) {
         self.method = method
         self.url = url
         self.authenticated = authenticated
         self.params = params
+        self.pathParams = pathParams
         self.headers = headers
         self.body = body
         self.options = options
@@ -1711,6 +1719,7 @@ public struct FfiConverterTypeRequestSpec: FfiConverterRustBuffer {
                 url: FfiConverterString.read(from: &buf), 
                 authenticated: FfiConverterBool.read(from: &buf), 
                 params: FfiConverterSequenceTypeNameValue.read(from: &buf), 
+                pathParams: FfiConverterSequenceTypeNameValue.read(from: &buf), 
                 headers: FfiConverterSequenceTypeNameValue.read(from: &buf), 
                 body: FfiConverterTypeRequestBody.read(from: &buf), 
                 options: FfiConverterTypeRequestOptions.read(from: &buf), 
@@ -1723,6 +1732,7 @@ public struct FfiConverterTypeRequestSpec: FfiConverterRustBuffer {
         FfiConverterString.write(value.url, into: &buf)
         FfiConverterBool.write(value.authenticated, into: &buf)
         FfiConverterSequenceTypeNameValue.write(value.params, into: &buf)
+        FfiConverterSequenceTypeNameValue.write(value.pathParams, into: &buf)
         FfiConverterSequenceTypeNameValue.write(value.headers, into: &buf)
         FfiConverterTypeRequestBody.write(value.body, into: &buf)
         FfiConverterTypeRequestOptions.write(value.options, into: &buf)

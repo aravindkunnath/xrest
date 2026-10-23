@@ -135,6 +135,7 @@ mod tests {
             authenticated: false,
             auth_type: "none".into(),
             params: vec![],
+            path_params: vec![],
             headers: vec![],
             body: Body::None,
             options: Default::default(),

@@ -47,6 +47,8 @@ pub struct Endpoint {
     pub metadata: EndpointMetadata,
     #[serde(default)]
     pub params: Vec<NameValue>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path_params: Vec<NameValue>,
     #[serde(default)]
     pub headers: Vec<NameValue>,
     #[serde(
@@ -71,6 +73,7 @@ impl Endpoint {
             url: self.url.clone(),
             authenticated: self.authenticated,
             params: self.params.clone(),
+            path_params: self.path_params.clone(),
             headers: self.headers.clone(),
             body: self.body.clone(),
             options: self.options.clone(),
@@ -83,6 +86,7 @@ impl Endpoint {
         self.url = spec.url;
         self.authenticated = spec.authenticated;
         self.params = spec.params;
+        self.path_params = spec.path_params;
         self.headers = spec.headers;
         self.body = spec.body;
         self.options = spec.options;
@@ -116,6 +120,8 @@ pub struct RequestConfig {
     pub authenticated: bool,
     pub auth_type: String,
     pub params: Vec<NameValue>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path_params: Vec<NameValue>,
     pub headers: Vec<NameValue>,
     #[serde(
         default,
@@ -137,6 +143,7 @@ impl RequestConfig {
             authenticated: ep.authenticated,
             auth_type: ep.auth_type.clone(),
             params: ep.params.clone(),
+            path_params: ep.path_params.clone(),
             headers: ep.headers.clone(),
             body: ep.body.clone(),
             options: ep.options.clone(),
@@ -150,6 +157,7 @@ impl RequestConfig {
             url: self.url.clone(),
             authenticated: self.authenticated,
             params: self.params.clone(),
+            path_params: self.path_params.clone(),
             headers: self.headers.clone(),
             body: self.body.clone(),
             options: self.options.clone(),
@@ -195,5 +203,42 @@ mod tests {
         let legacy: ScratchRequest =
             serde_yaml_ng::from_str("id: r-2\nurl: http://x\nbody: plain text\n").unwrap();
         assert_eq!(legacy.spec.body, Body::from_text("plain text"));
+    }
+
+    #[test]
+    fn path_params_survive_endpoint_scratch_and_snapshot() {
+        let spec = RequestSpec {
+            url: "http://x/{id}".into(),
+            path_params: vec![NameValue::new("id", "7")],
+            ..Default::default()
+        };
+        let scratch = ScratchRequest {
+            id: "r-1".into(),
+            name: "n".into(),
+            spec: spec.clone(),
+            created_at: 0,
+            updated_at: 0,
+        };
+        let yaml = serde_yaml_ng::to_string(&scratch).unwrap();
+        assert!(yaml.contains("pathParams"), "{yaml}");
+        let back: ScratchRequest = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(back.spec.path_params, spec.path_params);
+
+        let mut ep: Endpoint = serde_yaml_ng::from_str("id: e-1\nurl: http://x\n").unwrap();
+        assert!(ep.path_params.is_empty());
+        ep.apply_spec(spec.clone());
+        assert_eq!(ep.spec(), spec);
+        let yaml = serde_yaml_ng::to_string(&ep).unwrap();
+        let ep2: Endpoint = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(ep2.path_params, spec.path_params);
+
+        let cfg = RequestConfig::from_endpoint(&ep);
+        assert_eq!(cfg.spec(), spec);
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: RequestConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.path_params, spec.path_params);
+        let old = r#"{"method":"GET","url":"u","authenticated":false,"authType":"","params":[],"headers":[]}"#;
+        let old: RequestConfig = serde_json::from_str(old).unwrap();
+        assert!(old.path_params.is_empty());
     }
 }
