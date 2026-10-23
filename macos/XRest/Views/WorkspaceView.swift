@@ -24,6 +24,7 @@ struct WorkspaceView: View {
                     openEnvironments: { model.openPanel(.environments) },
                     openSettings: { model.openPanel(.settings) },
                     openGit: { model.openPanel(.git) },
+                    openHistory: { model.openPanel(.history) },
                     gitBadge: model.gitBadgeVisible)
                 SidebarView(model: model)
                     .frame(width: 280)
@@ -225,6 +226,8 @@ struct MainColumn: View {
                 ServiceSettingsView(model: model)
             } else if model.panel == .git {
                 GitPanelView(model: model)
+            } else if model.panel == .history {
+                HistoryPanelView(model: model)
             } else if model.draft != nil {
                 RequestDetailView(model: model)
             } else {

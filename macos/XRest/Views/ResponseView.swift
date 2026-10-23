@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-private enum ResponseTab: String, CaseIterable, Identifiable {
+enum ResponseTab: String, CaseIterable, Identifiable {
     case pretty = "Pretty"
     case raw = "Raw"
     case headers = "Headers"
@@ -10,32 +10,17 @@ private enum ResponseTab: String, CaseIterable, Identifiable {
 
 struct ResponseView: View {
     let model: WorkspaceModel
-    @State private var tab: ResponseTab = .pretty
-    @State private var showAll = false
 
     var body: some View {
         VStack(spacing: 0) {
             if let response = model.response {
-                summary(response)
-                if !response.unresolvedVariables.isEmpty { unresolvedStrip(response) }
-                switch tab {
-                case .pretty:
-                    prettyView(response)
-                case .raw:
-                    if response.bodyIsBase64 {
-                        rawBinaryView(response)
-                    } else {
-                        textBody(response.body)
-                    }
-                case .headers:
-                    headersView(response)
-                }
+                ResponseContent(response: response)
             } else if model.wasCancelled {
-                placeholder(
+                responsePlaceholder(
                     "Cancelled", detail: "The request was cancelled before a response arrived.",
                     symbol: "xmark.circle", tint: Theme.muted)
             } else if let error = model.sendError {
-                placeholder(
+                responsePlaceholder(
                     "Request failed", detail: error, symbol: "exclamationmark.octagon",
                     tint: Theme.red
                 ) {
@@ -50,14 +35,65 @@ struct ResponseView: View {
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                placeholder(
+                responsePlaceholder(
                     "No response yet", detail: "Press Send (⌘↵) to run the request.",
                     symbol: "arrow.down.circle", tint: Theme.muted)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.response)
-        .onChange(of: model.response) { showAll = false }
+    }
+}
+
+func responsePlaceholder<Extra: View>(
+    _ title: String, detail: String, symbol: String, tint: Color,
+    @ViewBuilder extra: () -> Extra = { EmptyView() }
+) -> some View {
+    VStack(spacing: 8) {
+        Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(tint)
+        Text(title).font(.ui(13, weight: .medium)).foregroundStyle(Theme.text)
+        Text(detail)
+            .font(.ui(12))
+            .foregroundStyle(Theme.muted)
+            .multilineTextAlignment(.center)
+            .textSelection(.enabled)
+        extra()
+    }
+    .padding(24)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+}
+
+/// The P0 response viewer for one response (summary bar, Pretty / Raw / Headers). Also used
+/// by the History panel.
+struct ResponseContent: View {
+    let response: HttpResponse
+    @State private var tab: ResponseTab = .pretty
+    @State private var showAll = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            summary(response)
+            if !response.unresolvedVariables.isEmpty { unresolvedStrip(response) }
+            switch tab {
+            case .pretty:
+                prettyView(response)
+            case .raw:
+                if response.bodyIsBase64 {
+                    rawBinaryView(response)
+                } else {
+                    textBody(response.body)
+                }
+            case .headers:
+                headersView(response)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.response)
+        .onChange(of: response) { showAll = false }
+    }
+
+    private func placeholder(_ title: String, detail: String, symbol: String, tint: Color) -> some View {
+        responsePlaceholder(title, detail: detail, symbol: symbol, tint: tint)
     }
 
     private func unresolvedStrip(_ r: HttpResponse) -> some View {
@@ -74,24 +110,6 @@ struct ResponseView: View {
         .background(Theme.amber.opacity(0.1))
         .hairline(.bottom)
         .textSelection(.enabled)
-    }
-
-    private func placeholder<Extra: View>(
-        _ title: String, detail: String, symbol: String, tint: Color,
-        @ViewBuilder extra: () -> Extra = { EmptyView() }
-    ) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(tint)
-            Text(title).font(.ui(13, weight: .medium)).foregroundStyle(Theme.text)
-            Text(detail)
-                .font(.ui(12))
-                .foregroundStyle(Theme.muted)
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
-            extra()
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func summary(_ r: HttpResponse) -> some View {

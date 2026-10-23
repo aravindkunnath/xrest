@@ -6,6 +6,7 @@ struct ActivityRail: View {
     let openEnvironments: () -> Void
     let openSettings: () -> Void
     let openGit: () -> Void
+    let openHistory: () -> Void
     let gitBadge: Bool
 
     private struct Item: Identifiable {
@@ -17,7 +18,7 @@ struct ActivityRail: View {
 
     private let items = [
         Item(id: "Explorer", symbol: "line.3.horizontal", active: true),
-        Item(id: "History", symbol: "clock"),
+        Item(id: "History", symbol: "clock", enabled: true),
         Item(id: "Environments and variables", symbol: "curlybraces", enabled: true),
         Item(id: "Git", symbol: "arrow.triangle.branch", enabled: true),
         Item(id: "Secrets", symbol: "key", enabled: true),
@@ -47,6 +48,7 @@ struct ActivityRail: View {
             case "Environments and variables": openEnvironments()
             case "Settings": openSettings()
             case "Git": openGit()
+            case "History": openHistory()
             default: break
             }
         } label: {

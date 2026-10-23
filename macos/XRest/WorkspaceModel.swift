@@ -12,6 +12,7 @@ enum DetailPanel: Equatable {
     case environments
     case settings
     case git
+    case history
 }
 
 /// State of the last "Test preflight" run.
@@ -87,6 +88,19 @@ final class WorkspaceModel {
     var warningBanner: String?
     private(set) var autoCommit = false
     @ObservationIgnored private(set) var gitRefreshTask: Task<Void, Never>?
+    // History panel.
+    @ObservationIgnored private var historyStore: HistoryStore?
+    private(set) var historyRows: [HistorySummary] = []
+    private(set) var historyPaging = HistoryPaging()
+    private(set) var historyDetail: HistoryEntry?
+    private(set) var historyError: String?
+    var historyNotice: String?
+    var pendingClearHistory = false
+    var historyFilter = HistoryFilterState()
+    var historyPageSize: Int {
+        get { historyPaging.pageSize }
+        set { historyPaging = HistoryPaging(pageSize: newValue) }
+    }
     /// Filters the sidebar lists.
     var searchText = ""
 
@@ -328,6 +342,97 @@ final class WorkspaceModel {
         }
     }
 
+    // MARK: History
+
+    /// Attach the shared history database (called on every workspace open). A failed open is
+    /// reported by the History panel; sending keeps working without history.
+    func attachHistory(_ store: HistoryStore) {
+        historyStore = store
+        if let history = store.history { core.setHistory(history: history) }
+        historyError = store.error
+    }
+
+    /// Reload the first page with the current filter.
+    func reloadHistory() {
+        historyRows = []
+        historyPaging.reset(total: 0)
+        guard let history = historyStore?.history else {
+            historyError = historyStore?.error ?? "History is not available."
+            historyDetail = nil
+            return
+        }
+        historyError = nil
+        let filter = historyFilter.filter(serviceId: service.id)
+        do {
+            historyPaging.reset(total: Int(try history.count(filter: filter)))
+            try appendHistoryPage(history, filter)
+            if let id = historyDetail?.id, !historyRows.contains(where: { $0.id == id }) {
+                historyDetail = nil
+            }
+        } catch {
+            historyError = describe(error)
+        }
+    }
+
+    func loadMoreHistory() {
+        guard historyPaging.hasMore, let history = historyStore?.history else { return }
+        do {
+            try appendHistoryPage(history, historyFilter.filter(serviceId: service.id))
+        } catch {
+            historyError = describe(error)
+        }
+    }
+
+    private func appendHistoryPage(_ history: XRestHistory, _ filter: HistoryFilter) throws {
+        let page = try history.list(
+            filter: filter, limit: UInt32(historyPaging.pageSize), offset: UInt32(historyPaging.nextOffset))
+        historyRows += page
+        historyPaging.didLoad(count: page.count)
+    }
+
+    func selectHistory(_ id: Int64?) {
+        historyNotice = nil
+        guard let id else {
+            historyDetail = nil
+            return
+        }
+        do {
+            historyDetail = try historyStore?.history?.get(id: id)
+        } catch {
+            historyDetail = nil
+            historyError = describe(error)
+        }
+    }
+
+    func requestClearHistory() { pendingClearHistory = true }
+
+    func confirmClearHistory() {
+        pendingClearHistory = false
+        do {
+            try historyStore?.history?.clear()
+            historyDetail = nil
+            reloadHistory()
+        } catch {
+            historyError = describe(error)
+        }
+    }
+
+    /// Create a scratch request from the selected entry and open it in the editor.
+    func openHistoryAsScratch() {
+        guard let entry = historyDetail, flush() else { return }
+        let converted = HistoryScratch.make(from: entry)
+        do {
+            let created = try core.createScratch(name: converted.name, spec: converted.spec)
+            closePanel()
+            reload()
+            selection = .scratch(created.id)
+            loadDraft(for: selection)
+            if let notice = converted.notice { warningBanner = notice }
+        } catch {
+            errorMessage = describe(error)
+        }
+    }
+
     // MARK: Versions
 
     /// Reload the versions list for the open endpoint (empty for scratch requests).
@@ -495,6 +600,7 @@ final class WorkspaceModel {
         guard flush() else { return }
         panel = new
         preflightTest = .idle
+        if new == .history { reloadHistory() }
     }
 
     func closePanel() {
@@ -651,6 +757,7 @@ final class WorkspaceModel {
                 isSending = false
                 sendTask = nil
             }
+            if panel == .history { reloadHistory() }
         }
         do {
             // Saved endpoints are attributed in the execution history; scratch requests are not.

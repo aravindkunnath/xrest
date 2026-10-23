@@ -60,7 +60,9 @@ struct WorkspaceWindow: View {
             return
         }
         do {
-            model = try WorkspaceModel(url: url)
+            let opened = try WorkspaceModel(url: url)
+            opened.attachHistory(HistoryStore.shared)
+            model = opened
             RecentStore.shared.record(url)
         } catch XRestError.InvalidInput {
             // Not a workspace: offer to create one if the folder looks usable.
@@ -77,7 +79,9 @@ struct WorkspaceWindow: View {
         guard let target = folderToInitialise else { return }
         folderToInitialise = nil
         do {
-            model = try WorkspaceModel.create(at: target)
+            let created = try WorkspaceModel.create(at: target)
+            created.attachHistory(HistoryStore.shared)
+            model = created
             RecentStore.shared.record(target)
         } catch {
             errorMessage = describe(error)
