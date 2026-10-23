@@ -7,11 +7,24 @@ struct WorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             TitleBar(model: model)
+            if let banner = model.warningBanner {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
+                    Text(banner).font(.ui(12)).lineLimit(2)
+                    Spacer()
+                    Button("Dismiss") { model.warningBanner = nil }.controlSize(.small)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Theme.amberFill)
+                .hairline(.bottom, color: Theme.amberBorder)
+            }
             HStack(spacing: 0) {
                 ActivityRail(
                     openSecrets: { model.openSecrets() },
                     openEnvironments: { model.openPanel(.environments) },
-                    openSettings: { model.openPanel(.settings) })
+                    openSettings: { model.openPanel(.settings) },
+                    openGit: { model.openPanel(.git) },
+                    gitBadge: model.gitBadgeVisible)
                 SidebarView(model: model)
                     .frame(width: 280)
                 MainColumn(model: model)
@@ -26,6 +39,13 @@ struct WorkspaceView: View {
         .tint(Theme.amber)
         .ignoresSafeArea()
         .navigationTitle(model.service.name)
+        .task {
+            // Badge refresh: on open, then every 30 s (status is local-only and cheap).
+            while !Task.isCancelled {
+                await model.refreshGitStatus()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
         .focusedSceneValue(\.workspaceModel, model)
         .alert("Error", isPresented: errorBinding) {
             Button("OK", role: .cancel) {}
@@ -197,6 +217,8 @@ struct MainColumn: View {
                 EnvironmentsEditorView(model: model)
             } else if model.panel == .settings {
                 ServiceSettingsView(model: model)
+            } else if model.panel == .git {
+                GitPanelView(model: model)
             } else if model.draft != nil {
                 RequestDetailView(model: model)
             } else {

@@ -11,6 +11,7 @@ enum SidebarSelection: Hashable {
 enum DetailPanel: Equatable {
     case environments
     case settings
+    case git
 }
 
 /// State of the last "Test preflight" run.
@@ -74,6 +75,16 @@ final class WorkspaceModel {
     /// Version awaiting the "Restore this version" confirmation.
     private(set) var pendingRestore: Int32?
     var errorMessage: String?
+    // Git panel.
+    private(set) var gitStatus: GitStatus?
+    private(set) var gitBusy: GitAction?
+    private(set) var gitError: String?
+    /// Non-blocking notice (e.g. a pull changed the open request while it had unsaved edits).
+    var gitNotice: String?
+    /// Non-blocking banner for new core warnings such as "auto-commit failed: ...".
+    var warningBanner: String?
+    private(set) var autoCommit = false
+    @ObservationIgnored private(set) var gitRefreshTask: Task<Void, Never>?
     /// Filters the sidebar lists.
     var searchText = ""
 
@@ -93,6 +104,7 @@ final class WorkspaceModel {
         let stored = defaults.object(forKey: Self.maxVersionsKey) as? Int ?? Self.defaultMaxVersions
         opened.setMaxVersions(n: UInt32(clamping: max(stored, 0)))
         service = opened.service()
+        autoCommit = opened.gitMode() == .auto
         reload()
     }
 
@@ -189,6 +201,7 @@ final class WorkspaceModel {
             savedDraft = draft
             endpoints = core.listEndpoints()
             scratch = core.listScratch()
+            afterSave()
             return true
         } catch {
             errorMessage = describe(error)
@@ -213,6 +226,103 @@ final class WorkspaceModel {
             panelSave?()
         } else {
             flush()
+        }
+    }
+
+    // MARK: Git
+
+    enum GitAction: Equatable { case initializing, committing, pulling, pushing, syncing }
+
+    var gitBadgeVisible: Bool { GitBadge.isVisible(gitStatus) }
+    var isGitRepo: Bool { gitStatus?.isRepo ?? false }
+
+    /// After any save: surface new core warnings and refresh the git badge.
+    private func afterSave() {
+        let latest = core.warnings()
+        let fresh = WarningTracker.newEntries(old: warnings, new: latest)
+        warnings = latest
+        if let last = fresh.last { warningBanner = last }
+        scheduleGitRefresh()
+    }
+
+    /// Fire-and-forget refresh; only runs git when the workspace is (or may be) a repo.
+    func scheduleGitRefresh() {
+        if let gitStatus, !gitStatus.isRepo { return }
+        gitRefreshTask = Task { await refreshGitStatus() }
+    }
+
+    func refreshGitStatus() async {
+        do {
+            gitStatus = try await core.gitStatus()
+        } catch {
+            gitError = describe(error)
+        }
+    }
+
+    func setAutoCommit(_ on: Bool) {
+        do {
+            try core.setGitMode(mode: on ? .auto : .manual)
+            autoCommit = on
+        } catch {
+            gitError = describe(error)
+        }
+    }
+
+    func gitInit(remote: String?) async {
+        let trimmed = remote?.trimmingCharacters(in: .whitespaces)
+        await runGit(.initializing) {
+            try await $0.gitInit(remote: (trimmed?.isEmpty ?? true) ? nil : trimmed)
+        }
+    }
+
+    /// An empty `message` uses the generated default.
+    func gitCommit(message: String) async {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let final = text.isEmpty ? GitFormat.defaultCommitMessage(gitStatus?.uncommitted ?? []) : text
+        await runGit(.committing) { _ = try await $0.gitCommit(message: final) }
+    }
+
+    func gitPush() async { await runGit(.pushing) { try await $0.gitPush() } }
+
+    func gitPull() async { await runGit(.pulling, reloads: true) { try await $0.gitPull() } }
+
+    func gitSync() async { await runGit(.syncing, reloads: true) { try await $0.gitSync() } }
+
+    private func runGit(
+        _ action: GitAction, reloads: Bool = false,
+        _ body: (XRestWorkspace) async throws -> Void
+    ) async {
+        guard gitBusy == nil else { return }
+        gitBusy = action
+        gitError = nil
+        gitNotice = nil
+        let before: Endpoint?
+        if case .endpoint(let id)? = selection { before = endpoints.first { $0.id == id } } else { before = nil }
+        do {
+            try await body(core)
+            if reloads { applyReloadedState(before: before) }
+        } catch {
+            gitError = describe(error)
+            // A failed pull/sync may still have changed nothing; refresh anyway below.
+        }
+        gitBusy = nil
+        await refreshGitStatus()
+    }
+
+    /// The core reloaded from disk (pull/sync); refresh the lists and reconcile the open draft.
+    private func applyReloadedState(before: Endpoint?) {
+        let wasDirty = isDirty
+        reload()
+        guard case .endpoint(let id)? = selection else { return }
+        let after = endpoints.first { $0.id == id }
+        switch GitReload.decide(draftDirty: wasDirty, before: before, after: after) {
+        case .keep: break
+        case .reloadDraft: loadDraft(for: selection)
+        case .closeDeleted:
+            selection = nil
+            loadDraft(for: nil)
+        case .keepEditsWithNotice:
+            gitNotice = "This request changed on disk during the pull. Your unsaved edits were kept."
         }
     }
 
@@ -279,6 +389,7 @@ final class WorkspaceModel {
         do {
             let restored = try core.restoreEndpointVersion(id: id, version: version)
             endpoints = core.listEndpoints()
+            afterSave()
             loadDraft(for: selection)
             loadVersions()
             selectVersion(restored.lastVersion)
@@ -320,6 +431,7 @@ final class WorkspaceModel {
         do {
             let ep = try core.promoteScratch(id: id, name: nil)
             reload()
+            afterSave()
             selection = .endpoint(ep.id)
             loadDraft(for: selection)
         } catch {
@@ -380,11 +492,13 @@ final class WorkspaceModel {
     func saveEnvironments(_ envs: [EnvironmentConfig]) throws {
         try core.saveEnvironments(envs: envs)
         reload()
+        afterSave()
     }
 
     func saveServiceSettings(_ settings: ServiceSettings) throws {
         try core.updateServiceSettings(settings: settings)
         reload()
+        afterSave()
     }
 
     /// Run a preflight once (behind the unsafe confirmation when the environment is unsafe).

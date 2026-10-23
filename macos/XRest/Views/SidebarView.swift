@@ -5,6 +5,8 @@ struct ActivityRail: View {
     let openSecrets: () -> Void
     let openEnvironments: () -> Void
     let openSettings: () -> Void
+    let openGit: () -> Void
+    let gitBadge: Bool
 
     private struct Item: Identifiable {
         let id: String
@@ -17,7 +19,7 @@ struct ActivityRail: View {
         Item(id: "Explorer", symbol: "line.3.horizontal", active: true),
         Item(id: "History", symbol: "clock"),
         Item(id: "Environments and variables", symbol: "curlybraces", enabled: true),
-        Item(id: "Git", symbol: "arrow.triangle.branch"),
+        Item(id: "Git", symbol: "arrow.triangle.branch", enabled: true),
         Item(id: "Secrets", symbol: "key", enabled: true),
     ]
 
@@ -44,6 +46,7 @@ struct ActivityRail: View {
             case "Secrets": openSecrets()
             case "Environments and variables": openEnvironments()
             case "Settings": openSettings()
+            case "Git": openGit()
             default: break
             }
         } label: {
@@ -52,9 +55,14 @@ struct ActivityRail: View {
                 .foregroundStyle(active ? Theme.amber : Theme.muted)
                 .frame(width: 34, height: 34)
                 .background(RoundedRectangle(cornerRadius: 8).fill(active ? Theme.selected : .clear))
+                .overlay(alignment: .topTrailing) {
+                    if label == "Git" && gitBadge {
+                        Circle().fill(Theme.amber).frame(width: 8, height: 8).padding(5)
+                    }
+                }
         }
         .buttonStyle(HoverButtonStyle(radius: 8))
-        .accessibilityLabel(label)
+        .accessibilityLabel(label == "Git" && gitBadge ? "Git, uncommitted or unpushed changes" : label)
         .help(active || enabled ? label : "\(label) (coming soon)")
     }
 }
