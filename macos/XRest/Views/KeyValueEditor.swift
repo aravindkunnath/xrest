@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Editable list of name/value rows (params, headers and form fields).
+/// Editable list of name/value rows (params, headers and form fields), laid out like the mockup's
+/// KEY / VALUE grid.
 ///
 /// With `chooseFile` set, each row can switch between a text value and a file (multipart
 /// uploads); `chooseFile` returns the picked path, or nil if the user cancelled.
@@ -10,45 +11,105 @@ struct KeyValueEditor: View {
     var chooseFile: (() -> String?)? = nil
 
     var body: some View {
-        List {
-            ForEach($rows) { $row in
+        ScrollView {
+            VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    Toggle("Enabled", isOn: $row.enabled)
-                        .labelsHidden()
-                    TextField(namePlaceholder, text: $row.name)
-                        .textFieldStyle(.roundedBorder)
-                    if chooseFile != nil {
-                        Picker("Kind", selection: $row.kind) {
-                            Text("Text").tag(KeyValueRow.plainKind)
-                            Text("File").tag(KeyValueRow.fileKind)
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                    }
-                    TextField(row.isFile ? "path/inside/workspace" : "Value", text: $row.value)
-                        .textFieldStyle(.roundedBorder)
-                    if row.isFile, let chooseFile {
-                        Button("Choose…") {
-                            if let path = chooseFile() { row.value = path }
-                        }
-                    }
-                    Button {
-                        rows.removeAll { $0.id == row.id }
-                    } label: {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Remove")
-                    .accessibilityLabel("Remove \(row.name.isEmpty ? namePlaceholder : row.name)")
+                    Color.clear.frame(width: 28)
+                    Text("KEY").frame(maxWidth: .infinity, alignment: .leading)
+                    Text("VALUE").frame(maxWidth: .infinity, alignment: .leading)
+                    Color.clear.frame(width: 24)
                 }
+                .font(.ui(11))
+                .tracking(0.7)
+                .foregroundStyle(Theme.muted)
+                .padding(.vertical, 6)
+
+                ForEach($rows) { $row in
+                    HStack(spacing: 8) {
+                        Button {
+                            row.enabled.toggle()
+                        } label: {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(row.enabled ? Theme.amber : .clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .stroke(
+                                            row.enabled ? Theme.amber : Color(hex: 0x3A3F4A),
+                                            lineWidth: 1)
+                                )
+                                .overlay {
+                                    if row.enabled {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 8, weight: .heavy))
+                                            .foregroundStyle(Theme.bg)
+                                    }
+                                }
+                                .frame(width: 14, height: 14)
+                                .frame(width: 28, height: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(row.enabled ? "Disable row" : "Enable row")
+
+                        TextField(namePlaceholder, text: $row.name)
+                            .textFieldStyle(.plain)
+                            .font(.mono(12))
+                            .foregroundStyle(row.enabled ? Theme.text : Theme.muted)
+                            .frame(maxWidth: .infinity)
+
+                        HStack(spacing: 6) {
+                            if chooseFile != nil {
+                                Picker("Kind", selection: $row.kind) {
+                                    Text("Text").tag(KeyValueRow.plainKind)
+                                    Text("File").tag(KeyValueRow.fileKind)
+                                }
+                                .labelsHidden()
+                                .fixedSize()
+                            }
+                            TextField(
+                                row.isFile ? "path/inside/workspace" : "Value", text: $row.value
+                            )
+                            .textFieldStyle(.plain)
+                            .font(.mono(12))
+                            .foregroundStyle(Theme.textSoft)
+                            if row.isFile, let chooseFile {
+                                Button("Choose…") {
+                                    if let path = chooseFile() { row.value = path }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        Button {
+                            rows.removeAll { $0.id == row.id }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(Theme.muted)
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(HoverButtonStyle(radius: 4))
+                        .help("Remove")
+                        .accessibilityLabel("Remove \(row.name.isEmpty ? namePlaceholder : row.name)")
+                    }
+                    .padding(.vertical, 4)
+                    .hairline(.top, color: Theme.rowDivider)
+                }
+
+                Button {
+                    rows.append(KeyValueRow())
+                } label: {
+                    Text("+ Add")
+                        .font(.ui(12))
+                        .foregroundStyle(Theme.muted)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .hairline(.top, color: Theme.rowDivider)
             }
-            Button {
-                rows.append(KeyValueRow())
-            } label: {
-                Label("Add", systemImage: "plus")
-            }
-            .buttonStyle(.borderless)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
-        .listStyle(.plain)
     }
 }

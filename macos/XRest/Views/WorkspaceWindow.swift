@@ -79,15 +79,29 @@ struct WelcomeView: View {
     let open: () -> Void
 
     var body: some View {
-        ContentUnavailableView {
-            Label("XRest", systemImage: "paperplane.fill")
-        } description: {
+        VStack(spacing: 14) {
+            Image(systemName: "paperplane.fill")
+                .font(.system(size: 30))
+                .foregroundStyle(Theme.amber)
+            Text("XRest").font(.ui(20, weight: .semibold))
             Text("One service per workspace. Open a service directory to get started.")
-        } actions: {
-            Button("Open Workspace…", action: open)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .font(.ui(13))
+                .foregroundStyle(Theme.muted)
+            Button(action: open) {
+                Text("Open Workspace…")
+                    .font(.ui(13, weight: .semibold))
+                    .foregroundStyle(Theme.bg)
+                    .padding(.horizontal, 20)
+                    .frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.amber))
+            }
+            .buttonStyle(.plain)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(minWidth: 480, minHeight: 320)
+        .background(Theme.bg)
+        .foregroundStyle(Theme.text)
+        .preferredColorScheme(.dark)
+        .ignoresSafeArea()
     }
 }

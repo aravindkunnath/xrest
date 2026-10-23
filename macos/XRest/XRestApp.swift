@@ -8,7 +8,8 @@ struct XRestApp: App {
         WindowGroup("XRest", for: URL.self) { $workspaceURL in
             WorkspaceWindow(url: $workspaceURL)
         }
-        .defaultSize(width: 1180, height: 760)
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1280, height: 800)
         .commands { WorkspaceCommands() }
     }
 }

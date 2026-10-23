@@ -15,17 +15,17 @@ struct BodyEditor: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+                .tint(Theme.amber)
 
                 if draft.bodyKind == .text || draft.bodyKind == .binary {
                     TextField("Content-Type (automatic)", text: $draft.bodyContentType)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+                        .themedField(mono: true)
                         .frame(maxWidth: 280)
                 }
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
 
             content
         }
@@ -36,7 +36,8 @@ struct BodyEditor: View {
         switch draft.bodyKind {
         case .none:
             Text("This request has no body.")
-                .foregroundStyle(.secondary)
+                .font(.ui(12))
+                .foregroundStyle(Theme.muted)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .text, .json:
             CodeEditor(text: $draft.bodyText)
@@ -50,18 +51,17 @@ struct BodyEditor: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     TextField("path/inside/workspace", text: $draft.binaryPath)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+                        .themedField(mono: true)
                     Button("Choose…") {
                         if let path = chooseFile() { draft.binaryPath = path }
                     }
                 }
                 Text("Files sent in a request must be inside the workspace folder.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.ui(11))
+                    .foregroundStyle(Theme.muted)
                 Spacer()
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 16)
         }
     }
 

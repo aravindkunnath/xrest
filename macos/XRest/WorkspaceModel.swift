@@ -38,6 +38,8 @@ final class WorkspaceModel {
     var showImportCurl = false
     var pendingDelete: SidebarSelection?
     var errorMessage: String?
+    /// Filters the sidebar lists.
+    var searchText = ""
 
     init(url: URL) throws {
         let opened = try XRestWorkspace.openWorkspace(path: url.path)

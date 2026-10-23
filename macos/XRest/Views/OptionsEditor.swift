@@ -52,8 +52,8 @@ struct OptionsEditor: View {
             .frame(maxWidth: 280)
             if options.verifyTls == false {
                 Text("Invalid certificates will be accepted for this request.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                    .font(.ui(11))
+                    .foregroundStyle(Theme.amber)
             }
 
             Picker("Proxy", selection: proxyMode) {
@@ -63,11 +63,13 @@ struct OptionsEditor: View {
             .frame(maxWidth: 280)
             if proxyMode.wrappedValue == .custom {
                 TextField("Proxy URL", text: proxyURL, prompt: Text("http://proxy:8080"))
-                    .font(.system(.body, design: .monospaced))
+                    .font(.mono(12))
                     .frame(maxWidth: 360)
             }
         }
-        .formStyle(.grouped)
+        .formStyle(.columns)
+        .padding(16)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private func tri(_ key: WritableKeyPath<RequestOptions, Bool?>) -> Binding<Toggle3> {
