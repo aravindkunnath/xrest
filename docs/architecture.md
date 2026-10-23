@@ -225,9 +225,13 @@ tokenKey: data.token           # dot path in the JSON response (default access_t
 tokenHeader: Authorization     # header to write (default Authorization); "Bearer " is added only for Authorization
 cacheToken: true
 cacheDuration: derived         # "derived" or a number of cacheDurationUnit
-cacheDurationKey: expires_in   # JSON key holding the lifetime
-cacheDurationUnit: seconds     # seconds | minutes | hours | days
+cacheDurationKey: expires_in   # JSON key holding the lifetime or expiry
+cacheDurationUnit: seconds     # seconds | minutes | hours | days | epoch | epoch_ms | iso8601
 ```
+
+With `cacheDuration: derived`, the units `seconds`..`days` read a relative lifetime, while `epoch`
+(seconds since 1970), `epoch_ms` and `iso8601` (RFC 3339) read an absolute expiry time. Values may
+be JSON numbers or numeric strings. A past or unparsable expiry falls back to the default TTL.
 
 Tokens are cached in memory, keyed by service, environment, method and URL (default TTL 5 minutes
 when no lifetime is available).
@@ -269,8 +273,8 @@ cURL import maps `-d` to `json` (JSON content) or `raw` with curl's default
 `application/x-www-form-urlencoded`, `--data-urlencode name=value` to `form`, `-F` to `multipart`
 (`@path` is a file field), and `-k`, `-m/--max-time`, `-x/--proxy` to `options`.
 
-Known gap: the Go preflight adapter could read token expiry as epoch seconds, epoch milliseconds or
-ISO 8601; the core only reads a relative lifetime (`expires_in` style).
+Preflight token expiry may be a relative lifetime or an absolute time (`epoch`, `epoch_ms`,
+`iso8601`), as in the Go adapter.
 
 ## Request resolution (what `send` does)
 
@@ -329,6 +333,7 @@ XRestWorkspace
     clear_token_cache()
   sending
     async send(request: RequestSpec, confirmed: Bool) -> HttpResponse
+    async test_preflight(preflight: Preflight?, confirmed: Bool) -> PreflightTestResult
 ```
 
 `RequestSpec.body` is the `RequestBody` enum (`empty`, `raw`, `json`, `form`, `multipart`,
@@ -337,7 +342,7 @@ XRestWorkspace
 
 Records: `NameValue`, `Preflight`, `RequestSpec`, `RequestOptions`, `Endpoint`, `ScratchRequest`, `EndpointVersion`,
 `EnvironmentConfig` (not `Environment`, which would clash with SwiftUI's), `ServiceInfo`, `SendPolicy`,
-`HeaderPair`, `HttpResponse`.
+`HeaderPair`, `HttpResponse`, `PreflightTestResult`.
 
 Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`,
 `UnsupportedFormat(found, supported)`, `NotFound(message)`,
@@ -345,7 +350,12 @@ Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`
 `NotImplemented(message)`.
 
 `send` takes the request spec rather than an id so the app can send the unsaved draft it is editing.
-The object is thread-safe; `send` does not hold the internal lock while waiting on the network.
+`test_preflight` runs one preflight request (the given one, or the service's when `nil`) in the
+selected environment, with the same unsafe-environment confirmation as `send`. It never reads or
+writes the token cache. Transport failures, non-2xx statuses and token-extraction failures come back
+as a result with `error` set (and `status`/bodies filled in when a response arrived), not as a
+thrown error; only policy, missing-secret, invalid-URL and "no preflight configured" errors throw.
+The object is thread-safe; `send` and `test_preflight` do not hold the internal lock while waiting on the network.
 
 ### Generating the Swift bindings
 

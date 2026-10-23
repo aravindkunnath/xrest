@@ -850,3 +850,167 @@ fn options_merge_over_defaults() {
     assert_eq!(untouched.timeout, base.timeout);
     assert!(untouched.follow_redirects && !untouched.insecure_skip_verify);
 }
+
+fn token_mock(token_json: serde_json::Value) -> Mock {
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(token_json))
+}
+
+#[tokio::test]
+async fn test_preflight_returns_exchange_and_token_without_touching_cache() {
+    let mut f = fixture().await;
+    let mut pf = preflight(&f.server);
+    pf.url = "{{BASE_URL}}/oauth/token".into();
+    pf.headers.push(NameValue::new("X-User", "{{USER_ID}}"));
+    let svc_pf = pf.clone();
+    set_service(&mut f, |s| {
+        s.is_authenticated = true;
+        s.preflight = Some(svc_pf);
+    });
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .and(header("x-user", "42"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"data": {"token": "tt"}, "expires_in": 3600})),
+        )
+        .expect(3) // two tests + the send that must still fetch
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/secure"))
+        .and(header("authorization", "Bearer tt"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&f.server)
+        .await;
+
+    // Explicit preflight (even a disabled draft), then the service one with None.
+    let mut draft = pf.clone();
+    draft.enabled = false;
+    for given in [Some(draft), None] {
+        let r = f.ws.test_preflight(given, false).await.unwrap();
+        assert_eq!(r.method, "POST");
+        assert_eq!(r.url, format!("{}/oauth/token", f.server.uri()));
+        assert_eq!(r.status, Some(200));
+        assert_eq!(r.token.as_deref(), Some("tt"));
+        assert_eq!(r.error, None);
+        assert_eq!(r.request_body, r#"{"client":"abc"}"#);
+        assert!(r
+            .request_headers
+            .iter()
+            .any(|(k, v)| k == "X-User" && v == "42"));
+        assert!(r.response_body.contains("tt"));
+        assert!(!r.response_headers.is_empty());
+    }
+
+    // The cache was neither read nor written: a send still fetches (third hit on the mock).
+    let mut s = spec("GET", "{{BASE_URL}}/secure");
+    s.authenticated = true;
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_preflight_does_not_read_a_warm_cache() {
+    let mut f = fixture().await;
+    let pf = preflight(&f.server);
+    let svc_pf = pf.clone();
+    set_service(&mut f, |s| {
+        s.is_authenticated = true;
+        s.preflight = Some(svc_pf);
+    });
+    token_mock(serde_json::json!({"data": {"token": "tt"}, "expires_in": 3600}))
+        .expect(2) // the send warms the cache; the test still hits the server
+        .mount(&f.server)
+        .await;
+    Mock::given(path("/secure"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&f.server)
+        .await;
+    let mut s = spec("GET", "{{BASE_URL}}/secure");
+    s.authenticated = true;
+    f.ws.prepare_send(&s, false)
+        .unwrap()
+        .execute()
+        .await
+        .unwrap();
+    let r = f.ws.test_preflight(Some(pf), false).await.unwrap();
+    assert_eq!(r.token.as_deref(), Some("tt"));
+}
+
+#[tokio::test]
+async fn test_preflight_bad_token_key_is_a_result_with_error() {
+    let f = fixture().await;
+    token_mock(serde_json::json!({"data": {"token": "tt"}}))
+        .mount(&f.server)
+        .await;
+    let mut pf = preflight(&f.server);
+    pf.token_key = "data.nope".into();
+    let r = f.ws.test_preflight(Some(pf), false).await.unwrap();
+    assert_eq!(r.status, Some(200));
+    assert_eq!(r.token, None);
+    assert!(
+        r.error.as_deref().unwrap().contains("data.nope"),
+        "{:?}",
+        r.error
+    );
+    assert!(r.response_body.contains("tt"));
+}
+
+#[tokio::test]
+async fn test_preflight_non_2xx_and_transport_failures_are_results() {
+    let f = fixture().await;
+    Mock::given(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(401).set_body_string("denied"))
+        .mount(&f.server)
+        .await;
+    let r =
+        f.ws.test_preflight(Some(preflight(&f.server)), false)
+            .await
+            .unwrap();
+    assert_eq!(r.status, Some(401));
+    assert_eq!(r.response_body, "denied");
+    assert_eq!(r.token, None);
+    assert!(r.error.is_some());
+
+    let mut pf = preflight(&f.server);
+    pf.url = "http://127.0.0.1:1/x".into();
+    let r = f.ws.test_preflight(Some(pf), false).await.unwrap();
+    assert_eq!(r.status, None);
+    assert!(r.error.is_some());
+}
+
+#[tokio::test]
+async fn test_preflight_without_any_preflight_is_an_error() {
+    let f = fixture().await;
+    let err = f.ws.test_preflight(None, false).await.unwrap_err();
+    assert!(matches!(err, Error::Preflight(_)), "{err:?}");
+}
+
+#[tokio::test]
+async fn test_preflight_unsafe_environment_needs_confirmation_before_any_io() {
+    let mut f = fixture().await;
+    Mock::given(path("/oauth/token"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {"token": "t"}})),
+        )
+        .expect(1) // only the confirmed call
+        .mount(&f.server)
+        .await;
+    f.ws.select_environment("PROD").unwrap();
+    let pf = preflight(&f.server);
+    let err =
+        f.ws.test_preflight(Some(pf.clone()), false)
+            .await
+            .unwrap_err();
+    assert!(
+        matches!(err, Error::ConfirmationRequired { ref environment } if environment == "PROD")
+    );
+    assert_eq!(f.server.received_requests().await.unwrap().len(), 0);
+    let r = f.ws.test_preflight(Some(pf), true).await.unwrap();
+    assert_eq!(r.token.as_deref(), Some("t"));
+}

@@ -224,6 +224,44 @@ pub struct HttpResponse {
     pub unresolved_variables: Vec<String>,
 }
 
+/// The outcome of "Test Preflight": the exchange and the extracted token. `error` is set when the
+/// request failed, returned non-2xx, or the token could not be extracted.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreflightTestResult {
+    pub method: String,
+    pub url: String,
+    pub request_headers: Vec<HeaderPair>,
+    pub request_body: String,
+    pub status: Option<u16>,
+    pub response_headers: Vec<HeaderPair>,
+    pub response_body: String,
+    pub token: Option<String>,
+    pub error: Option<String>,
+    pub time_ms: u64,
+}
+
+impl From<core::PreflightTestResult> for PreflightTestResult {
+    fn from(r: core::PreflightTestResult) -> Self {
+        let pairs = |v: Vec<(String, String)>| {
+            v.into_iter()
+                .map(|(name, value)| HeaderPair { name, value })
+                .collect()
+        };
+        Self {
+            method: r.method,
+            url: r.url,
+            request_headers: pairs(r.request_headers),
+            request_body: r.request_body,
+            status: r.status,
+            response_headers: pairs(r.response_headers),
+            response_body: r.response_body,
+            token: r.token,
+            error: r.error,
+            time_ms: r.time_ms,
+        }
+    }
+}
+
 // ---- conversions --------------------------------------------------------------------------
 
 impl From<core::NameValue> for NameValue {
@@ -668,6 +706,21 @@ impl XRestWorkspace {
         let prepared = {
             let ws = self.lock();
             ws.prepare_send(&request.into(), confirmed)?
+        };
+        Ok(prepared.execute().await?.into())
+    }
+
+    /// Run a preflight request once (`None`: the service preflight) and report the exchange and
+    /// token. Uses the selected environment, never touches the token cache, and applies the same
+    /// unsafe-environment confirmation as [`XRestWorkspace::send`].
+    pub async fn test_preflight(
+        &self,
+        preflight: Option<Preflight>,
+        confirmed: bool,
+    ) -> Result<PreflightTestResult> {
+        let prepared = {
+            let ws = self.lock();
+            ws.prepare_test_preflight(preflight.map(Into::into), confirmed)?
         };
         Ok(prepared.execute().await?.into())
     }

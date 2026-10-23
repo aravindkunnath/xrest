@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::error::{Error, Result};
 use crate::model::Preflight;
@@ -62,6 +62,21 @@ pub fn value_at_path<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a 
         .try_fold(root, |cur, part| cur.as_object()?.get(part))
 }
 
+/// Result of testing a preflight request without using the token cache.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PreflightTestResult {
+    pub method: String,
+    pub url: String,
+    pub request_headers: Vec<(String, String)>,
+    pub request_body: String,
+    pub status: Option<u16>,
+    pub response_headers: Vec<(String, String)>,
+    pub response_body: String,
+    pub token: Option<String>,
+    pub error: Option<String>,
+    pub time_ms: u64,
+}
+
 /// Extract the token string from a preflight response body.
 pub fn extract_token(body: &[u8], token_key: &str) -> Result<String> {
     let json: serde_json::Value = serde_json::from_slice(body)
@@ -98,6 +113,71 @@ fn secs_to_duration(secs: f64) -> Option<Duration> {
     (secs.is_finite() && secs > 0.0).then(|| Duration::from_secs_f64(secs))
 }
 
+fn json_number(v: &serde_json::Value) -> Option<f64> {
+    match v {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    }
+}
+
+/// TTL from the value at `cacheDurationKey`: a relative lifetime in `unit_secs`, or, for the
+/// `epoch`, `epoch_ms` and `iso8601` units, an absolute expiry time. A past or unparsable expiry
+/// yields `None` (the caller falls back to the default TTL).
+fn derived_ttl(unit: &str, value: Option<&serde_json::Value>, unit_secs: f64) -> Option<Duration> {
+    let value = value?;
+    let expires_at = match unit.trim().to_ascii_lowercase().as_str() {
+        "epoch" => json_number(value),
+        "epoch_ms" => json_number(value).map(|ms| ms / 1000.0),
+        "iso8601" | "rfc3339" => value.as_str().and_then(parse_rfc3339),
+        _ => return secs_to_duration(json_number(value)? * unit_secs),
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs_f64();
+    secs_to_duration(expires_at? - now)
+}
+
+/// Parse an RFC 3339 timestamp (`2030-01-01T00:00:00[.fff]Z|+hh:mm`) to Unix seconds.
+pub(crate) fn parse_rfc3339(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let (date, rest) = s.split_once(['T', 't'])?;
+    let mut d = date.split('-');
+    let (y, m, day): (i64, i64, i64) = (
+        d.next()?.parse().ok()?,
+        d.next()?.parse().ok()?,
+        d.next()?.parse().ok()?,
+    );
+    if d.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let tz_at = rest.find(['Z', 'z', '+', '-'])?;
+    let (time, tz) = rest.split_at(tz_at);
+    let mut t = time.split(':');
+    let (hh, mm): (i64, i64) = (t.next()?.parse().ok()?, t.next()?.parse().ok()?);
+    let ss: f64 = t.next()?.parse().ok()?;
+    if t.next().is_some() || hh > 23 || mm > 59 || !(0.0..61.0).contains(&ss) {
+        return None;
+    }
+    let offset = match tz {
+        "Z" | "z" => 0,
+        _ => {
+            let sign = if tz.starts_with('-') { -1 } else { 1 };
+            let (oh, om) = tz[1..].split_once(':')?;
+            sign * (oh.parse::<i64>().ok()? * 3600 + om.parse::<i64>().ok()? * 60)
+        }
+    };
+    // days-from-civil (Howard Hinnant)
+    let y = y - i64::from(m <= 2);
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some((days * 86_400 + hh * 3600 + mm * 60 - offset) as f64 + ss)
+}
+
 /// How long to cache the token, or `None` if caching is disabled.
 pub fn cache_ttl(cfg: &Preflight, body: &[u8]) -> Option<Duration> {
     if !cfg.cache_token {
@@ -112,12 +192,8 @@ pub fn cache_ttl(cfg: &Preflight, body: &[u8]) -> Option<Duration> {
     }
     if !cfg.cache_duration_key.is_empty() {
         if let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) {
-            let n = match value_at_path(&json, &cfg.cache_duration_key) {
-                Some(serde_json::Value::Number(n)) => n.as_f64(),
-                Some(serde_json::Value::String(s)) => s.trim().parse::<f64>().ok(),
-                _ => None,
-            };
-            if let Some(d) = n.and_then(|n| secs_to_duration(n * unit)) {
+            let value = value_at_path(&json, &cfg.cache_duration_key);
+            if let Some(d) = derived_ttl(&cfg.cache_duration_unit, value, unit) {
                 return Some(d);
             }
         }
@@ -187,5 +263,98 @@ mod tests {
         c.put("k", "t", Duration::from_secs(60));
         c.clear();
         assert_eq!(c.get("k"), None);
+    }
+
+    /// Civil-from-days inverse of the parser's days-from-civil, for building test input.
+    fn format_rfc3339(secs: u64) -> String {
+        let days = (secs / 86400) as i64;
+        let rem = secs % 86400;
+        let z = days + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z.rem_euclid(146_097);
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = yoe + era * 400 + i64::from(m <= 2);
+        format!(
+            "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+            rem / 3600,
+            rem % 3600 / 60,
+            rem % 60
+        )
+    }
+
+    fn epoch_cfg(unit: &str) -> Preflight {
+        let mut c = cfg();
+        c.cache_duration_unit = unit.into();
+        c.cache_duration_key = "exp".into();
+        c
+    }
+
+    fn now_secs() -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+    }
+
+    fn near(d: Option<Duration>, secs: u64) -> bool {
+        d.is_some_and(|d| d.as_secs_f64() > secs as f64 - 5.0 && d.as_secs_f64() <= secs as f64)
+    }
+
+    #[test]
+    fn ttl_absolute_epoch_units() {
+        let at = now_secs() as u64 + 600;
+        let body = format!(r#"{{"exp": {at}}}"#);
+        assert!(near(cache_ttl(&epoch_cfg("epoch"), body.as_bytes()), 600));
+        let body = format!(r#"{{"exp": "{at}"}}"#);
+        assert!(near(cache_ttl(&epoch_cfg("epoch"), body.as_bytes()), 600));
+        let body = format!(r#"{{"exp": {}}}"#, at * 1000);
+        assert!(near(
+            cache_ttl(&epoch_cfg("epoch_ms"), body.as_bytes()),
+            600
+        ));
+        let body = format!(r#"{{"exp": "{}"}}"#, at * 1000);
+        assert!(near(
+            cache_ttl(&epoch_cfg("EPOCH_MS"), body.as_bytes()),
+            600
+        ));
+    }
+
+    #[test]
+    fn ttl_absolute_iso8601() {
+        let at = now_secs() as u64 + 600;
+        let iso = format_rfc3339(at);
+        let body = format!(r#"{{"exp": "{iso}"}}"#);
+        assert!(near(cache_ttl(&epoch_cfg("iso8601"), body.as_bytes()), 600));
+        // offsets and fractional seconds
+        assert_eq!(
+            parse_rfc3339("2030-01-01T01:00:00.500+01:00"),
+            Some(1_893_456_000.5)
+        );
+        assert_eq!(parse_rfc3339("1970-01-01T00:00:10Z"), Some(10.0));
+        assert_eq!(parse_rfc3339("not a date"), None);
+    }
+
+    #[test]
+    fn ttl_absolute_past_or_garbage_falls_back_to_default() {
+        for (unit, body) in [
+            ("epoch", r#"{"exp": 1000}"#),
+            ("epoch_ms", r#"{"exp": 1000000}"#),
+            ("iso8601", r#"{"exp": "2001-01-01T00:00:00Z"}"#),
+            ("epoch", r#"{"exp": "soon"}"#),
+            ("epoch_ms", r#"{"exp": null}"#),
+            ("iso8601", r#"{"exp": "garbage"}"#),
+            ("iso8601", r#"{"exp": 12}"#),
+            ("epoch", r#"{}"#),
+        ] {
+            assert_eq!(
+                cache_ttl(&epoch_cfg(unit), body.as_bytes()),
+                Some(DEFAULT_TOKEN_TTL),
+                "{unit} {body}"
+            );
+        }
     }
 }

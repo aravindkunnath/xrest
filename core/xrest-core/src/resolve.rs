@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::exec::{
-    build_url, has_header, HttpOptions, PreparedSend, ResolvedAuth, ResolvedBody, ResolvedPart,
-    ResolvedPreflight, ResolvedRequest,
+    build_url, has_header, HttpOptions, PreparedPreflightTest, PreparedSend, ResolvedAuth,
+    ResolvedBody, ResolvedPart, ResolvedPreflight, ResolvedRequest,
 };
 use crate::interpolate::{interpolate, resolve_secrets, unresolved, Variables};
 use crate::model::{AuthKind, Body, Environment, NameValue, Preflight, RequestSpec, ServiceFile};
@@ -104,6 +104,37 @@ pub(crate) fn prepare_send(
         unresolved: r.unresolved.into_iter().collect(),
         tokens: ctx.tokens,
         http,
+    })
+}
+
+/// Resolve a preflight (the given one, else the service's) for a one-off test. Enforces the
+/// unsafe-environment policy first; ignores `enabled` and the token cache.
+pub(crate) fn prepare_test_preflight(
+    ctx: SendContext<'_>,
+    preflight: Option<Preflight>,
+    confirmed: bool,
+) -> Result<PreparedPreflightTest> {
+    let env = ctx.environment;
+    SendPolicy::for_environment(env).check(confirmed)?;
+    let cfg = preflight
+        .or_else(|| ctx.service.preflight.clone())
+        .ok_or_else(|| Error::Preflight("no preflight is configured".into()))?;
+
+    let vars = variables(env);
+    let mut r = Resolver {
+        vars: &vars,
+        secrets: ctx.secrets,
+        unresolved: BTreeSet::new(),
+        missing: BTreeSet::new(),
+    };
+    let resolved = resolve_preflight(&cfg, &mut r, "")?;
+    if !r.missing.is_empty() {
+        return Err(Error::MissingSecrets(r.missing.into_iter().collect()));
+    }
+    Ok(PreparedPreflightTest {
+        request: resolved.request,
+        config: cfg,
+        http: ctx.http.clone(),
     })
 }
 

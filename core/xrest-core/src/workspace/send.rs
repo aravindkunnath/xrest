@@ -3,8 +3,9 @@
 
 use super::Workspace;
 use crate::error::Result;
-use crate::exec::PreparedSend;
-use crate::model::RequestSpec;
+use crate::exec::{PreparedPreflightTest, PreparedSend};
+use crate::model::{Preflight, RequestSpec};
+use crate::preflight::PreflightTestResult;
 use crate::resolve::{self, SendContext};
 
 impl Workspace {
@@ -34,5 +35,38 @@ impl Workspace {
             spec,
             confirmed,
         )
+    }
+
+    /// Resolve `preflight` (or the service preflight when `None`) for a test run, enforcing the
+    /// unsafe-environment policy like [`Workspace::prepare_send`]. No I/O happens here.
+    pub fn prepare_test_preflight(
+        &self,
+        preflight: Option<Preflight>,
+        confirmed: bool,
+    ) -> Result<PreparedPreflightTest> {
+        resolve::prepare_test_preflight(
+            SendContext {
+                root: &self.root,
+                service: &self.service,
+                environment: self.selected_environment(),
+                secrets: self.secrets.as_ref(),
+                tokens: self.tokens.clone(),
+                http: &self.http,
+            },
+            preflight,
+            confirmed,
+        )
+    }
+
+    /// Run a preflight request once and report the exchange and extracted token. Never reads or
+    /// writes the token cache. A token-extraction failure is a result with `error` set.
+    pub async fn test_preflight(
+        &self,
+        preflight: Option<Preflight>,
+        confirmed: bool,
+    ) -> Result<PreflightTestResult> {
+        self.prepare_test_preflight(preflight, confirmed)?
+            .execute()
+            .await
     }
 }

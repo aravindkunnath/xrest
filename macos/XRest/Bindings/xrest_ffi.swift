@@ -669,6 +669,13 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func setSecret(key: String, value: String) 
     
     /**
+     * Run a preflight request once (`None`: the service preflight) and report the exchange and
+     * token. Uses the selected environment, never touches the token cache, and applies the same
+     * unsafe-environment confirmation as [`XRestWorkspace::send`].
+     */
+    func testPreflight(preflight: Preflight?, confirmed: Bool) async throws  -> PreflightTestResult
+    
+    /**
      * Save an endpoint. Records a new version when the request changed.
      */
     func updateEndpoint(id: String, name: String, spec: RequestSpec) throws  -> Endpoint
@@ -975,6 +982,27 @@ open func setSecret(key: String, value: String)  {try! rustCall() {
         FfiConverterString.lower(value),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Run a preflight request once (`None`: the service preflight) and report the exchange and
+     * token. Uses the selected environment, never touches the token cache, and applies the same
+     * unsafe-environment confirmation as [`XRestWorkspace::send`].
+     */
+open func testPreflight(preflight: Preflight?, confirmed: Bool)async throws  -> PreflightTestResult  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_method_xrestworkspace_test_preflight(
+                        self.uniffiCloneHandle(),FfiConverterOptionTypePreflight.lower(preflight),FfiConverterBool.lower(confirmed)
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_xrest_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePreflightTestResult_lift,
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
 }
     
     /**
@@ -1582,6 +1610,96 @@ public func FfiConverterTypePreflight_lift(_ buf: RustBuffer) throws -> Prefligh
 #endif
 public func FfiConverterTypePreflight_lower(_ value: Preflight) -> RustBuffer {
     return FfiConverterTypePreflight.lower(value)
+}
+
+
+/**
+ * The outcome of "Test Preflight": the exchange and the extracted token. `error` is set when the
+ * request failed, returned non-2xx, or the token could not be extracted.
+ */
+public struct PreflightTestResult: Equatable, Hashable {
+    public var method: String
+    public var url: String
+    public var requestHeaders: [HeaderPair]
+    public var requestBody: String
+    public var status: UInt16?
+    public var responseHeaders: [HeaderPair]
+    public var responseBody: String
+    public var token: String?
+    public var error: String?
+    public var timeMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(method: String, url: String, requestHeaders: [HeaderPair], requestBody: String, status: UInt16?, responseHeaders: [HeaderPair], responseBody: String, token: String?, error: String?, timeMs: UInt64) {
+        self.method = method
+        self.url = url
+        self.requestHeaders = requestHeaders
+        self.requestBody = requestBody
+        self.status = status
+        self.responseHeaders = responseHeaders
+        self.responseBody = responseBody
+        self.token = token
+        self.error = error
+        self.timeMs = timeMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PreflightTestResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePreflightTestResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PreflightTestResult {
+        return
+            try PreflightTestResult(
+                method: FfiConverterString.read(from: &buf), 
+                url: FfiConverterString.read(from: &buf), 
+                requestHeaders: FfiConverterSequenceTypeHeaderPair.read(from: &buf), 
+                requestBody: FfiConverterString.read(from: &buf), 
+                status: FfiConverterOptionUInt16.read(from: &buf), 
+                responseHeaders: FfiConverterSequenceTypeHeaderPair.read(from: &buf), 
+                responseBody: FfiConverterString.read(from: &buf), 
+                token: FfiConverterOptionString.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf), 
+                timeMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PreflightTestResult, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.method, into: &buf)
+        FfiConverterString.write(value.url, into: &buf)
+        FfiConverterSequenceTypeHeaderPair.write(value.requestHeaders, into: &buf)
+        FfiConverterString.write(value.requestBody, into: &buf)
+        FfiConverterOptionUInt16.write(value.status, into: &buf)
+        FfiConverterSequenceTypeHeaderPair.write(value.responseHeaders, into: &buf)
+        FfiConverterString.write(value.responseBody, into: &buf)
+        FfiConverterOptionString.write(value.token, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterUInt64.write(value.timeMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePreflightTestResult_lift(_ buf: RustBuffer) throws -> PreflightTestResult {
+    return try FfiConverterTypePreflightTestResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePreflightTestResult_lower(_ value: PreflightTestResult) -> RustBuffer {
+    return FfiConverterTypePreflightTestResult.lower(value)
 }
 
 
@@ -2254,6 +2372,30 @@ public func FfiConverterTypeXRestError_lower(_ value: XRestError) -> RustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt16: FfiConverterRustBuffer {
+    typealias SwiftType = UInt16?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt16.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt16.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
     typealias SwiftType = UInt64?
 
@@ -2640,6 +2782,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_secret() != 64015) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_test_preflight() != 39750) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_update_endpoint() != 5292) {

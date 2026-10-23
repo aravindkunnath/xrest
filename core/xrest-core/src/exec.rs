@@ -13,7 +13,7 @@ use url::Url;
 
 use crate::error::{Error, Result};
 use crate::model::{HttpResponse, Preflight, RequestOptions};
-use crate::preflight::{cache_ttl, extract_token, TokenCache};
+use crate::preflight::{cache_ttl, extract_token, PreflightTestResult, TokenCache};
 
 /// App-wide transport defaults; a request's [`crate::RequestOptions`] override them per send.
 #[derive(Debug, Clone)]
@@ -224,6 +224,59 @@ impl PreparedSend {
             environment: self.environment,
             unresolved_variables: self.unresolved,
         })
+    }
+}
+
+/// A preflight request prepared for a one-off test: it never reads or writes the token cache.
+pub struct PreparedPreflightTest {
+    pub(crate) request: ResolvedRequest,
+    pub(crate) config: Preflight,
+    pub(crate) http: HttpOptions,
+}
+
+impl PreparedPreflightTest {
+    /// Send the preflight request and try to extract the token. Failures after resolution
+    /// (transport, non-2xx, missing token) are reported in the result, not as an `Err`.
+    pub async fn execute(self) -> Result<PreflightTestResult> {
+        let client = build_client(&self.http)?;
+        let request = self.request;
+        let mut result = PreflightTestResult {
+            method: request.method.clone(),
+            url: request.url.to_string(),
+            request_headers: request.headers.clone(),
+            request_body: match &request.body {
+                ResolvedBody::Text { content, .. } => content.clone(),
+                ResolvedBody::Form(pairs) => encode_form(pairs),
+                _ => String::new(),
+            },
+            ..Default::default()
+        };
+        let raw = match send_raw(&client, &request).await {
+            Ok(raw) => raw,
+            Err(e) => {
+                result.error = Some(e.to_string());
+                return Ok(result);
+            }
+        };
+        let content_type = raw
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+            .map(|(_, v)| v.as_str())
+            .unwrap_or_default();
+        result.status = Some(raw.status);
+        result.response_body = decode_body(&raw.bytes, content_type).0;
+        result.time_ms = raw.elapsed.as_millis() as u64;
+        if !(200..300).contains(&raw.status) {
+            result.error = Some(format!("status {}", raw.status));
+        } else {
+            match extract_token(&raw.bytes, &self.config.token_key) {
+                Ok(t) => result.token = Some(t),
+                Err(e) => result.error = Some(e.to_string()),
+            }
+        }
+        result.response_headers = raw.headers;
+        Ok(result)
     }
 }
 

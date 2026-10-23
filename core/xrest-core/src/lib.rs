@@ -20,9 +20,10 @@ pub mod versions;
 pub mod workspace;
 
 pub use error::{Error, Result};
-pub use exec::{HttpOptions, PreparedSend};
+pub use exec::{HttpOptions, PreparedPreflightTest, PreparedSend};
 pub use model::*;
 pub use policy::SendPolicy;
+pub use preflight::PreflightTestResult;
 pub use resolve::MAX_BODY_FILE_BYTES;
 pub use secrets::{MemorySecretStore, SecretStore};
 pub use workspace::Workspace;
