@@ -6,6 +6,7 @@ private enum EditorTab: String, CaseIterable, Identifiable {
     case body = "Body"
     case auth = "Auth"
     case options = "Options"
+    case history = "History"
     var id: String { rawValue }
 }
 
@@ -119,7 +120,9 @@ struct RequestDetailView: View {
         VStack(spacing: 0) {
             nameRow
             UnderlineTabs(
-                tabs: EditorTab.allCases, selection: $tab,
+                tabs: model.isScratchSelected
+                    ? EditorTab.allCases.filter { $0 != .history } : EditorTab.allCases,
+                selection: $tab,
                 label: { AnyView(tabLabel($0)) })
             switch tab {
             case .params:
@@ -136,9 +139,14 @@ struct RequestDetailView: View {
                 authPane
             case .options:
                 OptionsEditor(options: draft.options)
+            case .history:
+                VersionsPanel(model: model)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+        .onChange(of: model.isScratchSelected) { _, scratch in
+            if scratch, tab == .history { tab = .params }
+        }
     }
 
     /// Path section (one row per `{name}` token in the URL path) above the query parameters.
@@ -228,6 +236,8 @@ struct RequestDetailView: View {
             }
         case .options:
             Text("Options")
+        case .history:
+            Text("History")
         }
     }
 

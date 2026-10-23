@@ -67,17 +67,31 @@ final class WorkspaceModel {
     /// Key to prefill in the Secrets screen's add form.
     var secretsPrefill: String?
     var pendingDelete: SidebarSelection?
+    // Versions panel (endpoints only).
+    private(set) var versionRows: [VersionRow] = []
+    private(set) var selectedVersion: Int32?
+    private(set) var diffRows: [DiffRow] = []
+    /// Version awaiting the "Restore this version" confirmation.
+    private(set) var pendingRestore: Int32?
     var errorMessage: String?
     /// Filters the sidebar lists.
     var searchText = ""
 
-    init(url: URL, secrets: KeychainSecretStore = KeychainSecretStore()) throws {
+    static let maxVersionsKey = "maxVersions"
+    static let defaultMaxVersions = 50
+
+    init(
+        url: URL, secrets: KeychainSecretStore = KeychainSecretStore(),
+        defaults: UserDefaults = .standard
+    ) throws {
         let opened = try XRestWorkspace.openWorkspace(path: url.path)
         rootURL = url
         core = opened
         self.secrets = secrets
         // Installed on every open so `{{secret.KEY}}` placeholders resolve from the Keychain.
         opened.setSecretProvider(provider: secrets)
+        let stored = defaults.object(forKey: Self.maxVersionsKey) as? Int ?? Self.defaultMaxVersions
+        opened.setMaxVersions(n: UInt32(clamping: max(stored, 0)))
         service = opened.service()
         reload()
     }
@@ -115,6 +129,10 @@ final class WorkspaceModel {
     }
 
     private func loadDraft(for selection: SidebarSelection?) {
+        versionRows = []
+        selectedVersion = nil
+        diffRows = []
+        pendingRestore = nil
         response = nil
         wasCancelled = false
         sendError = nil
@@ -195,6 +213,77 @@ final class WorkspaceModel {
             panelSave?()
         } else {
             flush()
+        }
+    }
+
+    // MARK: Versions
+
+    /// Reload the versions list for the open endpoint (empty for scratch requests).
+    func loadVersions() {
+        guard case .endpoint(let id)? = selection else {
+            versionRows = []
+            selectedVersion = nil
+            diffRows = []
+            return
+        }
+        do {
+            let versions = try core.endpointVersions(id: id, limit: UInt32(Self.defaultMaxVersions))
+            versionRows = VersionHistory.rows(versions: versions) { [core] from, to in
+                try core.diffVersions(id: id, from: from, to: to)
+            }
+            if let selectedVersion, versionRows.contains(where: { $0.version == selectedVersion }) {
+                selectVersion(selectedVersion)
+            } else {
+                selectedVersion = nil
+                diffRows = []
+            }
+        } catch {
+            errorMessage = describe(error)
+        }
+    }
+
+    /// Show the diff of `version` against the next older one.
+    func selectVersion(_ version: Int32) {
+        guard case .endpoint(let id)? = selection,
+            let i = versionRows.firstIndex(where: { $0.version == version })
+        else { return }
+        selectedVersion = version
+        guard i + 1 < versionRows.count else {
+            diffRows = []
+            return
+        }
+        do {
+            diffRows = DiffRow.rows(
+                from: try core.diffVersions(id: id, from: versionRows[i + 1].version, to: version))
+        } catch {
+            diffRows = []
+            errorMessage = describe(error)
+        }
+    }
+
+    func requestRestore(_ version: Int32) {
+        guard case .endpoint? = selection else { return }
+        pendingRestore = version
+    }
+
+    func cancelRestore() {
+        pendingRestore = nil
+    }
+
+    /// Restore the pending version as a new version and reload the draft. Unsaved edits are
+    /// saved first (as their own version) so nothing is lost.
+    func confirmRestore() {
+        guard case .endpoint(let id)? = selection, let version = pendingRestore else { return }
+        pendingRestore = nil
+        guard flush() else { return }
+        do {
+            let restored = try core.restoreEndpointVersion(id: id, version: version)
+            endpoints = core.listEndpoints()
+            loadDraft(for: selection)
+            loadVersions()
+            selectVersion(restored.lastVersion)
+        } catch {
+            errorMessage = describe(error)
         }
     }
 
@@ -401,7 +490,12 @@ final class WorkspaceModel {
         if case .scratch? = selection { flush() }
         sendGeneration += 1
         let generation = sendGeneration
-        sendTask = Task { await perform(spec: draft.spec, confirmed: confirmed, generation: generation) }
+        var endpointId: String?
+        if case .endpoint(let id)? = selection { endpointId = id }
+        sendTask = Task {
+            await perform(
+                spec: draft.spec, endpointId: endpointId, confirmed: confirmed, generation: generation)
+        }
     }
 
     /// Cancels the in-flight send; the core future is dropped when the task is cancelled.
@@ -417,7 +511,7 @@ final class WorkspaceModel {
         wasCancelled = true
     }
 
-    private func perform(spec: RequestSpec, confirmed: Bool, generation: Int) async {
+    private func perform(spec: RequestSpec, endpointId: String?, confirmed: Bool, generation: Int) async {
         isSending = true
         wasCancelled = false
         sendError = nil
@@ -429,7 +523,14 @@ final class WorkspaceModel {
             }
         }
         do {
-            let result = try await core.send(request: spec, confirmed: confirmed)
+            // Saved endpoints are attributed in the execution history; scratch requests are not.
+            let result: HttpResponse
+            if let endpointId {
+                result = try await core.sendForEndpoint(
+                    endpointId: endpointId, request: spec, confirmed: confirmed)
+            } else {
+                result = try await core.send(request: spec, confirmed: confirmed)
+            }
             guard generation == sendGeneration, !Task.isCancelled else { return }
             response = result
         } catch {
