@@ -401,3 +401,54 @@ fn previews_use_contains_never_get_and_preview_request_url_masks() {
     assert_eq!(p.resolved, "https://api.test/u/42?k=••••••&limit=5");
     assert!(p.unresolved.is_empty());
 }
+
+#[tokio::test]
+async fn git_through_ffi() {
+    for (k, v) in [
+        ("GIT_CONFIG_GLOBAL", "/dev/null"),
+        ("GIT_CONFIG_NOSYSTEM", "1"),
+        ("GIT_CONFIG_COUNT", "1"),
+        ("GIT_CONFIG_KEY_0", "init.defaultBranch"),
+        ("GIT_CONFIG_VALUE_0", "main"),
+        ("GIT_AUTHOR_NAME", "Test"),
+        ("GIT_AUTHOR_EMAIL", "test@example.com"),
+        ("GIT_COMMITTER_NAME", "Test"),
+        ("GIT_COMMITTER_EMAIL", "test@example.com"),
+    ] {
+        std::env::set_var(k, v);
+    }
+    let remote = tempfile::tempdir().unwrap();
+    let out = std::process::Command::new("git")
+        .args(["init", "--bare", "-q"])
+        .arg(remote.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let dir = tempfile::tempdir().unwrap();
+    let ws = XRestWorkspace::create_workspace(dir.path().to_str().unwrap().into(), "svc".into())
+        .unwrap();
+
+    assert!(!ws.git_status().await.unwrap().is_repo);
+    assert_eq!(ws.git_mode(), GitMode::Manual);
+    assert!(matches!(ws.git_pull().await, Err(XRestError::Git { .. })));
+
+    ws.git_init(Some(remote.path().to_str().unwrap().into()))
+        .await
+        .unwrap();
+    let st = ws.git_status().await.unwrap();
+    assert!(st.is_repo && st.branch == "main");
+    assert!(st.uncommitted.iter().any(|f| f.path == "service.yaml"));
+    assert!(ws.git_commit("Initial".into()).await.unwrap().is_some());
+    assert_eq!(ws.git_commit("again".into()).await.unwrap(), None);
+    ws.git_sync().await.unwrap();
+    let st = ws.git_status().await.unwrap();
+    assert!(st.last_sync.is_some());
+    assert_eq!((st.ahead, st.behind), (0, 0));
+
+    ws.set_git_mode(GitMode::Auto).unwrap();
+    assert_eq!(ws.git_mode(), GitMode::Auto);
+    ws.create_endpoint("A".into(), spec("http://x")).unwrap();
+    assert!(ws.git_status().await.unwrap().uncommitted.is_empty());
+    ws.reload().unwrap();
+    assert_eq!(ws.list_endpoints().len(), 1);
+}

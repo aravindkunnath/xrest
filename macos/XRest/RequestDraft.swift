@@ -182,7 +182,7 @@ extension XRestError {
         case .MissingSecrets(let keys):
             return "Missing secrets: \(keys.joined(separator: ", "))"
         case .NotFound(let m), .InvalidInput(let m), .Io(let m), .Http(let m),
-            .Preflight(let m), .NotImplemented(let m):
+            .Preflight(let m), .Git(let m), .NotImplemented(let m):
             return m
         }
     }

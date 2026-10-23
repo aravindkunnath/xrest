@@ -155,4 +155,25 @@ impl ServiceSettings {
 pub struct WorkspaceState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_environment: Option<String>,
+    /// Whether saves commit to git by themselves. Per user; defaults to manual.
+    #[serde(default, skip_serializing_if = "GitMode::is_manual")]
+    pub git_mode: GitMode,
+    /// Unix time of the last successful pull/push/sync.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_sync: Option<u64>,
+}
+
+/// `auto`: every successful save commits the saved file(s). `manual`: only explicit commits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GitMode {
+    Auto,
+    #[default]
+    Manual,
+}
+
+impl GitMode {
+    fn is_manual(&self) -> bool {
+        *self == GitMode::Manual
+    }
 }

@@ -388,10 +388,6 @@ fn deferred_modules_report_not_implemented() {
         xrest_core::swagger::import_spec("{}", "s"),
         Err(Error::NotImplemented(_))
     ));
-    assert!(matches!(
-        xrest_core::git::status(Path::new(".")),
-        Err(Error::NotImplemented(_))
-    ));
 }
 
 // ---- format version -----------------------------------------------------------------------

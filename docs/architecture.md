@@ -250,7 +250,8 @@ content is preserved.
 
 ### Per-user state (`.xrest/`)
 
-* `state.yaml`: `selectedEnvironment`. Not shared through git.
+* `state.yaml`: `selectedEnvironment`, `gitMode` (`auto|manual`, default manual, omitted when manual),
+  `lastSync` (unix seconds of the last successful pull/push/sync). Not shared through git.
 * `versions/<endpoint-id>.json`: endpoint version history, newest `maxVersions` (5-50, default 50).
 
 ### Differences from the legacy Go format
@@ -397,10 +398,28 @@ in library mode, and writes `macos/XRest/Bindings/xrest_ffi.swift` (committed). 
 also emits the C header and `module.modulemap` that `build-xcframework.sh` packs into
 `XRestCore.xcframework`. CI runs it with `--check`.
 
+## Git
+
+`xrest_core::git` shells out to the system `git` (`git -C <root>`, no shell, `GIT_TERMINAL_PROMPT=0`,
+`LC_ALL=C`), so credentials and identity come from the user's own git/SSH setup. Failures are
+`Error::Git(stderr)` (FFI `XRestError.Git`); a missing binary is `Error::Git("git not found")`.
+
+* Staging only ever names `service.yaml`, `environments.yaml`, `endpoints/`, `.gitignore`;
+  `scratchpad/` and `.xrest/` are never staged. Commits use explicit pathspecs, so other files the
+  user staged are left alone.
+* `gitMode: auto` commits after every successful save of an endpoint (`Create|Update|Delete endpoint:
+  <name>`), the environments (`Update environments`) or service settings (`Update service settings`),
+  touching only the saved file. A failed auto-commit is a workspace warning, never a failed save.
+* Pull is a merge (`--no-rebase`); on conflict it runs `git merge --abort` and the error lists the
+  conflicting paths. After a successful pull/push/sync the workspace reloads from disk.
+* `status` is local only (no fetch): `ahead`/`behind` reflect the last fetch.
+* FFI: `git_status`, `git_init`, `git_commit`, `git_pull`, `git_push`, `git_sync` are async and run
+  git off the workspace lock (serialised by a separate gate); `git_mode`, `set_git_mode`, `reload`
+  are synchronous.
+
 ## Deferred (stubbed with TODOs)
 
 * `history`: request history (legacy: SQLite at `~/.xrest/history.db`).
-* `git`: status/commit/sync (legacy: `internal/adapters/git.go`).
 * `swagger`: Swagger/OpenAPI import (legacy: `internal/import/swagger.go`).
 * cURL `-u/--user` (deliberately dropped, as in Go, so credentials do not end up in committed files).
 * App Sandbox + security-scoped bookmarks for the macOS app.

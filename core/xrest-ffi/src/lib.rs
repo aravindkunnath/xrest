@@ -32,6 +32,9 @@ pub enum XRestError {
     UnsupportedFormat { found: u32, supported: u32 },
     #[error("missing secrets: {}", keys.join(", "))]
     MissingSecrets { keys: Vec<String> },
+    /// A git command failed; `message` is git's own error text (or "git not found").
+    #[error("{message}")]
+    Git { message: String },
     #[error("{message}")]
     NotImplemented { message: String },
 }
@@ -59,6 +62,7 @@ impl From<core::Error> for XRestError {
             core::Error::MissingSecrets(keys) => XRestError::MissingSecrets { keys },
             core::Error::Preflight(_) => XRestError::Preflight { message },
             core::Error::Http(_) => XRestError::Http { message },
+            core::Error::Git(_) => XRestError::Git { message },
             core::Error::NotImplemented(_) => XRestError::NotImplemented { message },
         }
     }
@@ -309,6 +313,74 @@ impl From<core::PreflightTestResult> for PreflightTestResult {
 }
 
 // ---- conversions --------------------------------------------------------------------------
+
+/// One changed file in the working tree.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct GitFileStatus {
+    /// Relative to the workspace root.
+    pub path: String,
+    /// `modified`, `added`, `deleted`, `renamed`, `untracked` or `conflicted`.
+    pub status: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct GitStatus {
+    pub is_repo: bool,
+    pub branch: String,
+    pub remote_url: Option<String>,
+    pub uncommitted: Vec<GitFileStatus>,
+    /// As of the last fetch.
+    pub ahead: u32,
+    pub behind: u32,
+    /// Unix seconds of the last successful pull/push/sync.
+    pub last_sync: Option<u64>,
+}
+
+/// Whether saves commit to git by themselves (per user, per workspace; default `Manual`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum GitMode {
+    Auto,
+    Manual,
+}
+
+impl From<core::GitMode> for GitMode {
+    fn from(m: core::GitMode) -> Self {
+        match m {
+            core::GitMode::Auto => GitMode::Auto,
+            core::GitMode::Manual => GitMode::Manual,
+        }
+    }
+}
+
+impl From<GitMode> for core::GitMode {
+    fn from(m: GitMode) -> Self {
+        match m {
+            GitMode::Auto => core::GitMode::Auto,
+            GitMode::Manual => core::GitMode::Manual,
+        }
+    }
+}
+
+impl From<core::git::GitStatus> for GitStatus {
+    fn from(s: core::git::GitStatus) -> Self {
+        GitStatus {
+            is_repo: s.is_repo,
+            branch: s.branch,
+            remote_url: s.remote_url,
+            uncommitted: s
+                .uncommitted
+                .into_iter()
+                .map(|f| GitFileStatus {
+                    path: f.path,
+                    status: f.status,
+                })
+                .collect(),
+            ahead: s.ahead,
+            behind: s.behind,
+            last_sync: s.last_sync,
+        }
+    }
+}
 
 impl From<core::NameValue> for NameValue {
     fn from(v: core::NameValue) -> Self {
@@ -677,6 +749,8 @@ impl core::SecretStore for SecretChain {
 pub struct XRestWorkspace {
     inner: Mutex<core::Workspace>,
     secrets: Arc<SecretChain>,
+    /// Serialises git commands (which run without `inner` held).
+    git_gate: Arc<Mutex<()>>,
 }
 
 impl XRestWorkspace {
@@ -689,11 +763,30 @@ impl XRestWorkspace {
         Arc::new(Self {
             inner: Mutex::new(ws),
             secrets,
+            git_gate: Arc::new(Mutex::new(())),
         })
     }
 
     fn lock(&self) -> MutexGuard<'_, core::Workspace> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Run a git command off the workspace lock and off the async executor.
+    async fn git_blocking<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&std::path::Path) -> core::Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let root = self.lock().root().to_path_buf();
+        let gate = self.git_gate.clone();
+        tokio::task::spawn_blocking(move || {
+            let _g = gate.lock().unwrap_or_else(|e| e.into_inner());
+            f(&root)
+        })
+        .await
+        .map_err(|e| XRestError::Git {
+            message: format!("git task failed: {e}"),
+        })?
+        .map_err(Into::into)
     }
 }
 
@@ -936,6 +1029,63 @@ impl XRestWorkspace {
 
     pub fn clear_token_cache(&self) {
         self.lock().clear_token_cache();
+    }
+
+    // git
+
+    /// Local-only status; `ahead`/`behind` reflect the last fetch.
+    pub async fn git_status(&self) -> Result<GitStatus> {
+        let last_sync = self.lock().git_status_last_sync();
+        let mut s = self.git_blocking(core::git::status).await?;
+        s.last_sync = last_sync;
+        Ok(s.into())
+    }
+
+    /// `git init` if needed, ensure `.gitignore`, and set `origin` when `remote` is given.
+    pub async fn git_init(&self, remote: Option<String>) -> Result<()> {
+        self.git_blocking(move |root| core::git::init(root, remote.as_deref()))
+            .await
+    }
+
+    /// Commit workspace content only; the new commit's SHA, or `None` if nothing changed.
+    pub async fn git_commit(&self, message: String) -> Result<Option<String>> {
+        self.git_blocking(move |root| core::git::commit(root, &message))
+            .await
+    }
+
+    /// Pull (merge). Conflicts abort the merge and fail with the conflicting paths. On success
+    /// the workspace reloads from disk.
+    pub async fn git_pull(&self) -> Result<()> {
+        self.git_blocking(core::git::pull).await?;
+        Ok(self.lock().finish_git_sync()?)
+    }
+
+    pub async fn git_push(&self) -> Result<()> {
+        self.git_blocking(core::git::push).await?;
+        Ok(self.lock().finish_git_sync()?)
+    }
+
+    /// Pull, then push; reloads from disk.
+    pub async fn git_sync(&self) -> Result<()> {
+        self.git_blocking(|root| {
+            core::git::pull(root)?;
+            core::git::push(root)
+        })
+        .await?;
+        Ok(self.lock().finish_git_sync()?)
+    }
+
+    pub fn git_mode(&self) -> GitMode {
+        self.lock().git_mode().into()
+    }
+
+    pub fn set_git_mode(&self, mode: GitMode) -> Result<()> {
+        Ok(self.lock().set_git_mode(mode.into())?)
+    }
+
+    /// Re-read the workspace from disk (after an external change).
+    pub fn reload(&self) -> Result<()> {
+        Ok(self.lock().reload()?)
     }
 
     // sending

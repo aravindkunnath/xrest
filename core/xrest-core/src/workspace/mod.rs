@@ -4,10 +4,12 @@
 //!
 //! - this file: the struct, opening/creating, settings, environments, format upgrades;
 //! - [`endpoints`]: versioned endpoints;
+//! - [`git`]: git status/commit/sync and auto-commit on save;
 //! - [`scratch`]: the scratchpad, promotion and cURL import;
 //! - [`send`]: preparing requests (the logic itself lives in [`crate::resolve`]).
 
 mod endpoints;
+mod git;
 mod scratch;
 mod send;
 
@@ -159,6 +161,7 @@ impl Workspace {
         storage::save_service(&self.root, &service)?;
         self.service = service;
         self.tokens.clear();
+        self.auto_commit(&[storage::SERVICE_FILE], "Update service settings");
         Ok(())
     }
 
@@ -201,6 +204,7 @@ impl Workspace {
             if let Some(sel) = self.service.selected_environment.clone() {
                 let state = WorkspaceState {
                     selected_environment: Some(sel),
+                    ..self.state.clone()
                 };
                 storage::save_state(&self.root, &state)?;
                 self.state = state;
@@ -223,6 +227,7 @@ impl Workspace {
         self.ensure_current_format()?;
         storage::save_environments(&self.root, &envs)?;
         self.environments = envs;
+        self.auto_commit(&[storage::ENVIRONMENTS_FILE], "Update environments");
         Ok(())
     }
 
@@ -254,10 +259,12 @@ impl Workspace {
         if self.state.selected_environment != next {
             let state = WorkspaceState {
                 selected_environment: next,
+                ..self.state.clone()
             };
             storage::save_state(&self.root, &state)?;
             self.state = state;
         }
+        self.auto_commit(&[storage::ENVIRONMENTS_FILE], "Update environments");
         Ok(())
     }
 

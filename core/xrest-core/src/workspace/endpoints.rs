@@ -64,6 +64,7 @@ impl Workspace {
         storage::save_endpoint(&self.root, &ep)?;
         self.endpoints.push(ep.clone());
         self.sort_endpoints();
+        self.auto_commit_endpoint(&ep.id, &format!("Create endpoint: {}", ep.name));
         Ok(ep)
     }
 
@@ -98,14 +99,16 @@ impl Workspace {
             *slot = ep.clone();
         }
         self.sort_endpoints();
+        self.auto_commit_endpoint(id, &format!("Update endpoint: {}", ep.name));
         Ok(ep)
     }
 
     pub fn delete_endpoint(&mut self, id: &str) -> Result<()> {
-        self.endpoint(id)?;
+        let name = self.endpoint(id)?.name.clone();
         storage::remove_file_if_exists(&storage::endpoint_path(&self.root, id)?)?;
         self.versions.clear(id)?;
         self.endpoints.retain(|e| e.id != id);
+        self.auto_commit_endpoint(id, &format!("Delete endpoint: {name}"));
         Ok(())
     }
 

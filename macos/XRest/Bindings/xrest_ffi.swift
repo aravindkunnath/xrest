@@ -894,6 +894,36 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func getScratch(id: String) throws  -> ScratchRequest
     
     /**
+     * Commit workspace content only; the new commit's SHA, or `None` if nothing changed.
+     */
+    func gitCommit(message: String) async throws  -> String?
+    
+    /**
+     * `git init` if needed, ensure `.gitignore`, and set `origin` when `remote` is given.
+     */
+    func gitInit(remote: String?) async throws 
+    
+    func gitMode()  -> GitMode
+    
+    /**
+     * Pull (merge). Conflicts abort the merge and fail with the conflicting paths. On success
+     * the workspace reloads from disk.
+     */
+    func gitPull() async throws 
+    
+    func gitPush() async throws 
+    
+    /**
+     * Local-only status; `ahead`/`behind` reflect the last fetch.
+     */
+    func gitStatus() async throws  -> GitStatus
+    
+    /**
+     * Pull, then push; reloads from disk.
+     */
+    func gitSync() async throws 
+    
+    /**
      * Parse a cURL command into a new scratch request.
      */
     func importCurlAsScratch(command: String) throws  -> ScratchRequest
@@ -919,6 +949,11 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
      * Move a scratch request into the versioned endpoints (the scratch file is removed).
      */
     func promoteScratch(id: String, name: String?) throws  -> Endpoint
+    
+    /**
+     * Re-read the workspace from disk (after an external change).
+     */
+    func reload() throws 
     
     /**
      * Write a past version's config as the current request. Recorded as a NEW version.
@@ -955,6 +990,8 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func sendPolicy()  -> SendPolicy
     
     func service()  -> ServiceInfo
+    
+    func setGitMode(mode: GitMode) throws 
     
     /**
      * Cap on retained versions per endpoint (clamped to 5-50).
@@ -1195,6 +1232,127 @@ open func getScratch(id: String)throws  -> ScratchRequest  {
 }
     
     /**
+     * Commit workspace content only; the new commit's SHA, or `None` if nothing changed.
+     */
+open func gitCommit(message: String)async throws  -> String?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_method_xrestworkspace_git_commit(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(message)
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_xrest_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionString.lift,
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
+}
+    
+    /**
+     * `git init` if needed, ensure `.gitignore`, and set `origin` when `remote` is given.
+     */
+open func gitInit(remote: String?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_method_xrestworkspace_git_init(
+                        self.uniffiCloneHandle(),FfiConverterOptionString.lower(remote)
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_void,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_void,
+            freeFunc: ffi_xrest_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
+}
+    
+open func gitMode() -> GitMode  {
+    return try!  FfiConverterTypeGitMode_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_git_mode(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Pull (merge). Conflicts abort the merge and fail with the conflicting paths. On success
+     * the workspace reloads from disk.
+     */
+open func gitPull()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_method_xrestworkspace_git_pull(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_void,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_void,
+            freeFunc: ffi_xrest_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
+}
+    
+open func gitPush()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_method_xrestworkspace_git_push(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_void,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_void,
+            freeFunc: ffi_xrest_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
+}
+    
+    /**
+     * Local-only status; `ahead`/`behind` reflect the last fetch.
+     */
+open func gitStatus()async throws  -> GitStatus  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_method_xrestworkspace_git_status(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_xrest_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeGitStatus_lift,
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
+}
+    
+    /**
+     * Pull, then push; reloads from disk.
+     */
+open func gitSync()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_method_xrestworkspace_git_sync(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_void,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_void,
+            freeFunc: ffi_xrest_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
+}
+    
+    /**
      * Parse a cURL command into a new scratch request.
      */
 open func importCurlAsScratch(command: String)throws  -> ScratchRequest  {
@@ -1266,6 +1424,17 @@ open func promoteScratch(id: String, name: String?)throws  -> Endpoint  {
         FfiConverterOptionString.lower(name),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Re-read the workspace from disk (after an external change).
+     */
+open func reload()throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_reload(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -1367,6 +1536,15 @@ open func service() -> ServiceInfo  {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
+}
+    
+open func setGitMode(mode: GitMode)throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_set_git_mode(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeGitMode_lower(mode),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -1807,6 +1985,161 @@ public func FfiConverterTypeFieldChange_lift(_ buf: RustBuffer) throws -> FieldC
 #endif
 public func FfiConverterTypeFieldChange_lower(_ value: FieldChange) -> RustBuffer {
     return FfiConverterTypeFieldChange.lower(value)
+}
+
+
+/**
+ * One changed file in the working tree.
+ */
+public struct GitFileStatus: Equatable, Hashable {
+    /**
+     * Relative to the workspace root.
+     */
+    public var path: String
+    /**
+     * `modified`, `added`, `deleted`, `renamed`, `untracked` or `conflicted`.
+     */
+    public var status: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Relative to the workspace root.
+         */path: String, 
+        /**
+         * `modified`, `added`, `deleted`, `renamed`, `untracked` or `conflicted`.
+         */status: String) {
+        self.path = path
+        self.status = status
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GitFileStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGitFileStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GitFileStatus {
+        return
+            try GitFileStatus(
+                path: FfiConverterString.read(from: &buf), 
+                status: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GitFileStatus, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.status, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGitFileStatus_lift(_ buf: RustBuffer) throws -> GitFileStatus {
+    return try FfiConverterTypeGitFileStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGitFileStatus_lower(_ value: GitFileStatus) -> RustBuffer {
+    return FfiConverterTypeGitFileStatus.lower(value)
+}
+
+
+public struct GitStatus: Equatable, Hashable {
+    public var isRepo: Bool
+    public var branch: String
+    public var remoteUrl: String?
+    public var uncommitted: [GitFileStatus]
+    /**
+     * As of the last fetch.
+     */
+    public var ahead: UInt32
+    public var behind: UInt32
+    /**
+     * Unix seconds of the last successful pull/push/sync.
+     */
+    public var lastSync: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(isRepo: Bool, branch: String, remoteUrl: String?, uncommitted: [GitFileStatus], 
+        /**
+         * As of the last fetch.
+         */ahead: UInt32, behind: UInt32, 
+        /**
+         * Unix seconds of the last successful pull/push/sync.
+         */lastSync: UInt64?) {
+        self.isRepo = isRepo
+        self.branch = branch
+        self.remoteUrl = remoteUrl
+        self.uncommitted = uncommitted
+        self.ahead = ahead
+        self.behind = behind
+        self.lastSync = lastSync
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GitStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGitStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GitStatus {
+        return
+            try GitStatus(
+                isRepo: FfiConverterBool.read(from: &buf), 
+                branch: FfiConverterString.read(from: &buf), 
+                remoteUrl: FfiConverterOptionString.read(from: &buf), 
+                uncommitted: FfiConverterSequenceTypeGitFileStatus.read(from: &buf), 
+                ahead: FfiConverterUInt32.read(from: &buf), 
+                behind: FfiConverterUInt32.read(from: &buf), 
+                lastSync: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GitStatus, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.isRepo, into: &buf)
+        FfiConverterString.write(value.branch, into: &buf)
+        FfiConverterOptionString.write(value.remoteUrl, into: &buf)
+        FfiConverterSequenceTypeGitFileStatus.write(value.uncommitted, into: &buf)
+        FfiConverterUInt32.write(value.ahead, into: &buf)
+        FfiConverterUInt32.write(value.behind, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastSync, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGitStatus_lift(_ buf: RustBuffer) throws -> GitStatus {
+    return try FfiConverterTypeGitStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGitStatus_lower(_ value: GitStatus) -> RustBuffer {
+    return FfiConverterTypeGitStatus.lower(value)
 }
 
 
@@ -2799,6 +3132,75 @@ public func FfiConverterTypeServiceSettings_lower(_ value: ServiceSettings) -> R
 
 
 /**
+ * Whether saves commit to git by themselves (per user, per workspace; default `Manual`).
+ */
+
+public enum GitMode: Equatable, Hashable {
+    
+    case auto
+    case manual
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension GitMode: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGitMode: FfiConverterRustBuffer {
+    typealias SwiftType = GitMode
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GitMode {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .auto
+        
+        case 2: return .manual
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GitMode, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .auto:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .manual:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGitMode_lift(_ buf: RustBuffer) throws -> GitMode {
+    return try FfiConverterTypeGitMode.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGitMode_lower(_ value: GitMode) -> RustBuffer {
+    return FfiConverterTypeGitMode.lower(value)
+}
+
+
+
+/**
  * A typed request body. File paths are relative to the workspace root and must stay inside it.
  */
 
@@ -2954,6 +3356,11 @@ enum XRestError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
     )
     case MissingSecrets(keys: [String]
     )
+    /**
+     * A git command failed; `message` is git's own error text (or "git not found").
+     */
+    case Git(message: String
+    )
     case NotImplemented(message: String
     )
 
@@ -3010,7 +3417,10 @@ public struct FfiConverterTypeXRestError: FfiConverterRustBuffer {
         case 8: return .MissingSecrets(
             keys: try FfiConverterSequenceString.read(from: &buf)
             )
-        case 9: return .NotImplemented(
+        case 9: return .Git(
+            message: try FfiConverterString.read(from: &buf)
+            )
+        case 10: return .NotImplemented(
             message: try FfiConverterString.read(from: &buf)
             )
 
@@ -3066,8 +3476,13 @@ public struct FfiConverterTypeXRestError: FfiConverterRustBuffer {
             FfiConverterSequenceString.write(keys, into: &buf)
             
         
-        case let .NotImplemented(message):
+        case let .Git(message):
             writeInt(&buf, Int32(9))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .NotImplemented(message):
+            writeInt(&buf, Int32(10))
             FfiConverterString.write(message, into: &buf)
             
         }
@@ -3337,6 +3752,31 @@ fileprivate struct FfiConverterSequenceTypeFieldChange: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeGitFileStatus: FfiConverterRustBuffer {
+    typealias SwiftType = [GitFileStatus]
+
+    public static func write(_ value: [GitFileStatus], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGitFileStatus.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GitFileStatus] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GitFileStatus]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGitFileStatus.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeHeaderPair: FfiConverterRustBuffer {
     typealias SwiftType = [HeaderPair]
 
@@ -3508,6 +3948,27 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_get_scratch() != 25568) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_git_commit() != 11920) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_git_init() != 3011) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_git_mode() != 36250) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_git_pull() != 27010) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_git_push() != 8398) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_git_status() != 44533) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_git_sync() != 32638) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_import_curl_as_scratch() != 14468) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3524,6 +3985,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_promote_scratch() != 54879) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_reload() != 49840) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_restore_endpoint_version() != 23025) {
@@ -3548,6 +4012,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_service() != 43918) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_git_mode() != 3573) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_max_versions() != 61830) {

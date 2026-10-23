@@ -50,6 +50,9 @@ pub enum Error {
     InvalidInput(String),
     #[error("invalid cURL command: {0}")]
     Curl(String),
+    /// A git command failed; carries git's stderr (or "git not found").
+    #[error("git: {0}")]
+    Git(String),
     #[error("not implemented yet: {0}")]
     NotImplemented(&'static str),
 }
