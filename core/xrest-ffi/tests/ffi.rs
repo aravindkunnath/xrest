@@ -178,6 +178,21 @@ impl SecretProvider for MapProvider {
     fn get(&self, key: String) -> Option<String> {
         self.0.get(&key).cloned()
     }
+    fn contains(&self, key: String) -> bool {
+        self.0.contains_key(&key)
+    }
+}
+
+/// Existence only: `get` would be a bug in any preview path.
+struct NoGetProvider;
+
+impl SecretProvider for NoGetProvider {
+    fn get(&self, key: String) -> Option<String> {
+        panic!("get({key}) called by a preview");
+    }
+    fn contains(&self, key: String) -> bool {
+        key == "kc"
+    }
 }
 
 fn provider(pairs: &[(&str, &str)]) -> Arc<dyn SecretProvider> {
@@ -335,4 +350,23 @@ fn preview_uses_the_provider_chain_and_never_returns_values() {
     assert_eq!(p.resolved, "api.test •••••• •••••• {{secret.nope}} {{X}}");
     assert_eq!(p.unresolved, vec!["X", "secret.nope"]);
     assert!(!p.resolved.contains("kc-value") && !p.resolved.contains("mem-value"));
+}
+
+#[test]
+fn previews_use_contains_never_get_and_preview_request_url_masks() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = new_ws(&dir);
+    ws.save_environments(vec![env_cfg("DEV", vec![nv("HOST", "https://api.test")])])
+        .unwrap();
+    ws.set_secret("mem".into(), "mem-value".into());
+    ws.set_secret_provider(Arc::new(NoGetProvider));
+    let p = ws.preview("{{secret.kc}} {{secret.mem}} {{secret.nope}}".into());
+    assert_eq!(p.resolved, "•••••• •••••• {{secret.nope}}");
+
+    let mut spec = spec("{{HOST}}/u/{id}");
+    spec.path_params = vec![nv("id", "42")];
+    spec.params = vec![nv("k", "{{secret.kc}}"), nv("limit", "5")];
+    let p = ws.preview_request_url(spec);
+    assert_eq!(p.resolved, "https://api.test/u/42?k=••••••&limit=5");
+    assert!(p.unresolved.is_empty());
 }

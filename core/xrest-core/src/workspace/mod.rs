@@ -281,7 +281,19 @@ impl Workspace {
     /// memory.
     pub fn preview(&self, text: &str) -> InterpolationPreview {
         let vars = crate::resolve::variables(self.selected_environment());
-        crate::interpolate::preview(text, &vars, &|k| self.secrets.get(k).is_some())
+        crate::interpolate::preview(text, &vars, &|k| self.secrets.contains(k))
+    }
+
+    /// The URL `spec` would be sent to, for display: variables interpolated, enabled path and
+    /// query params applied exactly as [`Workspace::prepare_send`] does, secrets masked as
+    /// `••••••`. No network, no file reads, no policy check; secrets are only tested for
+    /// existence. Unresolved variables, `{name}` path params and missing secrets are listed.
+    pub fn preview_request_url(&self, spec: &RequestSpec) -> InterpolationPreview {
+        crate::resolve::preview_request_url(
+            self.selected_environment(),
+            self.secrets.as_ref(),
+            spec,
+        )
     }
 
     /// The active environment: saved choice, else the legacy `selectedEnvironment` from

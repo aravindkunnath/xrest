@@ -694,3 +694,94 @@ fn variable_names_lists_enabled_names_of_the_selected_environment() {
     ws.select_environment("Z").unwrap();
     assert_eq!(ws.variable_names(), vec!["ONLY_Z"]);
 }
+
+// ---- request URL preview ----------------------------------------------------------------------
+
+/// A store whose `get` must never be called; `contains` answers from a fixed key list.
+struct NoGetStore {
+    keys: Vec<&'static str>,
+    contains_calls: std::sync::atomic::AtomicUsize,
+}
+
+impl SecretStore for NoGetStore {
+    fn get(&self, key: &str) -> Option<String> {
+        panic!("get({key}) must not be called to check existence");
+    }
+    fn contains(&self, key: &str) -> bool {
+        self.contains_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.keys.contains(&key)
+    }
+}
+
+fn url_ws(dir: &tempfile::TempDir) -> (Workspace, std::sync::Arc<MemorySecretStore>) {
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    let store = std::sync::Arc::new(MemorySecretStore::default());
+    ws.set_secret_store(store.clone());
+    ws.save_environments(vec![env(
+        "DEV",
+        vec![NameValue::new("BASE_URL", "https://h")],
+    )])
+    .unwrap();
+    (ws, store)
+}
+
+#[test]
+fn preview_request_url_substitutes_path_and_query_params() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ws, _) = url_ws(&dir);
+    let mut s = spec("{{BASE_URL}}/users/{id}");
+    s.path_params = vec![NameValue::new("id", "42")];
+    s.params = vec![NameValue::new("limit", "5")];
+    let p = ws.preview_request_url(&s);
+    assert_eq!(p.resolved, "https://h/users/42?limit=5");
+    assert!(p.unresolved.is_empty(), "{:?}", p.unresolved);
+}
+
+#[test]
+fn preview_request_url_masks_secrets_in_query() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ws, store) = url_ws(&dir);
+    store.set("tok", "hunter2");
+    let mut s = spec("{{BASE_URL}}/x");
+    s.params = vec![NameValue::new("key", "{{secret.tok}}")];
+    let p = ws.preview_request_url(&s);
+    assert_eq!(p.resolved, "https://h/x?key=••••••");
+    assert!(!p.resolved.contains("hunter2"));
+}
+
+#[test]
+fn preview_request_url_lists_missing_path_param_and_secret() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ws, _) = url_ws(&dir);
+    let mut s = spec("{{BASE_URL}}/users/{id}");
+    s.params = vec![NameValue::new("key", "{{secret.gone}}")];
+    let p = ws.preview_request_url(&s);
+    assert_eq!(p.unresolved, vec!["{id}", "secret.gone"]);
+    assert!(p.resolved.contains("/users/{id}") || p.resolved.contains("%7Bid%7D"));
+}
+
+#[test]
+fn previews_check_existence_without_fetching_secret_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "svc").unwrap();
+    let store = std::sync::Arc::new(NoGetStore {
+        keys: vec!["tok"],
+        contains_calls: Default::default(),
+    });
+    ws.set_secret_store(store.clone());
+    ws.save_environments(vec![env("DEV", vec![NameValue::new("B", "https://h")])])
+        .unwrap();
+    let p = ws.preview("{{secret.tok}} {{secret.no}}");
+    assert_eq!(p.resolved, "•••••• {{secret.no}}");
+    let mut s = spec("{{B}}/x");
+    s.params = vec![NameValue::new("k", "{{secret.tok}}")];
+    let p = ws.preview_request_url(&s);
+    assert_eq!(p.resolved, "https://h/x?k=••••••");
+    assert!(
+        store
+            .contains_calls
+            .load(std::sync::atomic::Ordering::SeqCst)
+            >= 3
+    );
+}

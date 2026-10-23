@@ -10,6 +10,12 @@ use std::sync::Mutex;
 
 pub trait SecretStore: Send + Sync {
     fn get(&self, key: &str) -> Option<String>;
+
+    /// Whether a value exists, without fetching it. Previews use this so that typing in the UI
+    /// never reads secret material from the credential store.
+    fn contains(&self, key: &str) -> bool {
+        self.get(key).is_some()
+    }
 }
 
 /// Process-lifetime secret store; also used by tests.
@@ -41,5 +47,12 @@ impl SecretStore for MemorySecretStore {
             .unwrap_or_else(|e| e.into_inner())
             .get(key)
             .cloned()
+    }
+
+    fn contains(&self, key: &str) -> bool {
+        self.data
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(key)
     }
 }

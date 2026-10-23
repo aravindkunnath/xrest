@@ -174,6 +174,26 @@ async fn path_params_fill_the_url_path_and_missing_ones_are_reported() {
 }
 
 #[tokio::test]
+async fn dot_segment_path_params_are_not_collapsed() {
+    let f = fixture().await;
+    let mut s = spec("GET", "{{BASE_URL}}/users/{id}");
+    s.path_params = vec![NameValue::new("id", "..")];
+    // The URL layer treats %2E%2E as a dot-segment too, so the value cannot be sent safely.
+    match f.ws.prepare_send(&s, false) {
+        Err(Error::InvalidInput(m)) => assert!(m.contains("{id}"), "{m}"),
+        Ok(p) => panic!("collapsed to {}", p.url()),
+        Err(e) => panic!("unexpected {e:?}"),
+    }
+    s.path_params = vec![NameValue::new("id", "a.b")];
+    assert!(f
+        .ws
+        .prepare_send(&s, false)
+        .unwrap()
+        .url()
+        .ends_with("/users/a.b"));
+}
+
+#[tokio::test]
 async fn unsafe_environment_requires_explicit_confirmation() {
     let mut f = fixture().await;
     Mock::given(path("/danger"))

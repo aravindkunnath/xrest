@@ -55,6 +55,13 @@ final class KeychainSecretStore: SecretProvider, @unchecked Sendable {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Existence from the names index only: no `SecItemCopyMatching`, so no Keychain read.
+    func contains(key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return readIndex().contains(key)
+    }
+
     // MARK: Management
 
     func set(key: String, value: String) throws {

@@ -14,7 +14,9 @@ use crate::exec::{
     build_url, has_header, HttpOptions, PreparedPreflightTest, PreparedSend, ResolvedAuth,
     ResolvedBody, ResolvedPart, ResolvedPreflight, ResolvedRequest,
 };
-use crate::interpolate::{interpolate, resolve_secrets, unresolved, Variables};
+use crate::interpolate::{
+    interpolate, resolve_secrets, unresolved, InterpolationPreview, Variables, SECRET_MASK,
+};
 use crate::model::{AuthKind, Body, Environment, NameValue, Preflight, RequestSpec, ServiceFile};
 use crate::policy::SendPolicy;
 use crate::preflight::TokenCache;
@@ -49,12 +51,19 @@ pub(crate) fn prepare_send(
         secrets: ctx.secrets,
         unresolved: BTreeSet::new(),
         missing: BTreeSet::new(),
+        dot_segments: BTreeSet::new(),
     };
 
     let params = r.pairs(&spec.params);
     let headers = r.pairs(&spec.headers);
     let raw_url = r.text(&spec.url);
     let raw_url = substitute_path_params(&raw_url, &spec.path_params, &mut r);
+    if let Some(name) = r.dot_segments.iter().next() {
+        // `url::Url` resolves `%2E%2E` like `..`, so the request would silently go elsewhere.
+        return Err(Error::InvalidInput(format!(
+            "path parameter {name} cannot be '.' or '..'"
+        )));
+    }
     let url = build_url(&raw_url, &params)?;
     let method = normalize_method(&spec.method);
     let body = resolve_body(&spec.body, &mut r, ctx.root)?;
@@ -107,6 +116,50 @@ pub(crate) fn prepare_send(
     })
 }
 
+/// Masks every secret that exists and never fetches a value.
+struct MaskingStore<'a>(&'a dyn SecretStore);
+
+impl SecretStore for MaskingStore<'_> {
+    fn get(&self, key: &str) -> Option<String> {
+        self.0.contains(key).then(|| SECRET_MASK.to_string())
+    }
+}
+
+/// The request URL as `prepare_send` would build it, with secrets masked (see
+/// [`crate::Workspace::preview_request_url`]). If the result is not a valid URL yet (for
+/// example an unresolved `{{BASE_URL}}`), the text is shown as far as it resolved.
+pub(crate) fn preview_request_url(
+    env: Option<&Environment>,
+    secrets: &dyn SecretStore,
+    spec: &RequestSpec,
+) -> InterpolationPreview {
+    let vars = variables(env);
+    let masking = MaskingStore(secrets);
+    let mut r = Resolver {
+        vars: &vars,
+        secrets: &masking,
+        unresolved: BTreeSet::new(),
+        missing: BTreeSet::new(),
+        dot_segments: BTreeSet::new(),
+    };
+    let params = r.pairs(&spec.params);
+    let raw_url = r.text(&spec.url);
+    let raw_url = substitute_path_params(&raw_url, &spec.path_params, &mut r);
+    let resolved = match build_url(&raw_url, &params) {
+        // The URL layer percent-encodes the mask; show it as written.
+        Ok(url) => url
+            .as_str()
+            .replace(&encode_segment(SECRET_MASK), SECRET_MASK),
+        Err(_) => raw_url,
+    };
+    let mut unresolved: Vec<String> = r.unresolved.into_iter().collect();
+    unresolved.extend(r.missing.into_iter().map(|k| format!("secret.{k}")));
+    InterpolationPreview {
+        resolved,
+        unresolved,
+    }
+}
+
 /// Resolve a preflight (the given one, else the service's) for a one-off test. Enforces the
 /// unsafe-environment policy first; ignores `enabled` and the token cache.
 pub(crate) fn prepare_test_preflight(
@@ -126,6 +179,7 @@ pub(crate) fn prepare_test_preflight(
         secrets: ctx.secrets,
         unresolved: BTreeSet::new(),
         missing: BTreeSet::new(),
+        dot_segments: BTreeSet::new(),
     };
     let resolved = resolve_preflight(&cfg, &mut r, "")?;
     if !r.missing.is_empty() {
@@ -169,6 +223,8 @@ struct Resolver<'a> {
     secrets: &'a dyn SecretStore,
     unresolved: BTreeSet<String>,
     missing: BTreeSet<String>,
+    /// Path params whose value is `.` or `..`: the URL layer collapses even the encoded form.
+    dot_segments: BTreeSet<String>,
 }
 
 impl Resolver<'_> {
@@ -229,7 +285,13 @@ fn substitute_path_params(url: &str, params: &[NameValue], r: &mut Resolver) -> 
             .iter()
             .find(|p| p.enabled && !p.name.is_empty() && p.name == name);
         match param {
-            Some(p) => out.push_str(&encode_segment(&r.text(&p.value))),
+            Some(p) => {
+                let value = r.text(&p.value);
+                if matches!(value.as_str(), "." | "..") {
+                    r.dot_segments.insert(format!("{{{name}}}"));
+                }
+                out.push_str(&encode_segment(&value));
+            }
             None => {
                 r.unresolved.insert(format!("{{{name}}}"));
                 out.push_str(&rest[..=close]);
@@ -243,7 +305,12 @@ fn substitute_path_params(url: &str, params: &[NameValue], r: &mut Resolver) -> 
 }
 
 /// Percent-encode everything except RFC 3986 unreserved characters.
+/// A value that is exactly `.` or `..` has its dots encoded so it can never become a
+/// dot-segment that URL normalization would collapse.
 fn encode_segment(s: &str) -> String {
+    if matches!(s, "." | "..") {
+        return s.replace('.', "%2E");
+    }
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
@@ -423,6 +490,7 @@ mod tests {
             secrets: &secrets,
             unresolved: BTreeSet::new(),
             missing: BTreeSet::new(),
+            dot_segments: BTreeSet::new(),
         };
         let out = substitute_path_params(url, params, &mut r);
         (out, r.unresolved.into_iter().collect())
@@ -441,6 +509,18 @@ mod tests {
         assert_eq!(u, "http://h.io/f/a%2Fb%20c");
         let (u, _) = subst("http://h.io/f/{p}", &[nv("p", "x?y#z%")], &[]);
         assert_eq!(u, "http://h.io/f/x%3Fy%23z%25");
+    }
+
+    #[test]
+    fn dot_segment_values_are_encoded() {
+        let (u, _) = subst("http://h.io/users/{id}", &[nv("id", "..")], &[]);
+        assert_eq!(u, "http://h.io/users/%2E%2E");
+        let (u, _) = subst("http://h.io/users/{id}", &[nv("id", ".")], &[]);
+        assert_eq!(u, "http://h.io/users/%2E");
+        let (u, _) = subst("http://h.io/users/{id}", &[nv("id", "a.b")], &[]);
+        assert_eq!(u, "http://h.io/users/a.b");
+        let (u, _) = subst("http://h.io/users/{id}", &[nv("id", "...")], &[]);
+        assert_eq!(u, "http://h.io/users/...");
     }
 
     #[test]

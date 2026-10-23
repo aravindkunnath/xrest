@@ -109,8 +109,13 @@ fn unit_seconds(unit: &str) -> f64 {
     }
 }
 
+/// Longest a token is ever cached, whatever the server claims.
+const MAX_TOKEN_TTL: Duration = Duration::from_secs(30 * 86_400);
+
+/// A positive, finite number of seconds as a duration, clamped to [`MAX_TOKEN_TTL`].
 fn secs_to_duration(secs: f64) -> Option<Duration> {
-    (secs.is_finite() && secs > 0.0).then(|| Duration::from_secs_f64(secs))
+    (secs.is_finite() && secs > 0.0)
+        .then(|| Duration::from_secs_f64(secs.min(MAX_TOKEN_TTL.as_secs_f64())))
 }
 
 fn json_number(v: &serde_json::Value) -> Option<f64> {
@@ -149,7 +154,11 @@ pub(crate) fn parse_rfc3339(s: &str) -> Option<f64> {
         d.next()?.parse().ok()?,
         d.next()?.parse().ok()?,
     );
-    if d.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&day) {
+    if d.next().is_some()
+        || !(1970..=9999).contains(&y)
+        || !(1..=12).contains(&m)
+        || !(1..=31).contains(&day)
+    {
         return None;
     }
     let tz_at = rest.find(['Z', 'z', '+', '-'])?;
@@ -165,7 +174,11 @@ pub(crate) fn parse_rfc3339(s: &str) -> Option<f64> {
         _ => {
             let sign = if tz.starts_with('-') { -1 } else { 1 };
             let (oh, om) = tz[1..].split_once(':')?;
-            sign * (oh.parse::<i64>().ok()? * 3600 + om.parse::<i64>().ok()? * 60)
+            let (oh, om) = (oh.parse::<i64>().ok()?, om.parse::<i64>().ok()?);
+            if !(0..=23).contains(&oh) || !(0..=59).contains(&om) {
+                return None;
+            }
+            sign * (oh * 3600 + om * 60)
         }
     };
     // days-from-civil (Howard Hinnant)
@@ -251,6 +264,31 @@ mod tests {
         assert_eq!(cache_ttl(&cfg(), b"{}"), Some(DEFAULT_TOKEN_TTL));
         c.cache_token = false;
         assert_eq!(cache_ttl(&c, b"{}"), None);
+    }
+
+    #[test]
+    fn hostile_expiry_values_never_panic_and_clamp_to_30_days() {
+        let max = Duration::from_secs(30 * 86_400);
+        let cases: [(&str, &str); 9] = [
+            ("epoch", r#"{"expires_in": 1e30}"#),
+            ("epoch_ms", r#"{"expires_in": 1e30}"#),
+            ("seconds", r#"{"expires_in": 1e30}"#),
+            ("days", r#"{"expires_in": 1e300}"#),
+            ("iso8601", r#"{"expires_in": "99999999-01-01T00:00:00Z"}"#),
+            ("iso8601", r#"{"expires_in": "9999-12-31T23:59:59Z"}"#),
+            ("epoch", r#"{"expires_in": "NaN"}"#),
+            ("epoch", r#"{"expires_in": "inf"}"#),
+            ("seconds", r#"{"expires_in": "-inf"}"#),
+        ];
+        for (unit, body) in cases {
+            let mut c = cfg();
+            c.cache_duration_unit = unit.into();
+            let ttl = cache_ttl(&c, body.as_bytes());
+            assert!(ttl.is_some_and(|t| t <= max), "{unit} {body}: {ttl:?}");
+        }
+        let mut c = cfg();
+        c.cache_duration = "1e30".into();
+        assert_eq!(cache_ttl(&c, b"{}"), Some(max));
     }
 
     #[test]

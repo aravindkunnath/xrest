@@ -609,6 +609,9 @@ impl From<core::HttpResponse> for HttpResponse {
 #[uniffi::export(with_foreign)]
 pub trait SecretProvider: Send + Sync {
     fn get(&self, key: String) -> Option<String>;
+    /// Whether a value exists for `key`. Used by previews, which must not fetch secret values
+    /// (for the Keychain that can mean an authorization prompt on every keystroke).
+    fn contains(&self, key: String) -> bool;
 }
 
 /// Looks keys up in the foreign provider first, then in the in-memory store.
@@ -628,6 +631,15 @@ impl core::SecretStore for SecretChain {
         provider
             .and_then(|p| p.get(key.to_string()))
             .or_else(|| self.memory.get(key))
+    }
+
+    fn contains(&self, key: &str) -> bool {
+        let provider = self
+            .provider
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        provider.is_some_and(|p| p.contains(key.to_string())) || self.memory.contains(key)
     }
 }
 
@@ -736,6 +748,17 @@ impl XRestWorkspace {
     /// provider, then the memory store) are masked as `••••••`; their values are never returned.
     pub fn preview(&self, text: String) -> InterpolationPreview {
         let p = self.lock().preview(&text);
+        InterpolationPreview {
+            resolved: p.resolved,
+            unresolved: p.unresolved,
+        }
+    }
+
+    /// The URL `spec` would be sent to, for the confirmation sheet: variables interpolated,
+    /// path and query params applied as `send` does, secrets masked as `••••••`. No network,
+    /// no file reads; secrets are only tested for existence (`SecretProvider.contains`).
+    pub fn preview_request_url(&self, spec: RequestSpec) -> InterpolationPreview {
+        let p = self.lock().preview_request_url(&spec.into());
         InterpolationPreview {
             resolved: p.resolved,
             unresolved: p.unresolved,

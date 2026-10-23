@@ -614,6 +614,12 @@ public protocol SecretProvider: AnyObject, Sendable {
     
     func get(key: String)  -> String?
     
+    /**
+     * Whether a value exists for `key`. Used by previews, which must not fetch secret values
+     * (for the Keychain that can mean an authorization prompt on every keystroke).
+     */
+    func contains(key: String)  -> Bool
+    
 }
 /**
  * Implemented by the app (e.g. over the Keychain) to supply secret values for
@@ -683,6 +689,20 @@ open func get(key: String) -> String?  {
 })
 }
     
+    /**
+     * Whether a value exists for `key`. Used by previews, which must not fetch secret values
+     * (for the Keychain that can mean an authorization prompt on every keystroke).
+     */
+open func contains(key: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_secretprovider_contains(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(key),uniffiCallStatus
+    )
+})
+}
+    
 
     
 }
@@ -729,6 +749,30 @@ fileprivate struct UniffiCallbackInterfaceSecretProvider {
 
             
             let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionString.lower($0) }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        },
+        contains: { (
+            uniffiHandle: UInt64,
+            key: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<Int8>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> Bool in
+                guard let uniffiObj = try? FfiConverterTypeSecretProvider.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.contains(
+                     key: try FfiConverterString.lift(key)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterBool.lower($0) }
             uniffiTraitInterfaceCall(
                 callStatus: uniffiCallStatus,
                 makeCall: makeCall,
@@ -858,6 +902,13 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
      * provider, then the memory store) are masked as `••••••`; their values are never returned.
      */
     func preview(text: String)  -> InterpolationPreview
+    
+    /**
+     * The URL `spec` would be sent to, for the confirmation sheet: variables interpolated,
+     * path and query params applied as `send` does, secrets masked as `••••••`. No network,
+     * no file reads; secrets are only tested for existence (`SecretProvider.contains`).
+     */
+    func previewRequestUrl(spec: RequestSpec)  -> InterpolationPreview
     
     /**
      * Move a scratch request into the versioned endpoints (the scratch file is removed).
@@ -1154,6 +1205,21 @@ open func preview(text: String) -> InterpolationPreview  {
     uniffi_xrest_ffi_fn_method_xrestworkspace_preview(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(text),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The URL `spec` would be sent to, for the confirmation sheet: variables interpolated,
+     * path and query params applied as `send` does, secrets masked as `••••••`. No network,
+     * no file reads; secrets are only tested for existence (`SecretProvider.contains`).
+     */
+open func previewRequestUrl(spec: RequestSpec) -> InterpolationPreview  {
+    return try!  FfiConverterTypeInterpolationPreview_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_preview_request_url(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeRequestSpec_lower(spec),uniffiCallStatus
     )
 })
 }
@@ -3249,6 +3315,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_secretprovider_get() != 64551) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_secretprovider_contains() != 20032) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_clear_token_cache() != 21902) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3286,6 +3355,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_preview() != 8533) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_preview_request_url() != 30029) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_promote_scratch() != 54879) {

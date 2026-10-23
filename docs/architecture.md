@@ -320,6 +320,7 @@ XRestWorkspace
     save_environments(envs: [EnvironmentConfig])      // trimmed, non-empty, unique names else InvalidInput; selection kept or falls back to first
     variable_names() -> [String]                      // enabled variables of the selected environment (autocomplete)
     preview(text) -> InterpolationPreview             // { resolved, unresolved }; secrets shown as ••••••, never their value
+    preview_request_url(spec) -> InterpolationPreview // the URL as send builds it (variables, path params, enabled query params), secrets masked; no I/O
     send_policy() -> SendPolicy                       // { environment, requires_confirmation }
   endpoints
     list_endpoints() / get_endpoint(id) -> Endpoint
@@ -356,16 +357,25 @@ Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`
 `InvalidInput(message)`, `Io(message)`, `Http(message)`, `Preflight(message)`, `MissingSecrets(keys)`,
 `NotImplemented(message)`.
 
-`SecretProvider` is a foreign-implementable protocol (`get(key) -> String?`); the app implements it over
+`SecretProvider` is a foreign-implementable protocol (`get(key) -> String?`, `contains(key) -> Bool`); the app implements it over
 the Keychain and the FFI adapter (a `SecretStore`) asks it first, then the `set_secret` memory store.
 Missing keys still fail the send with `MissingSecrets(keys)` before any request. `secret_keys_in_use`
 scans the service, environments, endpoints and scratch requests for `{{secret.KEY}}` and `secretKey`.
 
 `preview` resolves `{{VAR}}` in the selected environment and looks `{{secret.KEY}}` up through the same
-chain as `send` (provider, then `set_secret`) only to decide whether a value exists: found secrets
+chain as `send` (provider, then `set_secret`) only to decide whether a value exists, through
+`contains` (`SecretStore::contains`, default `get(..).is_some()`), never `get`, so typing never
+reads secret values from the credential store: found secrets
 become `••••••`, missing ones stay as `{{secret.KEY}}` and are listed as `secret.KEY` in `unresolved`
 (after the plain names). `ServiceSettings.auth_type` is `none|basic|bearer|apikey`; unknown values and
 an empty name are `InvalidInput`.
+
+`preview_request_url(spec)` is the same preview applied to a whole request: `{{VAR}}` interpolated, enabled
+`{name}` path params substituted (same encoding as `send`), enabled query params merged exactly as `send`
+does, secrets shown as `••••••`. Unresolved lists variables, `{name}` path params, then `secret.KEY`. If the
+result is not yet a valid URL the partly resolved text is returned. A path param whose value is `.` or `..`
+is percent-encoded (`%2E`), but `send` refuses it with `InvalidInput` because the URL layer collapses
+the dot-segment even when encoded (the preview shows the collapsed URL). A preflight token lifetime is clamped to 30 days.
 
 `send` takes the request spec rather than an id so the app can send the unsaved draft it is editing.
 `test_preflight` runs one preflight request (the given one, or the service's when `nil`) in the
