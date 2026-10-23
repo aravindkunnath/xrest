@@ -1071,3 +1071,27 @@ async fn update_service_settings_clears_the_token_cache() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn response_cookies_are_parsed_in_order() {
+    let f = fixture().await;
+    Mock::given(path("/login"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("Set-Cookie", "sid=abc; Path=/; HttpOnly")
+                .append_header("Set-Cookie", "theme=dark; Max-Age=60"),
+        )
+        .mount(&f.server)
+        .await;
+    let resp =
+        f.ws.prepare_send(&spec("GET", "{{BASE_URL}}/login"), false)
+            .unwrap()
+            .execute()
+            .await
+            .unwrap();
+    assert_eq!(resp.cookies.len(), 2);
+    assert_eq!(resp.cookies[0].name, "sid");
+    assert!(resp.cookies[0].http_only);
+    assert_eq!(resp.cookies[1].name, "theme");
+    assert_eq!(resp.cookies[1].max_age, Some(60));
+}

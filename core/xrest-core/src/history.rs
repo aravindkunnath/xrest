@@ -584,6 +584,7 @@ mod tests {
             final_url: "http://x/".into(),
             environment: None,
             unresolved_variables: vec![],
+            cookies: vec![],
         };
         assert!(record_send(&sink, &req, &["a b!c".to_string()], None, &Ok(resp)).is_none());
         let e = h.get(1).unwrap().unwrap();

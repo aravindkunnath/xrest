@@ -137,6 +137,7 @@ extension HistoryEntry {
         return HttpResponse(
             status: status, statusText: statusText, headers: responseHeaders, contentType: type,
             body: responseBody, bodyIsBase64: bodyIsBase64, prettyBody: nil, sizeBytes: sizeBytes,
-            timeMs: timeMs, finalUrl: url, environment: environment, unresolvedVariables: [])
+            timeMs: timeMs, finalUrl: url, environment: environment, unresolvedVariables: [],
+            cookies: [])
     }
 }
