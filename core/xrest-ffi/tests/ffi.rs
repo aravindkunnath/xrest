@@ -96,6 +96,37 @@ async fn full_flow_through_ffi_surface() {
 }
 
 #[test]
+fn restore_diff_and_max_versions_across_ffi() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = new_ws(&dir);
+    ws.set_max_versions(5);
+    let ep = ws
+        .create_endpoint("E".into(), spec("http://a.io/1"))
+        .unwrap();
+    for i in 2..=7 {
+        ws.update_endpoint(ep.id.clone(), "E".into(), spec(&format!("http://a.io/{i}")))
+            .unwrap();
+    }
+    let v = ws.endpoint_versions(ep.id.clone(), 100).unwrap();
+    assert_eq!(v.len(), 5);
+    assert_eq!(v[4].version, 3);
+    let restored = ws.restore_endpoint_version(ep.id.clone(), 3).unwrap();
+    assert_eq!(restored.last_version, 8);
+    assert_eq!(restored.spec.url, "http://a.io/3");
+    let d = ws.diff_versions(ep.id.clone(), 7, 8).unwrap();
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].field, "url");
+    assert_eq!(d[0].change, "changed");
+    assert_eq!(d[0].before.as_deref(), Some("http://a.io/7"));
+    assert_eq!(d[0].after.as_deref(), Some("http://a.io/3"));
+    assert!(ws.diff_versions(ep.id.clone(), 8, 8).unwrap().is_empty());
+    assert!(matches!(
+        ws.restore_endpoint_version(ep.id.clone(), 99),
+        Err(XRestError::NotFound { .. })
+    ));
+}
+
+#[test]
 fn errors_map_to_ffi_variants() {
     let dir = tempfile::tempdir().unwrap();
     assert!(matches!(

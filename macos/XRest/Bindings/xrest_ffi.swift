@@ -878,6 +878,11 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func deleteScratch(id: String) throws 
     
     /**
+     * Field-level changes going from version `from` to version `to`.
+     */
+    func diffVersions(id: String, from: Int32, to: Int32) throws  -> [FieldChange]
+    
+    /**
      * Version history, newest first.
      */
     func endpointVersions(id: String, limit: UInt32) throws  -> [EndpointVersion]
@@ -916,6 +921,11 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func promoteScratch(id: String, name: String?) throws  -> Endpoint
     
     /**
+     * Write a past version's config as the current request. Recorded as a NEW version.
+     */
+    func restoreEndpointVersion(id: String, version: Int32) throws  -> Endpoint
+    
+    /**
      * Replace all environments. Names are trimmed, non-empty and unique (else `InvalidInput`).
      * The selection is kept if its name still exists, else it moves to the first environment.
      */
@@ -945,6 +955,11 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func sendPolicy()  -> SendPolicy
     
     func service()  -> ServiceInfo
+    
+    /**
+     * Cap on retained versions per endpoint (clamped to 5-50).
+     */
+    func setMaxVersions(n: UInt32) 
     
     /**
      * Store a secret in memory for `{{secret.KEY}}` placeholders (tests and fallback). The
@@ -1122,6 +1137,21 @@ open func deleteScratch(id: String)throws   {try rustCallWithError(FfiConverterT
 }
     
     /**
+     * Field-level changes going from version `from` to version `to`.
+     */
+open func diffVersions(id: String, from: Int32, to: Int32)throws  -> [FieldChange]  {
+    return try  FfiConverterSequenceTypeFieldChange.lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_diff_versions(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterInt32.lower(from),
+        FfiConverterInt32.lower(to),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Version history, newest first.
      */
 open func endpointVersions(id: String, limit: UInt32)throws  -> [EndpointVersion]  {
@@ -1239,6 +1269,20 @@ open func promoteScratch(id: String, name: String?)throws  -> Endpoint  {
 }
     
     /**
+     * Write a past version's config as the current request. Recorded as a NEW version.
+     */
+open func restoreEndpointVersion(id: String, version: Int32)throws  -> Endpoint  {
+    return try  FfiConverterTypeEndpoint_lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_restore_endpoint_version(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterInt32.lower(version),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Replace all environments. Names are trimmed, non-empty and unique (else `InvalidInput`).
      * The selection is kept if its name still exists, else it moves to the first environment.
      */
@@ -1323,6 +1367,18 @@ open func service() -> ServiceInfo  {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Cap on retained versions per endpoint (clamped to 5-50).
+     */
+open func setMaxVersions(n: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_set_max_versions(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(n),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -1672,6 +1728,85 @@ public func FfiConverterTypeEnvironmentConfig_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeEnvironmentConfig_lower(_ value: EnvironmentConfig) -> RustBuffer {
     return FfiConverterTypeEnvironmentConfig.lower(value)
+}
+
+
+/**
+ * One field-level difference between two endpoint versions.
+ */
+public struct FieldChange: Equatable, Hashable {
+    /**
+     * `method`, `url`, `authenticated`, `param:<name>`, `pathParam:<name>`, `header:<name>`,
+     * `body.type`, `body.content`, `options.<key>`, `preflight.<field>`.
+     */
+    public var field: String
+    /**
+     * `added`, `removed` or `changed`.
+     */
+    public var change: String
+    public var before: String?
+    public var after: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `method`, `url`, `authenticated`, `param:<name>`, `pathParam:<name>`, `header:<name>`,
+         * `body.type`, `body.content`, `options.<key>`, `preflight.<field>`.
+         */field: String, 
+        /**
+         * `added`, `removed` or `changed`.
+         */change: String, before: String?, after: String?) {
+        self.field = field
+        self.change = change
+        self.before = before
+        self.after = after
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FieldChange: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFieldChange: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FieldChange {
+        return
+            try FieldChange(
+                field: FfiConverterString.read(from: &buf), 
+                change: FfiConverterString.read(from: &buf), 
+                before: FfiConverterOptionString.read(from: &buf), 
+                after: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FieldChange, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.field, into: &buf)
+        FfiConverterString.write(value.change, into: &buf)
+        FfiConverterOptionString.write(value.before, into: &buf)
+        FfiConverterOptionString.write(value.after, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFieldChange_lift(_ buf: RustBuffer) throws -> FieldChange {
+    return try FfiConverterTypeFieldChange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFieldChange_lower(_ value: FieldChange) -> RustBuffer {
+    return FfiConverterTypeFieldChange.lower(value)
 }
 
 
@@ -3177,6 +3312,31 @@ fileprivate struct FfiConverterSequenceTypeEnvironmentConfig: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeFieldChange: FfiConverterRustBuffer {
+    typealias SwiftType = [FieldChange]
+
+    public static func write(_ value: [FieldChange], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFieldChange.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FieldChange] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FieldChange]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFieldChange.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeHeaderPair: FfiConverterRustBuffer {
     typealias SwiftType = [HeaderPair]
 
@@ -3333,6 +3493,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_delete_scratch() != 60939) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_diff_versions() != 58308) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_endpoint_versions() != 65053) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3363,6 +3526,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_promote_scratch() != 54879) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_restore_endpoint_version() != 23025) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_save_environments() != 44341) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3382,6 +3548,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_service() != 43918) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_max_versions() != 61830) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_secret() != 43588) {

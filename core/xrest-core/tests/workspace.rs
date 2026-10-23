@@ -203,7 +203,70 @@ fn version_history_is_capped() {
     let v = ws.endpoint_versions(&ep.id, 100).unwrap();
     assert_eq!(v.len(), 5);
     assert_eq!(v[0].version, 10);
+    assert_eq!(v[4].version, 6);
+    assert!(v.iter().all(|x| x.version != 1));
     assert_eq!(ws.endpoint(&ep.id).unwrap().last_version, 10);
+}
+
+#[test]
+fn restore_creates_new_version_with_old_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "x").unwrap();
+    let ep = ws.create_endpoint("E", spec("http://a.io/1")).unwrap();
+    for i in 2..=10 {
+        ws.update_endpoint(&ep.id, None, spec(&format!("http://a.io/{i}")))
+            .unwrap();
+    }
+    assert_eq!(ws.endpoint(&ep.id).unwrap().last_version, 10);
+    let restored = ws.restore_endpoint_version(&ep.id, 3).unwrap();
+    assert_eq!(restored.url, "http://a.io/3");
+    assert_eq!(restored.last_version, 11);
+    let v = ws.endpoint_versions(&ep.id, 100).unwrap();
+    assert_eq!(v.len(), 11);
+    assert_eq!(v[0].version, 11);
+    assert_eq!(v[0].config, v[8].config);
+    assert_eq!(v[8].version, 3);
+    assert_eq!(v[8].config.url, "http://a.io/3");
+    assert!(ws.diff_versions(&ep.id, 3, 11).unwrap().is_empty());
+    let d = ws.diff_versions(&ep.id, 10, 11).unwrap();
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].field, "url");
+    // reopened from disk
+    let re = Workspace::open(dir.path()).unwrap();
+    assert_eq!(re.endpoint(&ep.id).unwrap().url, "http://a.io/3");
+}
+
+#[test]
+fn restore_and_diff_unknown_version_is_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "x").unwrap();
+    let ep = ws.create_endpoint("E", spec("http://a.io/1")).unwrap();
+    assert!(matches!(
+        ws.restore_endpoint_version(&ep.id, 99),
+        Err(Error::NotFound { .. })
+    ));
+    assert!(matches!(
+        ws.diff_versions(&ep.id, 1, 99),
+        Err(Error::NotFound { .. })
+    ));
+    assert!(matches!(
+        ws.diff_versions(&ep.id, 99, 1),
+        Err(Error::NotFound { .. })
+    ));
+    assert!(matches!(
+        ws.restore_endpoint_version("nope", 1),
+        Err(Error::NotFound { .. })
+    ));
+}
+
+#[test]
+fn restoring_the_current_config_records_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(dir.path(), "x").unwrap();
+    let ep = ws.create_endpoint("E", spec("http://a.io/1")).unwrap();
+    let r = ws.restore_endpoint_version(&ep.id, 1).unwrap();
+    assert_eq!(r.last_version, 1);
+    assert_eq!(ws.endpoint_versions(&ep.id, 10).unwrap().len(), 1);
 }
 
 #[test]

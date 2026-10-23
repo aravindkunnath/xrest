@@ -327,6 +327,9 @@ XRestWorkspace
     create_endpoint(name, spec) / update_endpoint(id, name, spec) -> Endpoint   // update snapshots a version when the request changed
     delete_endpoint(id)
     endpoint_versions(id, limit) -> [EndpointVersion] // newest first
+    restore_endpoint_version(id, version) -> Endpoint // past config becomes the current request, saved as a NEW version (MAX+1); restoring the current config is a no-op
+    diff_versions(id, from, to) -> [FieldChange]      // field-level changes from -> to; NotFound for an unknown version
+    set_max_versions(n)                               // retained versions per endpoint, clamped 5-50
   scratchpad
     list_scratch() / get_scratch(id) -> ScratchRequest
     create_scratch(name, spec) / update_scratch(id, name, spec) -> ScratchRequest
@@ -347,7 +350,9 @@ XRestWorkspace
 `binary`; `empty` rather than `none` to avoid clashing with Swift's `Optional.none`) and
 `RequestSpec.options` is `RequestOptions`. `ServiceInfo.format_version` reports the on-disk format.
 
-Records: `NameValue`, `Preflight`, `RequestSpec`, `RequestOptions`, `Endpoint`, `ScratchRequest`, `EndpointVersion`,
+Records: `NameValue`, `Preflight`, `RequestSpec`, `RequestOptions`, `Endpoint`, `ScratchRequest`, `EndpointVersion`, `FieldChange`
+(`field` such as `url`, `param:<name>`, `header:<name>`, `body.type`, `body.content`, `options.<key>`, `preflight.<field>`;
+`change` is `added`/`removed`/`changed`; `before`/`after` optional text),
 `EnvironmentConfig` (not `Environment`, which would clash with SwiftUI's), `ServiceInfo`, `ServiceSettings`,
 `InterpolationPreview`, `SendPolicy`,
 `HeaderPair`, `HttpResponse`, `PreflightTestResult`.

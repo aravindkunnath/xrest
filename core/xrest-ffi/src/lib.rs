@@ -175,6 +175,18 @@ pub struct EndpointVersion {
     pub spec: RequestSpec,
 }
 
+/// One field-level difference between two endpoint versions.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FieldChange {
+    /// `method`, `url`, `authenticated`, `param:<name>`, `pathParam:<name>`, `header:<name>`,
+    /// `body.type`, `body.content`, `options.<key>`, `preflight.<field>`.
+    pub field: String,
+    /// `added`, `removed` or `changed`.
+    pub change: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 /// Named variable set. (Not called `Environment` to avoid clashing with SwiftUI's `Environment`.)
 pub struct EnvironmentConfig {
@@ -511,6 +523,17 @@ impl From<core::EndpointVersion> for EndpointVersion {
     }
 }
 
+impl From<core::FieldChange> for FieldChange {
+    fn from(c: core::FieldChange) -> Self {
+        Self {
+            field: c.field,
+            change: c.change.as_str().to_string(),
+            before: c.before,
+            after: c.after,
+        }
+    }
+}
+
 impl From<core::Environment> for EnvironmentConfig {
     fn from(e: core::Environment) -> Self {
         Self {
@@ -821,6 +844,26 @@ impl XRestWorkspace {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    /// Write a past version's config as the current request. Recorded as a NEW version.
+    pub fn restore_endpoint_version(&self, id: String, version: i32) -> Result<Endpoint> {
+        Ok(self.lock().restore_endpoint_version(&id, version)?.into())
+    }
+
+    /// Field-level changes going from version `from` to version `to`.
+    pub fn diff_versions(&self, id: String, from: i32, to: i32) -> Result<Vec<FieldChange>> {
+        Ok(self
+            .lock()
+            .diff_versions(&id, from, to)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// Cap on retained versions per endpoint (clamped to 5-50).
+    pub fn set_max_versions(&self, n: u32) {
+        self.lock().set_max_versions(n as usize);
     }
 
     // scratchpad

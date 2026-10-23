@@ -1,6 +1,7 @@
 //! Versioned endpoints (`endpoints/<id>.yaml`, history in `.xrest/versions/`).
 
 use super::{now_secs, Workspace};
+use crate::diff::{diff_configs, FieldChange};
 use crate::error::{Error, Result};
 use crate::model::*;
 use crate::storage;
@@ -112,5 +113,34 @@ impl Workspace {
     pub fn endpoint_versions(&self, id: &str, limit: usize) -> Result<Vec<EndpointVersion>> {
         self.endpoint(id)?;
         self.versions.list(id, limit)
+    }
+
+    fn version_config(&self, id: &str, version: i32) -> Result<RequestConfig> {
+        self.versions
+            .list(id, usize::MAX)?
+            .into_iter()
+            .find(|v| v.version == version)
+            .map(|v| v.config)
+            .ok_or_else(|| Error::NotFound {
+                what: "endpoint version",
+                id: format!("{id}@{version}"),
+            })
+    }
+
+    /// Make a past version's request the current one. Goes through [`Self::update_endpoint`], so
+    /// it is recorded as a new version (`MAX+1`); history is never rewritten. Restoring the
+    /// config that is already current changes nothing.
+    pub fn restore_endpoint_version(&mut self, id: &str, version: i32) -> Result<Endpoint> {
+        self.endpoint(id)?;
+        let config = self.version_config(id, version)?;
+        self.update_endpoint(id, None, config.spec())
+    }
+
+    /// Changes going from version `from` to version `to`.
+    pub fn diff_versions(&self, id: &str, from: i32, to: i32) -> Result<Vec<FieldChange>> {
+        self.endpoint(id)?;
+        let a = self.version_config(id, from)?;
+        let b = self.version_config(id, to)?;
+        Ok(diff_configs(&a, &b))
     }
 }
