@@ -257,6 +257,21 @@ impl Default for RequestSpec {
     }
 }
 
+/// Trim + uppercase an HTTP method; empty means `GET`. Anything but ASCII letters is
+/// [`Error::InvalidInput`], so a method can never smuggle shell or code into an export.
+pub fn normalize_method(m: &str) -> crate::error::Result<String> {
+    let m = m.trim().to_ascii_uppercase();
+    if m.is_empty() {
+        return Ok("GET".into());
+    }
+    if !m.bytes().all(|b| b.is_ascii_uppercase()) {
+        return Err(crate::error::Error::InvalidInput(format!(
+            "invalid HTTP method {m:?}: only letters A-Z are allowed"
+        )));
+    }
+    Ok(m)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

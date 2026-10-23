@@ -365,3 +365,65 @@ async fn preflight_token_is_masked_and_recording_failure_is_a_warning() {
     assert_eq!(f.ws.warnings().len(), before + 1);
     assert!(f.ws.warnings().last().unwrap().contains("disk full"));
 }
+
+#[tokio::test]
+async fn secrets_are_masked_in_url_encodings_status_text_and_errors() {
+    let mut f = fx().await;
+    f.secrets.set("s", "a b!c");
+    let mut s = spec("GET", "http://127.0.0.1:1/p/{seg}?k={{secret.s}}");
+    s.path_params.push(NameValue::new("seg", "{{secret.s}}"));
+    let r = send(&mut f, &s).await;
+    assert!(r.is_err());
+    let id = f.hist.list(&HistoryFilter::default(), 1, 0).unwrap()[0].id;
+    let e = f.hist.get(id).unwrap().unwrap();
+    let dump = format!("{e:?}");
+    for enc in ["a b!c", "a%20b!c", "a%20b%21c", "a+b%21c", "a+b!c"] {
+        assert!(!dump.contains(enc), "{enc} leaked: {dump}");
+    }
+    assert!(e.error.is_some());
+}
+
+#[test]
+fn fresh_db_has_user_version_1_and_newer_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("h.sqlite");
+    drop(SqliteHistory::open(&path).unwrap());
+    let c = rusqlite::Connection::open(&path).unwrap();
+    let v: i64 = c
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(v, 1);
+    c.pragma_update(None, "user_version", 99).unwrap();
+    drop(c);
+    let err = SqliteHistory::open(&path).err().expect("must refuse");
+    let msg = err.to_string();
+    assert!(msg.contains("99") && msg.contains("update XRest"), "{msg}");
+    // and it did not touch the file
+    let c = rusqlite::Connection::open(&path).unwrap();
+    let v: i64 = c
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(v, 99);
+}
+
+#[test]
+fn clear_leaves_no_trace_of_bodies_on_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("h.sqlite");
+    let h = SqliteHistory::open(&path).unwrap();
+    let marker = "DISTINCTIVE-BODY-MARKER-7f3a9";
+    for _ in 0..3 {
+        let mut e = entry("GET", Some(200));
+        e.response_body = format!("{marker} {}", "x".repeat(2000));
+        h.record(&e).unwrap();
+    }
+    h.clear().unwrap();
+    assert_eq!(h.count(&HistoryFilter::default()).unwrap(), 0);
+    let mut wal = path.as_os_str().to_owned();
+    wal.push("-wal");
+    for p in [path.clone(), std::path::PathBuf::from(wal)] {
+        let bytes = std::fs::read(&p).unwrap_or_default();
+        let found = bytes.windows(marker.len()).any(|w| w == marker.as_bytes());
+        assert!(!found, "{} still holds the body", p.display());
+    }
+}

@@ -27,6 +27,8 @@ pub struct ImportedSpec {
     pub title: String,
     pub base_url: Option<String>,
     pub endpoints: Vec<ImportedEndpoint>,
+    /// Imported values that were dropped (see [`clean`]); surfaced as workspace warnings.
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +39,20 @@ pub struct ImportSummary {
 
 const METHODS: [&str; 7] = ["GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH"];
 const MAX_REF_DEPTH: usize = 16;
+
+/// Imported text must not carry XRest interpolation (`{{VAR}}`, `{{secret.KEY}}`) into the
+/// workspace: a hostile spec could otherwise make a later send resolve and leak a secret. Such a
+/// value is dropped (becomes empty) and a warning names the field.
+fn clean(warnings: &mut Vec<String>, what: &str, value: &str) -> String {
+    if value.contains("{{") {
+        warnings.push(format!(
+            "ignored imported value containing '{{{{' in {what}"
+        ));
+        String::new()
+    } else {
+        value.to_string()
+    }
+}
 
 /// Parse an OpenAPI 3.x or Swagger 2.0 document (JSON or YAML). Anything else is
 /// [`Error::InvalidInput`].
@@ -63,11 +79,20 @@ pub fn parse(content: &str) -> Result<ImportedSpec> {
         .unwrap_or("")
         .trim()
         .to_string();
+    let mut warnings = vec![];
+    let title = clean(&mut warnings, "the API title", &title);
     let base_url = if v2 {
         v2_base_url(&doc)
     } else {
         v3_base_url(&doc)
-    };
+    }
+    .filter(|b| {
+        let bad = b.contains("{{");
+        if bad {
+            warnings.push("ignored imported value containing '{{' in the base URL".into());
+        }
+        !bad
+    });
 
     let mut endpoints = vec![];
     if let Some(paths) = doc.get("paths").and_then(Value::as_object) {
@@ -80,7 +105,7 @@ pub fn parse(content: &str) -> Result<ImportedSpec> {
                 if !op.is_object() {
                     continue;
                 }
-                endpoints.push(build_endpoint(&doc, v2, p, item, method, op));
+                endpoints.push(build_endpoint(&mut warnings, &doc, v2, p, item, method, op));
             }
         }
     }
@@ -88,6 +113,7 @@ pub fn parse(content: &str) -> Result<ImportedSpec> {
         title,
         base_url,
         endpoints,
+        warnings,
     })
 }
 
@@ -181,6 +207,7 @@ fn default_text(doc: &Value, node: &Value) -> String {
 }
 
 fn build_endpoint(
+    warnings: &mut Vec<String>,
     doc: &Value,
     v2: bool,
     path: &str,
@@ -194,10 +221,19 @@ fn build_endpoint(
             .map(str::trim)
             .filter(|s| !s.is_empty())
     };
-    let name = text("summary")
-        .or_else(|| text("operationId"))
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("{method} {path}"));
+    let path = clean(warnings, &format!("path of {method} operation"), path);
+    let mut name = None;
+    for key in ["summary", "operationId"] {
+        if let Some(t) = text(key) {
+            let t = clean(warnings, &format!("{key} of {method} {path}"), t);
+            if !t.is_empty() {
+                name = Some(t);
+                break;
+            }
+        }
+    }
+    let name = name.unwrap_or_else(|| format!("{method} {path}").trim().to_string());
+    let path = path.as_str();
 
     // Path-item parameters first; an operation parameter with the same (in, name) overrides.
     let mut params: Vec<&Value> = vec![];
@@ -226,6 +262,7 @@ fn build_endpoint(
         url: format!("{{{{BASE_URL}}}}{path}"),
         ..Default::default()
     };
+    let at = format!("{method} {path}");
     let mut form: Vec<NameValue> = vec![];
     let mut body = Body::None;
     for p in params {
@@ -236,7 +273,20 @@ fn build_endpoint(
         else {
             continue;
         };
-        let row = || NameValue::new(pname, default_text(doc, p));
+        if pname.contains("{{") {
+            clean(warnings, &format!("parameter name of {at}"), pname);
+            continue;
+        }
+        let mut row = || {
+            NameValue::new(
+                pname,
+                clean(
+                    warnings,
+                    &format!("parameter {pname} default of {at}"),
+                    &default_text(doc, p),
+                ),
+            )
+        };
         match p.get("in").and_then(Value::as_str) {
             Some("path") => spec.path_params.push(row()),
             Some("query") => spec.params.push(row()),
@@ -260,7 +310,29 @@ fn build_endpoint(
             body = v3_body(doc, b);
         }
     }
-    spec.body = body;
+    spec.body = match body {
+        Body::Json { content } => Body::Json {
+            content: clean(warnings, &format!("JSON body of {at}"), &content),
+        },
+        Body::Form { fields } => Body::Form {
+            fields: fields
+                .into_iter()
+                .filter_map(|f| {
+                    if f.name.contains("{{") {
+                        clean(warnings, &format!("form field name of {at}"), &f.name);
+                        return None;
+                    }
+                    let value = clean(
+                        warnings,
+                        &format!("form field {} of {at}", f.name),
+                        &f.value,
+                    );
+                    Some(NameValue::new(f.name, value))
+                })
+                .collect(),
+        },
+        other => other,
+    };
     ImportedEndpoint {
         name,
         method: method.to_string(),

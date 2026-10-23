@@ -67,7 +67,7 @@ pub(crate) fn prepare_send(
         )));
     }
     let url = build_url(&raw_url, &params)?;
-    let method = normalize_method(&spec.method);
+    let method = normalize_method(&spec.method)?;
     let body = resolve_body(&spec.body, &mut r, ctx.root)?;
 
     let mut options = spec.options.clone();
@@ -170,7 +170,7 @@ pub(crate) fn resolve_for_export(
         )));
     }
     let mut url = build_url(&raw_url, &params)?;
-    let method = normalize_method(&spec.method);
+    let method = normalize_method(&spec.method)?;
 
     let mut body = match &spec.body {
         Body::None => ExportBody::Empty,
@@ -419,14 +419,7 @@ pub(crate) fn variables(env: Option<&Environment>) -> Variables {
     vars
 }
 
-fn normalize_method(m: &str) -> String {
-    let m = m.trim().to_ascii_uppercase();
-    if m.is_empty() {
-        "GET".into()
-    } else {
-        m
-    }
-}
+pub(crate) use crate::model::normalize_method;
 
 /// Variable + secret resolution context for one send.
 struct Resolver<'a> {
@@ -563,7 +556,7 @@ fn resolve_auth(service: &ServiceFile, r: &mut Resolver) -> ResolvedAuth {
 }
 
 fn resolve_preflight(cfg: &Preflight, r: &mut Resolver, scope: &str) -> Result<ResolvedPreflight> {
-    let method = normalize_method(&cfg.method);
+    let method = normalize_method(&cfg.method)?;
     let url = build_url(&r.text(&cfg.url), &[])?;
     let mut headers = r.pairs(&cfg.headers);
     let body = if cfg.body_type.eq_ignore_ascii_case("urlencoded") {

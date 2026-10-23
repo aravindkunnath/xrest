@@ -49,6 +49,7 @@ impl Workspace {
                 "The API description declares no server; BASE_URL is the placeholder {PLACEHOLDER_BASE_URL}. Set the real URL in the environments."
             ));
         }
+        ws.warnings.extend(spec.warnings);
         ws.add_imported(spec.endpoints)?;
         Ok(ws)
     }
@@ -67,6 +68,7 @@ impl Workspace {
             .endpoints
             .into_iter()
             .partition(|e| seen.insert((e.method.to_uppercase(), e.path.clone())));
+        self.warnings.extend(spec.warnings);
         let added = self.add_imported(new)?;
         Ok(ImportSummary {
             added,

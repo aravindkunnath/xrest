@@ -377,3 +377,15 @@ fn errors_are_git_errors() {
     ws.git_init(None).unwrap();
     assert!(matches!(ws.git_push(), Err(Error::Git(_))));
 }
+
+#[test]
+fn remote_url_that_looks_like_an_option_is_refused() {
+    env_once();
+    let d = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::create(d.path(), "svc").unwrap();
+    for url in ["--mirror=fetch", "-oProxyCommand=evil"] {
+        let r = ws.git_init(Some(url.into()));
+        assert!(matches!(r, Err(Error::InvalidInput(_))), "{url}: {r:?}");
+    }
+    assert!(!d.path().join(".git").exists(), "refused before git init");
+}

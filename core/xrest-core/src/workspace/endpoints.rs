@@ -42,6 +42,7 @@ impl Workspace {
         name: &str,
         spec: RequestSpec,
     ) -> Result<Endpoint> {
+        normalize_method(&spec.method)?;
         self.ensure_current_format()?;
         let now = now_secs();
         let mut ep = Endpoint {
@@ -85,6 +86,7 @@ impl Workspace {
         name: Option<&str>,
         spec: RequestSpec,
     ) -> Result<Endpoint> {
+        normalize_method(&spec.method)?;
         let mut ep = self.endpoint(id)?.clone();
         let before = RequestConfig::from_endpoint(&ep);
         let renamed = name.is_some_and(|n| n != ep.name);

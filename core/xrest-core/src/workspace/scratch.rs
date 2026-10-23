@@ -30,6 +30,7 @@ impl Workspace {
     }
 
     pub fn create_scratch(&mut self, name: &str, spec: RequestSpec) -> Result<ScratchRequest> {
+        normalize_method(&spec.method)?;
         self.ensure_current_format()?;
         let now = now_secs();
         let s = ScratchRequest {
@@ -51,6 +52,7 @@ impl Workspace {
         name: Option<&str>,
         spec: RequestSpec,
     ) -> Result<ScratchRequest> {
+        normalize_method(&spec.method)?;
         let mut s = self.scratch(id)?.clone();
         let unchanged = s.spec == spec && name.is_none_or(|n| n == s.name);
         if unchanged {

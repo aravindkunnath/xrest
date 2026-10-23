@@ -7,8 +7,11 @@
 //! even if `.gitignore` was edited. Commits use the user's configured identity; if none is set,
 //! git's error is returned as [`Error::Git`].
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 
 use crate::error::{Error, Result};
 use crate::storage;
@@ -42,22 +45,54 @@ pub struct GitStatus {
     pub last_sync: Option<u64>,
 }
 
-fn run(root: &Path, args: &[&str]) -> Result<Output> {
-    Command::new("git")
-        .arg("-C")
+/// Serialises the git commands that change the repository (commit, pull, push, init), so an
+/// auto-commit on save cannot race a manual action (two `git` processes fighting over
+/// `index.lock`). One gate per repository root, held only while a command runs.
+fn gate(root: &Path) -> Arc<Mutex<()>> {
+    static GATES: Mutex<Option<HashMap<PathBuf, Arc<Mutex<()>>>>> = Mutex::new(None);
+    let mut gates = GATES.lock().unwrap_or_else(|e| e.into_inner());
+    gates
+        .get_or_insert_with(HashMap::new)
+        .entry(root.to_path_buf())
+        .or_default()
+        .clone()
+}
+
+fn lock(gate: &Mutex<()>) -> MutexGuard<'_, ()> {
+    gate.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn base_command(root: &Path, args: &[&str]) -> Command {
+    let mut c = Command::new("git");
+    c.arg("-C")
         .arg(root)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                Error::Git("git not found".into())
-            } else {
-                Error::Git(format!("could not run git: {e}"))
-            }
-        })
+        .stdin(Stdio::null());
+    c
+}
+
+/// `git status` must not take optional locks (it would refresh the index and could collide with
+/// a concurrent commit).
+fn status_command(root: &Path, args: &[&str]) -> Command {
+    let mut c = base_command(root, args);
+    c.env("GIT_OPTIONAL_LOCKS", "0");
+    c
+}
+
+fn run(root: &Path, args: &[&str]) -> Result<Output> {
+    exec(base_command(root, args))
+}
+
+fn exec(mut cmd: Command) -> Result<Output> {
+    cmd.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            Error::Git("git not found".into())
+        } else {
+            Error::Git(format!("could not run git: {e}"))
+        }
+    })
 }
 
 fn message(out: &Output) -> String {
@@ -96,7 +131,7 @@ pub fn status(root: &Path) -> Result<GitStatus> {
     if !is_repo(root) {
         return Ok(GitStatus::default());
     }
-    let out = ok(
+    let out = exec(status_command(
         root,
         &[
             "status",
@@ -105,7 +140,11 @@ pub fn status(root: &Path) -> Result<GitStatus> {
             "--untracked-files=all",
             "-z",
         ],
-    )?;
+    ))?;
+    if !out.status.success() {
+        return Err(Error::Git(message(&out)));
+    }
+    let out = String::from_utf8_lossy(&out.stdout).trim().to_string();
     let mut st = parse_status(&out);
     st.is_repo = true;
     st.remote_url = ok(root, &["remote", "get-url", "origin"])
@@ -173,17 +212,25 @@ fn parse_status(text: &str) -> GitStatus {
 /// `git init` (if needed) and make sure `.gitignore` hides local state. With `remote`, sets
 /// `origin` to it (adding or updating). No commit is made.
 pub fn init(root: &Path, remote: Option<&str>) -> Result<()> {
+    let remote = remote.map(str::trim).filter(|u| !u.is_empty());
+    if remote.is_some_and(|u| u.starts_with('-')) {
+        return Err(Error::InvalidInput(
+            "the remote URL cannot start with '-'".into(),
+        ));
+    }
+    let gate = gate(root);
+    let _guard = lock(&gate);
     if !is_repo(root) {
         ok(root, &["init", "-q"])?;
     }
     storage::ensure_gitignore(root)?;
-    if let Some(url) = remote.map(str::trim).filter(|u| !u.is_empty()) {
+    if let Some(url) = remote {
         let verb = if ok(root, &["remote", "get-url", "origin"]).is_ok() {
             "set-url"
         } else {
             "add"
         };
-        ok(root, &["remote", verb, "origin", url])?;
+        ok(root, &["remote", verb, "--", "origin", url])?;
     }
     Ok(())
 }
@@ -191,6 +238,28 @@ pub fn init(root: &Path, remote: Option<&str>) -> Result<()> {
 /// Stage `specs` (adds, edits and deletions; only those paths) and commit exactly them, leaving
 /// anything else the user staged alone. `None` when there is nothing to commit.
 pub fn commit_paths(root: &Path, specs: &[&str], message: &str) -> Result<Option<String>> {
+    let gate = gate(root);
+    let _guard = lock(&gate);
+    commit_paths_locked(root, specs, message)
+}
+
+/// [`commit_paths`] for auto-commit on save: when a manual git action holds the gate it gives
+/// up with an error instead of blocking the save (the change stays uncommitted).
+pub fn try_commit_paths(root: &Path, specs: &[&str], message: &str) -> Result<Option<String>> {
+    let gate = gate(root);
+    let _guard = match gate.try_lock() {
+        Ok(g) => g,
+        Err(TryLockError::Poisoned(e)) => e.into_inner(),
+        Err(TryLockError::WouldBlock) => {
+            return Err(Error::Git(
+                "another git operation is in progress; the change was left uncommitted".into(),
+            ))
+        }
+    };
+    commit_paths_locked(root, specs, message)
+}
+
+fn commit_paths_locked(root: &Path, specs: &[&str], message: &str) -> Result<Option<String>> {
     require_repo(root)?;
     let mut pathspec: Vec<&str> = vec![];
     for spec in specs {
@@ -245,6 +314,8 @@ fn has_upstream(root: &Path) -> bool {
 /// the merge is aborted, files are left as they were, and the error lists the paths. A remote
 /// without the branch yet counts as up to date.
 pub fn pull(root: &Path) -> Result<()> {
+    let gate = gate(root);
+    let _guard = lock(&gate);
     require_repo(root)?;
     let branch = branch(root)?;
     let mut args = vec!["pull", "--no-rebase", "--no-edit", "-q"];
@@ -273,6 +344,8 @@ pub fn pull(root: &Path) -> Result<()> {
 
 /// Push the current branch, setting the upstream on first push.
 pub fn push(root: &Path) -> Result<()> {
+    let gate = gate(root);
+    let _guard = lock(&gate);
     require_repo(root)?;
     ok(root, &["push", "-q", "-u", "origin", "HEAD"]).map(|_| ())
 }
@@ -280,6 +353,28 @@ pub fn push(root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn env_of(c: &Command, key: &str) -> Option<String> {
+        c.get_envs()
+            .find(|(k, _)| *k == key)
+            .and_then(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+    }
+
+    #[test]
+    fn status_command_disables_optional_locks() {
+        let c = status_command(Path::new("/x"), &["status"]);
+        assert_eq!(env_of(&c, "GIT_OPTIONAL_LOCKS").as_deref(), Some("0"));
+        let c = base_command(Path::new("/x"), &["commit"]);
+        assert_eq!(env_of(&c, "GIT_OPTIONAL_LOCKS"), None);
+    }
+
+    #[test]
+    fn auto_commit_does_not_race_a_held_gate() {
+        let g = gate(Path::new("/nonexistent"));
+        let _held = lock(&g);
+        let e = try_commit_paths(Path::new("/nonexistent"), &["service.yaml"], "m").unwrap_err();
+        assert!(e.to_string().contains("in progress"), "{e}");
+    }
 
     #[test]
     fn parses_porcelain_v2() {

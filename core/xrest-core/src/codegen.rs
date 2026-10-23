@@ -61,6 +61,29 @@ fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// Shell word that is only quoted when it needs to be (plain letters stay readable).
+fn sh_arg(s: &str) -> String {
+    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphabetic()) {
+        s.to_string()
+    } else {
+        sh_quote(s)
+    }
+}
+
+/// Text for a `//` comment: control characters (newlines included) become spaces so the value
+/// cannot end the comment and inject code.
+fn comment_text(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
 fn js_str(s: &str) -> String {
     let mut out = String::from("'");
     for c in s.chars() {
@@ -158,7 +181,7 @@ fn curl(req: &ExportRequest) -> String {
     let mut first = String::from("curl");
     if req.method != "GET" || !matches!(req.body, ExportBody::Empty) {
         if req.method != "GET" {
-            first.push_str(&format!(" -X {}", req.method));
+            first.push_str(&format!(" -X {}", sh_arg(&req.method)));
         } else {
             first.push_str(" -X GET");
         }
@@ -319,7 +342,7 @@ fn axios(req: &ExportRequest) -> String {
         } else {
             cfg.push_str(&format!(
                 "  // proxy {} could not be parsed; configure it by hand.\n",
-                p
+                comment_text(p)
             ));
         }
     }
@@ -383,7 +406,8 @@ fn java(req: &ExportRequest) -> String {
     }
     if let Some(p) = proxy_comment {
         notes.push_str(&format!(
-            "        // Proxy {p} could not be parsed; configure it by hand.\n"
+            "        // Proxy {} could not be parsed; configure it by hand.\n",
+            comment_text(&p)
         ));
     }
     let client = if client_lines.is_empty() {
@@ -541,7 +565,8 @@ fn kotlin(req: &ExportRequest) -> String {
                 ));
             }
             None => notes.push_str(&format!(
-                "    // Proxy {p} could not be parsed; configure it by hand.\n"
+                "    // Proxy {} could not be parsed; configure it by hand.\n",
+                comment_text(p)
             )),
         },
         None => {}

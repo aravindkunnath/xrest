@@ -272,7 +272,14 @@ content is preserved.
 
 cURL import maps `-d` to `json` (JSON content) or `raw` with curl's default
 `application/x-www-form-urlencoded`, `--data-urlencode name=value` to `form`, `-F` to `multipart`
-(`@path` is a file field), and `-k`, `-m/--max-time`, `-x/--proxy` to `options`.
+(`@path` is a file field), and `-k`, `-m/--max-time`, `-x/--proxy` to `options`. A command containing
+`{{` is refused with `InvalidInput` (a pasted command may come from untrusted docs and must not carry
+`{{secret.KEY}}` into a workspace; type placeholders in after import).
+
+Methods are validated everywhere (`normalize_method`: trim, uppercase, empty = `GET`, otherwise only
+letters A-Z): send, export, saving endpoints and scratch requests, cURL `-X`. Anything else is
+`InvalidInput`, so a method can never inject into an export. The curl export also shell-quotes any
+method that is not plain letters.
 
 Preflight token expiry may be a relative lifetime or an absolute time (`epoch`, `epoch_ms`,
 `iso8601`), as in the Go adapter.
@@ -426,6 +433,10 @@ also emits the C header and `module.modulemap` that `build-xcframework.sh` packs
   touching only the saved file. A failed auto-commit is a workspace warning, never a failed save.
 * Pull is a merge (`--no-rebase`); on conflict it runs `git merge --abort` and the error lists the
   conflicting paths. After a successful pull/push/sync the workspace reloads from disk.
+* `status` runs with `GIT_OPTIONAL_LOCKS=0`. Commands that change the repo (commit, pull, push,
+  init) take a per-root gate in core; auto-commit on save uses `try_lock` and, if a manual action holds
+  the gate, leaves the change uncommitted with a workspace warning instead of racing or blocking the
+  save. A remote URL starting with `-` is `InvalidInput` (and `git remote add/set-url` gets `--`).
 * `status` is local only (no fetch): `ahead`/`behind` reflect the last fetch.
 * FFI: `git_status`, `git_init`, `git_commit`, `git_pull`, `git_push`, `git_sync` are async and run
   git off the workspace lock (serialised by a separate gate); `git_mode`, `set_git_mode`, `reload`
@@ -452,6 +463,10 @@ also emits the C header and `module.modulemap` that `build-xcframework.sh` packs
 * `Workspace::merge_openapi` (FFI `mergeOpenapi`) returns `ImportSummary { added, skipped }`; it
   matches by method + path (URL after `{{BASE_URL}}`, query ignored) and never modifies existing
   endpoints. In auto git mode the additions are one commit, `Import OpenAPI: N endpoints`.
+* Sanitising: any imported string containing `{{` (base URL, title, path, names, parameter names and
+  defaults/examples, JSON and form bodies) is dropped (empty; a base URL falls back to the
+  `https://api.example.com` placeholder) and a workspace warning names the field, so a hostile spec
+  cannot smuggle `{{secret.KEY}}` or `{{VAR}}` into the workspace. `ImportedSpec.warnings` carries them.
 * FFI `fetchText(url)` (async, free function): http/https only, 10 MiB cap enforced while
   streaming, 30 s timeout, UTF-8 or an error. Invalid content is `InvalidInput`.
 
@@ -461,6 +476,10 @@ Execution history is one SQLite database (`rusqlite`, `bundled`) at a path the a
 `XRestHistory.open(path:)` (macOS: `~/Library/Application Support/XRest/history.sqlite`); never inside
 a workspace. One `XRestHistory` object is shared by all workspaces (`XRestWorkspace.setHistory`);
 WAL mode, one connection behind a mutex. It does not read the legacy `~/.xrest/history.db`.
+Schema versioning: `PRAGMA user_version` is 1 (set on creation; `open` runs a migration hook, a no-op
+for 1) and a database with a newer version is refused with a clear error instead of being touched.
+`PRAGMA secure_delete=ON` on the connection; `clear()` also runs `wal_checkpoint(TRUNCATE)` and
+`VACUUM`, so deleted bodies do not linger in the db or `-wal` file.
 
 Table `history` (`id` autoincrement, newest = highest): `created_at` (unix ms), `service_id`,
 `service_name`, `endpoint_id` (null for scratch/unsaved sends), `environment`, `method`, `url` (final),
@@ -475,7 +494,8 @@ Table `history` (`id` autoincrement, newest = highest): `created_at` (unix ms), 
 * Masking, before storing: values of `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`
   become `••••••`; every resolved secret value (`{{secret.KEY}}`, `secretKey` variables, secrets used
   by preflight, and the preflight token itself) is replaced by `••••••` in the URL, header values and
-  text bodies, longest first, also in its form-encoded and percent-encoded spellings. Secrets
+  text bodies, `status_text` and the stored error text, longest first, also in its form-encoded,
+  percent-encoded and `url`-crate spellings (path, path segment, query, fragment, userinfo). Secrets
   shorter than 4 characters are not masked. Base64 (binary) response bodies are not scanned.
   Binary request bodies are stored as `<binary body, N bytes>`; multipart as `name: value` lines.
 * Bodies are capped at 1 MiB per entry (text cut on a UTF-8 boundary; base64 cut on the decoded

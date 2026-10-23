@@ -7,7 +7,7 @@
 //! TODO(curl-auth): offer to map `-u user:pass` to service-level basic auth.
 
 use crate::error::{Error, Result};
-use crate::model::{Body, NameValue, RequestOptions};
+use crate::model::{normalize_method, Body, NameValue, RequestOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedCurl {
@@ -214,6 +214,11 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
     if !(lower.starts_with("curl") && cmd[4..].starts_with(char::is_whitespace)) {
         return Err(Error::Curl("command does not start with 'curl'".into()));
     }
+    if cmd.contains("{{") {
+        return Err(Error::InvalidInput(
+            "cURL command contains '{{…}}' placeholders; type them in after import".into(),
+        ));
+    }
     let tokens = tokenize(&cmd[4..]);
 
     let mut method = "GET".to_string();
@@ -230,7 +235,7 @@ pub fn parse(command: &str) -> Result<ParsedCurl> {
         match tok {
             "-X" | "--request" => {
                 if let Some(n) = next {
-                    method = n.to_ascii_uppercase();
+                    method = normalize_method(n)?;
                     i += 1;
                 }
             }

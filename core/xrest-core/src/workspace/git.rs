@@ -99,7 +99,7 @@ impl Workspace {
         if self.state.git_mode != GitMode::Auto || !git::is_repo(&self.root) {
             return;
         }
-        if let Err(e) = git::commit_paths(&self.root, paths, message) {
+        if let Err(e) = git::try_commit_paths(&self.root, paths, message) {
             self.warnings.push(format!("auto-commit failed: {e}"));
         }
     }

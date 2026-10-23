@@ -128,6 +128,9 @@ CREATE INDEX IF NOT EXISTS history_service ON history (service_id, id);
 CREATE INDEX IF NOT EXISTS history_endpoint ON history (endpoint_id, id);
 ";
 
+/// Schema version stored in `PRAGMA user_version`. Bump it and extend [`migrate`] on a change.
+pub const SCHEMA_VERSION: i64 = 1;
+
 pub struct SqliteHistory {
     conn: Mutex<Connection>,
 }
@@ -146,7 +149,10 @@ impl SqliteHistory {
             .map_err(db_err)?;
         conn.pragma_update(None, "synchronous", "NORMAL")
             .map_err(db_err)?;
-        conn.execute_batch(SCHEMA).map_err(db_err)?;
+        // Deleted rows are overwritten with zeros, so `clear` really erases bodies.
+        conn.pragma_update(None, "secure_delete", "ON")
+            .map_err(db_err)?;
+        migrate(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -155,6 +161,25 @@ impl SqliteHistory {
     fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
+}
+
+/// Create the schema in a fresh database, or check an existing one is not from the future.
+fn migrate(conn: &Connection) -> Result<()> {
+    let found: i64 = conn
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .map_err(db_err)?;
+    if found > SCHEMA_VERSION {
+        return Err(Error::InvalidInput(format!(
+            "the history database uses schema version {found}, but this version of XRest supports up to {SCHEMA_VERSION}; update XRest"
+        )));
+    }
+    // Version 0 is a new (or pre-versioning) database; the schema statements are idempotent.
+    conn.execute_batch(SCHEMA).map_err(db_err)?;
+    if found < SCHEMA_VERSION {
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)
+            .map_err(db_err)?;
+    }
+    Ok(())
 }
 
 fn now_ms() -> i64 {
@@ -358,9 +383,12 @@ impl HistoryStore for SqliteHistory {
     }
 
     fn clear(&self) -> Result<()> {
-        self.conn()
-            .execute_batch("DELETE FROM history")
-            .map_err(db_err)
+        let conn = self.conn();
+        conn.execute_batch("DELETE FROM history").map_err(db_err)?;
+        // Fold the WAL into the main file and rewrite it, so no deleted body lingers on disk.
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .map_err(db_err)?;
+        conn.execute_batch("VACUUM").map_err(db_err)
     }
 }
 
@@ -380,12 +408,51 @@ fn secret_variants(secret: &str) -> Vec<String> {
     let mut v = vec![secret.to_string()];
     let form: String = url::form_urlencoded::byte_serialize(secret.as_bytes()).collect();
     let pct = percent_encode(secret);
-    for s in [form, pct] {
-        if !v.contains(&s) {
+    let mut extra = vec![form, pct];
+    extra.extend(url_forms(secret));
+    for s in extra {
+        if !s.is_empty() && !v.contains(&s) {
             v.push(s);
         }
     }
     v
+}
+
+/// How the `url` crate serializes `secret` in each URL position (path, path segment, query,
+/// fragment, userinfo), which differs from form and strict percent encoding.
+fn url_forms(secret: &str) -> Vec<String> {
+    let Ok(base) = url::Url::parse("http://h/") else {
+        return vec![];
+    };
+    let mut out = vec![];
+    let mut u = base.clone();
+    u.set_path(secret);
+    out.push(u.path().trim_start_matches('/').to_string());
+    let mut u = base.clone();
+    if let Ok(mut seg) = u.path_segments_mut() {
+        seg.push(secret);
+    }
+    out.push(u.path().trim_start_matches('/').to_string());
+    let mut u = base.clone();
+    u.set_query(Some(secret));
+    out.extend(u.query().map(str::to_string));
+    let mut u = base.clone();
+    u.query_pairs_mut().append_pair("k", secret);
+    out.extend(
+        u.query()
+            .and_then(|q| q.strip_prefix("k="))
+            .map(str::to_string),
+    );
+    let mut u = base.clone();
+    u.set_fragment(Some(secret));
+    out.extend(u.fragment().map(str::to_string));
+    let mut u = base.clone();
+    let _ = u.set_username(secret);
+    out.push(u.username().to_string());
+    let mut u = base;
+    let _ = u.set_password(Some(secret));
+    out.extend(u.password().map(str::to_string));
+    out
 }
 
 fn percent_encode(s: &str) -> String {
@@ -464,7 +531,7 @@ pub(crate) fn record_send(
     match result {
         Ok(r) => {
             e.status = Some(r.status);
-            e.status_text = r.status_text.clone();
+            e.status_text = m.mask(&r.status_text);
             e.response_headers = m.headers(&r.headers);
             e.body_is_base64 = r.body_is_base64;
             e.response_body = if r.body_is_base64 {
@@ -482,4 +549,44 @@ pub(crate) fn record_send(
         .record(&e)
         .err()
         .map(|err| format!("could not record request history: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_text_is_masked() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = Arc::new(SqliteHistory::open(dir.path().join("h.sqlite")).unwrap());
+        let sink = HistorySink {
+            store: h.clone(),
+            service_id: "s".into(),
+            service_name: "S".into(),
+            endpoint_id: None,
+        };
+        let req = RecordedRequest {
+            method: "GET".into(),
+            url: "http://x/".into(),
+            headers: vec![],
+            body: String::new(),
+        };
+        let resp = HttpResponse {
+            status: 200,
+            status_text: "echo a b!c".into(),
+            headers: vec![],
+            content_type: String::new(),
+            body: String::new(),
+            body_is_base64: false,
+            pretty_body: None,
+            size_bytes: 0,
+            time_ms: 0,
+            final_url: "http://x/".into(),
+            environment: None,
+            unresolved_variables: vec![],
+        };
+        assert!(record_send(&sink, &req, &["a b!c".to_string()], None, &Ok(resp)).is_none());
+        let e = h.get(1).unwrap().unwrap();
+        assert!(!e.status_text.contains("a b!c"), "{}", e.status_text);
+    }
 }
