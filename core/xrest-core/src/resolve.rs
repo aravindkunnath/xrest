@@ -53,6 +53,7 @@ pub(crate) fn prepare_send(
         unresolved: BTreeSet::new(),
         missing: BTreeSet::new(),
         dot_segments: BTreeSet::new(),
+        secret_values: BTreeSet::new(),
     };
 
     let params = r.pairs(&spec.params);
@@ -112,6 +113,7 @@ pub(crate) fn prepare_send(
         auth,
         preflight,
         unresolved: r.unresolved.into_iter().collect(),
+        secret_values: r.secret_values.into_iter().collect(),
         tokens: ctx.tokens,
         http,
     })
@@ -155,6 +157,7 @@ pub(crate) fn resolve_for_export(
         unresolved: BTreeSet::new(),
         missing: BTreeSet::new(),
         dot_segments: BTreeSet::new(),
+        secret_values: BTreeSet::new(),
     };
 
     let params = r.pairs(&spec.params);
@@ -347,6 +350,7 @@ pub(crate) fn preview_request_url(
         unresolved: BTreeSet::new(),
         missing: BTreeSet::new(),
         dot_segments: BTreeSet::new(),
+        secret_values: BTreeSet::new(),
     };
     let params = r.pairs(&spec.params);
     let raw_url = r.text(&spec.url);
@@ -386,6 +390,7 @@ pub(crate) fn prepare_test_preflight(
         unresolved: BTreeSet::new(),
         missing: BTreeSet::new(),
         dot_segments: BTreeSet::new(),
+        secret_values: BTreeSet::new(),
     };
     let resolved = resolve_preflight(&cfg, &mut r, "")?;
     if !r.missing.is_empty() {
@@ -431,14 +436,24 @@ struct Resolver<'a> {
     missing: BTreeSet<String>,
     /// Path params whose value is `.` or `..`: the URL layer collapses even the encoded form.
     dot_segments: BTreeSet<String>,
+    /// Every secret value that was substituted.
+    secret_values: BTreeSet<String>,
 }
 
 impl Resolver<'_> {
     fn text(&mut self, s: &str) -> String {
         let interpolated = interpolate(s, self.vars);
         self.unresolved.extend(unresolved(&interpolated));
-        let (out, missing) = resolve_secrets(&interpolated, &|k| self.secrets.get(k));
+        let found = std::cell::RefCell::new(Vec::new());
+        let (out, missing) = resolve_secrets(&interpolated, &|k| {
+            let v = self.secrets.get(k);
+            if let Some(v) = &v {
+                found.borrow_mut().push(v.clone());
+            }
+            v
+        });
         self.missing.extend(missing);
+        self.secret_values.extend(found.into_inner());
         out
     }
 
@@ -697,6 +712,7 @@ mod tests {
             unresolved: BTreeSet::new(),
             missing: BTreeSet::new(),
             dot_segments: BTreeSet::new(),
+            secret_values: BTreeSet::new(),
         };
         let out = substitute_path_params(url, params, &mut r);
         (out, r.unresolved.into_iter().collect())

@@ -25,6 +25,9 @@ pub use codegen::CodeLanguage;
 pub use diff::{diff_configs, ChangeKind, FieldChange};
 pub use error::{Error, Result};
 pub use exec::{HttpOptions, PreparedPreflightTest, PreparedSend};
+pub use history::{
+    HistoryEntry, HistoryFilter, HistorySink, HistoryStore, HistorySummary, SqliteHistory,
+};
 pub use interpolate::InterpolationPreview;
 pub use model::*;
 pub use policy::SendPolicy;

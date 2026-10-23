@@ -382,33 +382,6 @@ fn rejects_unsafe_ids() {
     ));
 }
 
-#[test]
-fn deferred_modules_report_not_implemented() {
-    use xrest_core::history::{HistoryEntry, HistoryStore, UnimplementedHistory};
-    let entry = HistoryEntry {
-        method: "GET".into(),
-        url: "http://x".into(),
-        response: HttpResponse {
-            status: 200,
-            status_text: "OK".into(),
-            headers: vec![],
-            content_type: String::new(),
-            body: String::new(),
-            body_is_base64: false,
-            pretty_body: None,
-            size_bytes: 0,
-            time_ms: 0,
-            final_url: String::new(),
-            environment: None,
-            unresolved_variables: vec![],
-        },
-    };
-    assert!(matches!(
-        UnimplementedHistory.record(&entry),
-        Err(Error::NotImplemented(_))
-    ));
-}
-
 // ---- format version -----------------------------------------------------------------------
 
 #[test]

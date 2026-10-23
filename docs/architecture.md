@@ -261,7 +261,7 @@ content is preserved.
 | `selectedEnvironment` moved from `service.yaml` to `.xrest/state.yaml`; still read from `service.yaml` as a fallback, never written | Per-user state should not churn a git-tracked file |
 | `directory` and `endpoints:` stub list in `service.yaml` are read but no longer written | The workspace root is authoritative; the list duplicated `endpoints/` |
 | Inline `versions:` in endpoint files are ignored on read and never written | The Go app already treated them as legacy; history lives in `.xrest/versions/` |
-| Version history in `.xrest/versions/*.json` instead of global SQLite (`~/.xrest/history.db`) | SQLite is deferred; the per-workspace store follows the same `MAX+1`, FIFO-prune semantics |
+| Version history in `.xrest/versions/*.json` instead of global SQLite (`~/.xrest/history.db`) | Global SQLite is now the execution history (see History); the per-workspace store follows the same `MAX+1`, FIFO-prune semantics |
 | `scratchpad/` is new; "collections" are gone | Product decision |
 | Variables with `enabled: false` are not applied | The Go frontend ignored the flag; honoring it is the evident intent |
 | Preflight token cache is scoped by service and environment; the cache unit is honored; `Bearer ` prefix only for the `Authorization` header | The Go code could replay a DEV token against PROD and prefixed every header |
@@ -454,8 +454,38 @@ also emits the C header and `module.modulemap` that `build-xcframework.sh` packs
 * FFI `fetchText(url)` (async, free function): http/https only, 10 MiB cap enforced while
   streaming, 30 s timeout, UTF-8 or an error. Invalid content is `InvalidInput`.
 
+## History
+
+Execution history is one SQLite database (`rusqlite`, `bundled`) at a path the app passes to
+`XRestHistory.open(path:)` (macOS: `~/Library/Application Support/XRest/history.sqlite`); never inside
+a workspace. One `XRestHistory` object is shared by all workspaces (`XRestWorkspace.setHistory`);
+WAL mode, one connection behind a mutex. It does not read the legacy `~/.xrest/history.db`.
+
+Table `history` (`id` autoincrement, newest = highest): `created_at` (unix ms), `service_id`,
+`service_name`, `endpoint_id` (null for scratch/unsaved sends), `environment`, `method`, `url` (final),
+`request_headers` / `response_headers` (JSON arrays of `[name, value]`), `request_body`, `status`
+(null = no response), `status_text`, `response_body`, `body_is_base64`, `truncated`, `time_ms`,
+`size_bytes`, `error`. Indexes on `(service_id, id)` and `(endpoint_id, id)`.
+
+* Recorded: every send that reached the network layer (2xx, non-2xx, transport/preflight error).
+  Not recorded: refusals before sending (`ConfirmationRequired`, `MissingSecrets`, invalid URL).
+  `send` records with no endpoint; `sendForEndpoint(endpointId:request:confirmed:)` records against one.
+  Test Preflight is not recorded.
+* Masking, before storing: values of `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`
+  become `••••••`; every resolved secret value (`{{secret.KEY}}`, `secretKey` variables, secrets used
+  by preflight, and the preflight token itself) is replaced by `••••••` in the URL, header values and
+  text bodies, longest first, also in its form-encoded and percent-encoded spellings. Secrets
+  shorter than 4 characters are not masked. Base64 (binary) response bodies are not scanned.
+  Binary request bodies are stored as `<binary body, N bytes>`; multipart as `name: value` lines.
+* Bodies are capped at 1 MiB per entry (text cut on a UTF-8 boundary; base64 cut on the decoded
+  bytes); `truncated` is set. `sizeBytes` is the real size.
+* A recording failure becomes a workspace warning and never fails the send.
+* FFI: `list(filter:limit:offset:)` returns `HistorySummary` (no headers/bodies) newest first,
+  `get(id:)` the full `HistoryEntry`, `count(filter:)`, `clear()`. `HistoryFilter` has `serviceId`,
+  `endpointId`, `method`, `statusClass` (2-5, or 0 for failed requests). A 50-row first page over
+  10,000 entries takes well under 1 ms (index scan).
+
 ## Deferred (stubbed with TODOs)
 
-* `history`: request history (legacy: SQLite at `~/.xrest/history.db`).
 * cURL `-u/--user` (deliberately dropped, as in Go, so credentials do not end up in committed files).
 * App Sandbox + security-scoped bookmarks for the macOS app.

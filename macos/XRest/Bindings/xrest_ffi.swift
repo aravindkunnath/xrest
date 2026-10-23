@@ -471,6 +471,22 @@ private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
     typealias FfiType = UInt16
     typealias SwiftType = UInt16
@@ -528,6 +544,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     }
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+    typealias FfiType = Int64
+    typealias SwiftType = Int64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int64, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
@@ -859,6 +891,186 @@ public func FfiConverterTypeSecretProvider_lower(_ value: SecretProvider) -> UIn
 
 
 /**
+ * The execution history database, shared by every workspace it is attached to with
+ * [`XRestWorkspace::set_history`]. Thread-safe.
+ */
+public protocol XRestHistoryProtocol: AnyObject, Sendable {
+    
+    func clear() throws 
+    
+    func count(filter: HistoryFilter) throws  -> UInt64
+    
+    func get(id: Int64) throws  -> HistoryEntry?
+    
+    /**
+     * Newest first, without headers or bodies.
+     */
+    func list(filter: HistoryFilter, limit: UInt32, offset: UInt32) throws  -> [HistorySummary]
+    
+}
+/**
+ * The execution history database, shared by every workspace it is attached to with
+ * [`XRestWorkspace::set_history`]. Thread-safe.
+ */
+open class XRestHistory: XRestHistoryProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_xrest_ffi_fn_clone_xresthistory(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_xrest_ffi_fn_free_xresthistory(handle, $0) }
+    }
+
+    
+    /**
+     * Open (creating if needed) the SQLite database at `path`.
+     */
+public static func `open`(path: String)throws  -> XRestHistory  {
+    return try  FfiConverterTypeXRestHistory_lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_constructor_xresthistory_open(
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+open func clear()throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xresthistory_clear(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+open func count(filter: HistoryFilter)throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xresthistory_count(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeHistoryFilter_lower(filter),uniffiCallStatus
+    )
+})
+}
+    
+open func get(id: Int64)throws  -> HistoryEntry?  {
+    return try  FfiConverterOptionTypeHistoryEntry.lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xresthistory_get(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Newest first, without headers or bodies.
+     */
+open func list(filter: HistoryFilter, limit: UInt32, offset: UInt32)throws  -> [HistorySummary]  {
+    return try  FfiConverterSequenceTypeHistorySummary.lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xresthistory_list(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeHistoryFilter_lower(filter),
+        FfiConverterUInt32.lower(limit),
+        FfiConverterUInt32.lower(offset),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeXRestHistory: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = XRestHistory
+
+    public static func lift(_ handle: UInt64) throws -> XRestHistory {
+        return XRestHistory(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: XRestHistory) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> XRestHistory {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: XRestHistory, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeXRestHistory_lift(_ handle: UInt64) throws -> XRestHistory {
+    return try FfiConverterTypeXRestHistory.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeXRestHistory_lower(_ value: XRestHistory) -> UInt64 {
+    return FfiConverterTypeXRestHistory.lower(value)
+}
+
+
+
+
+
+
+/**
  * One open workspace (a service directory with its endpoints and scratchpad).
  *
  * Thread-safe: methods may be called from any thread. Synchronous methods only touch local
@@ -1000,6 +1212,11 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func send(request: RequestSpec, confirmed: Bool) async throws  -> HttpResponse
     
     /**
+     * Like [`XRestWorkspace::send`], recording the history entry against `endpoint_id`.
+     */
+    func sendForEndpoint(endpointId: String, request: RequestSpec, confirmed: Bool) async throws  -> HttpResponse
+    
+    /**
      * Whether a send in the current environment needs `confirmed = true`.
      */
     func sendPolicy()  -> SendPolicy
@@ -1007,6 +1224,12 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func service()  -> ServiceInfo
     
     func setGitMode(mode: GitMode) throws 
+    
+    /**
+     * Record every send of this workspace in `history` (see [`XRestHistory`]). Recording
+     * failures become `warnings()`; they never fail a send.
+     */
+    func setHistory(history: XRestHistory) 
     
     /**
      * Cap on retained versions per endpoint (clamped to 5-50).
@@ -1582,6 +1805,25 @@ open func send(request: RequestSpec, confirmed: Bool)async throws  -> HttpRespon
 }
     
     /**
+     * Like [`XRestWorkspace::send`], recording the history entry against `endpoint_id`.
+     */
+open func sendForEndpoint(endpointId: String, request: RequestSpec, confirmed: Bool)async throws  -> HttpResponse  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_xrest_ffi_fn_method_xrestworkspace_send_for_endpoint(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(endpointId),FfiConverterTypeRequestSpec_lower(request),FfiConverterBool.lower(confirmed)
+                )
+            },
+            pollFunc: ffi_xrest_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_xrest_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_xrest_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeHttpResponse_lift,
+            errorHandler: FfiConverterTypeXRestError_lift
+        )
+}
+    
+    /**
      * Whether a send in the current environment needs `confirmed = true`.
      */
 open func sendPolicy() -> SendPolicy  {
@@ -1607,6 +1849,19 @@ open func setGitMode(mode: GitMode)throws   {try rustCallWithError(FfiConverterT
     uniffi_xrest_ffi_fn_method_xrestworkspace_set_git_mode(
             self.uniffiCloneHandle(),
         FfiConverterTypeGitMode_lower(mode),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Record every send of this workspace in `history` (see [`XRestHistory`]). Recording
+     * failures become `warnings()`; they never fail a send.
+     */
+open func setHistory(history: XRestHistory)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_set_history(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeXRestHistory_lower(history),uniffiCallStatus
     )
 }
 }
@@ -2258,6 +2513,324 @@ public func FfiConverterTypeHeaderPair_lift(_ buf: RustBuffer) throws -> HeaderP
 #endif
 public func FfiConverterTypeHeaderPair_lower(_ value: HeaderPair) -> RustBuffer {
     return FfiConverterTypeHeaderPair.lower(value)
+}
+
+
+/**
+ * One recorded send, secrets masked as `••••••`.
+ */
+public struct HistoryEntry: Equatable, Hashable {
+    public var id: Int64
+    public var createdAt: Int64
+    public var serviceId: String
+    public var serviceName: String
+    public var endpointId: String?
+    public var environment: String?
+    public var method: String
+    public var url: String
+    public var requestHeaders: [HeaderPair]
+    public var requestBody: String
+    public var status: UInt16?
+    public var statusText: String
+    public var responseHeaders: [HeaderPair]
+    /**
+     * UTF-8 text, or base64 when `body_is_base64`.
+     */
+    public var responseBody: String
+    public var bodyIsBase64: Bool
+    /**
+     * The body was cut at 1 MiB.
+     */
+    public var truncated: Bool
+    public var timeMs: UInt64
+    public var sizeBytes: UInt64
+    public var error: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, createdAt: Int64, serviceId: String, serviceName: String, endpointId: String?, environment: String?, method: String, url: String, requestHeaders: [HeaderPair], requestBody: String, status: UInt16?, statusText: String, responseHeaders: [HeaderPair], 
+        /**
+         * UTF-8 text, or base64 when `body_is_base64`.
+         */responseBody: String, bodyIsBase64: Bool, 
+        /**
+         * The body was cut at 1 MiB.
+         */truncated: Bool, timeMs: UInt64, sizeBytes: UInt64, error: String?) {
+        self.id = id
+        self.createdAt = createdAt
+        self.serviceId = serviceId
+        self.serviceName = serviceName
+        self.endpointId = endpointId
+        self.environment = environment
+        self.method = method
+        self.url = url
+        self.requestHeaders = requestHeaders
+        self.requestBody = requestBody
+        self.status = status
+        self.statusText = statusText
+        self.responseHeaders = responseHeaders
+        self.responseBody = responseBody
+        self.bodyIsBase64 = bodyIsBase64
+        self.truncated = truncated
+        self.timeMs = timeMs
+        self.sizeBytes = sizeBytes
+        self.error = error
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HistoryEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHistoryEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HistoryEntry {
+        return
+            try HistoryEntry(
+                id: FfiConverterInt64.read(from: &buf), 
+                createdAt: FfiConverterInt64.read(from: &buf), 
+                serviceId: FfiConverterString.read(from: &buf), 
+                serviceName: FfiConverterString.read(from: &buf), 
+                endpointId: FfiConverterOptionString.read(from: &buf), 
+                environment: FfiConverterOptionString.read(from: &buf), 
+                method: FfiConverterString.read(from: &buf), 
+                url: FfiConverterString.read(from: &buf), 
+                requestHeaders: FfiConverterSequenceTypeHeaderPair.read(from: &buf), 
+                requestBody: FfiConverterString.read(from: &buf), 
+                status: FfiConverterOptionUInt16.read(from: &buf), 
+                statusText: FfiConverterString.read(from: &buf), 
+                responseHeaders: FfiConverterSequenceTypeHeaderPair.read(from: &buf), 
+                responseBody: FfiConverterString.read(from: &buf), 
+                bodyIsBase64: FfiConverterBool.read(from: &buf), 
+                truncated: FfiConverterBool.read(from: &buf), 
+                timeMs: FfiConverterUInt64.read(from: &buf), 
+                sizeBytes: FfiConverterUInt64.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HistoryEntry, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+        FfiConverterString.write(value.serviceId, into: &buf)
+        FfiConverterString.write(value.serviceName, into: &buf)
+        FfiConverterOptionString.write(value.endpointId, into: &buf)
+        FfiConverterOptionString.write(value.environment, into: &buf)
+        FfiConverterString.write(value.method, into: &buf)
+        FfiConverterString.write(value.url, into: &buf)
+        FfiConverterSequenceTypeHeaderPair.write(value.requestHeaders, into: &buf)
+        FfiConverterString.write(value.requestBody, into: &buf)
+        FfiConverterOptionUInt16.write(value.status, into: &buf)
+        FfiConverterString.write(value.statusText, into: &buf)
+        FfiConverterSequenceTypeHeaderPair.write(value.responseHeaders, into: &buf)
+        FfiConverterString.write(value.responseBody, into: &buf)
+        FfiConverterBool.write(value.bodyIsBase64, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+        FfiConverterUInt64.write(value.timeMs, into: &buf)
+        FfiConverterUInt64.write(value.sizeBytes, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistoryEntry_lift(_ buf: RustBuffer) throws -> HistoryEntry {
+    return try FfiConverterTypeHistoryEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistoryEntry_lower(_ value: HistoryEntry) -> RustBuffer {
+    return FfiConverterTypeHistoryEntry.lower(value)
+}
+
+
+public struct HistoryFilter: Equatable, Hashable {
+    public var serviceId: String?
+    public var endpointId: String?
+    public var method: String?
+    /**
+     * 2, 3, 4 or 5 for that status class; 0 for failed requests (no response).
+     */
+    public var statusClass: UInt8?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(serviceId: String?, endpointId: String?, method: String?, 
+        /**
+         * 2, 3, 4 or 5 for that status class; 0 for failed requests (no response).
+         */statusClass: UInt8?) {
+        self.serviceId = serviceId
+        self.endpointId = endpointId
+        self.method = method
+        self.statusClass = statusClass
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HistoryFilter: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHistoryFilter: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HistoryFilter {
+        return
+            try HistoryFilter(
+                serviceId: FfiConverterOptionString.read(from: &buf), 
+                endpointId: FfiConverterOptionString.read(from: &buf), 
+                method: FfiConverterOptionString.read(from: &buf), 
+                statusClass: FfiConverterOptionUInt8.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HistoryFilter, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.serviceId, into: &buf)
+        FfiConverterOptionString.write(value.endpointId, into: &buf)
+        FfiConverterOptionString.write(value.method, into: &buf)
+        FfiConverterOptionUInt8.write(value.statusClass, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistoryFilter_lift(_ buf: RustBuffer) throws -> HistoryFilter {
+    return try FfiConverterTypeHistoryFilter.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistoryFilter_lower(_ value: HistoryFilter) -> RustBuffer {
+    return FfiConverterTypeHistoryFilter.lower(value)
+}
+
+
+/**
+ * A listing row of the execution history (no headers or bodies).
+ */
+public struct HistorySummary: Equatable, Hashable {
+    public var id: Int64
+    /**
+     * Unix milliseconds.
+     */
+    public var createdAt: Int64
+    public var serviceId: String
+    public var serviceName: String
+    public var endpointId: String?
+    public var environment: String?
+    public var method: String
+    public var url: String
+    /**
+     * `None` when the request produced no response (see `error`).
+     */
+    public var status: UInt16?
+    public var truncated: Bool
+    public var timeMs: UInt64
+    public var sizeBytes: UInt64
+    public var error: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, 
+        /**
+         * Unix milliseconds.
+         */createdAt: Int64, serviceId: String, serviceName: String, endpointId: String?, environment: String?, method: String, url: String, 
+        /**
+         * `None` when the request produced no response (see `error`).
+         */status: UInt16?, truncated: Bool, timeMs: UInt64, sizeBytes: UInt64, error: String?) {
+        self.id = id
+        self.createdAt = createdAt
+        self.serviceId = serviceId
+        self.serviceName = serviceName
+        self.endpointId = endpointId
+        self.environment = environment
+        self.method = method
+        self.url = url
+        self.status = status
+        self.truncated = truncated
+        self.timeMs = timeMs
+        self.sizeBytes = sizeBytes
+        self.error = error
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HistorySummary: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHistorySummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HistorySummary {
+        return
+            try HistorySummary(
+                id: FfiConverterInt64.read(from: &buf), 
+                createdAt: FfiConverterInt64.read(from: &buf), 
+                serviceId: FfiConverterString.read(from: &buf), 
+                serviceName: FfiConverterString.read(from: &buf), 
+                endpointId: FfiConverterOptionString.read(from: &buf), 
+                environment: FfiConverterOptionString.read(from: &buf), 
+                method: FfiConverterString.read(from: &buf), 
+                url: FfiConverterString.read(from: &buf), 
+                status: FfiConverterOptionUInt16.read(from: &buf), 
+                truncated: FfiConverterBool.read(from: &buf), 
+                timeMs: FfiConverterUInt64.read(from: &buf), 
+                sizeBytes: FfiConverterUInt64.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HistorySummary, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+        FfiConverterString.write(value.serviceId, into: &buf)
+        FfiConverterString.write(value.serviceName, into: &buf)
+        FfiConverterOptionString.write(value.endpointId, into: &buf)
+        FfiConverterOptionString.write(value.environment, into: &buf)
+        FfiConverterString.write(value.method, into: &buf)
+        FfiConverterString.write(value.url, into: &buf)
+        FfiConverterOptionUInt16.write(value.status, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+        FfiConverterUInt64.write(value.timeMs, into: &buf)
+        FfiConverterUInt64.write(value.sizeBytes, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistorySummary_lift(_ buf: RustBuffer) throws -> HistorySummary {
+    return try FfiConverterTypeHistorySummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistorySummary_lower(_ value: HistorySummary) -> RustBuffer {
+    return FfiConverterTypeHistorySummary.lower(value)
 }
 
 
@@ -3732,6 +4305,30 @@ public func FfiConverterTypeXRestError_lower(_ value: XRestError) -> RustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
+    typealias SwiftType = UInt8?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt8.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt8.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionUInt16: FfiConverterRustBuffer {
     typealias SwiftType = UInt16?
 
@@ -3820,6 +4417,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeHistoryEntry: FfiConverterRustBuffer {
+    typealias SwiftType = HistoryEntry?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeHistoryEntry.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeHistoryEntry.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -4027,6 +4648,31 @@ fileprivate struct FfiConverterSequenceTypeHeaderPair: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeHistorySummary: FfiConverterRustBuffer {
+    typealias SwiftType = [HistorySummary]
+
+    public static func write(_ value: [HistorySummary], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeHistorySummary.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [HistorySummary] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [HistorySummary]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeHistorySummary.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeNameValue: FfiConverterRustBuffer {
     typealias SwiftType = [NameValue]
 
@@ -4164,6 +4810,18 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_secretprovider_contains() != 20032) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xresthistory_clear() != 53652) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xresthistory_count() != 40678) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xresthistory_get() != 59170) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xresthistory_list() != 20773) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_clear_token_cache() != 21902) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4260,6 +4918,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_send() != 5774) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_send_for_endpoint() != 32226) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_send_policy() != 53813) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4267,6 +4928,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_git_mode() != 3573) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_history() != 16640) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_max_versions() != 61830) {
@@ -4294,6 +4958,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_warnings() != 18924) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_constructor_xresthistory_open() != 62592) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_constructor_xrestworkspace_create_workspace() != 32511) {

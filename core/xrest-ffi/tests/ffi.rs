@@ -510,3 +510,53 @@ fn export_code_masks_secrets_unless_asked() {
         .unwrap()
         .contains("\"X-Key\", \"v\""));
 }
+
+#[tokio::test]
+async fn history_records_sends_and_is_queryable() {
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    let server = MockServer::start().await;
+    Mock::given(path("/h"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("hello s3cr3t-value"))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let ws =
+        XRestWorkspace::create_workspace(dir.path().to_string_lossy().into_owned(), "Demo".into())
+            .unwrap();
+    let hist = XRestHistory::open(
+        dir.path()
+            .join("hist/h.sqlite")
+            .to_string_lossy()
+            .into_owned(),
+    )
+    .unwrap();
+    ws.set_history(hist.clone());
+    ws.set_secret("k".into(), "s3cr3t-value".into());
+
+    let mut s = spec(&format!("{}/h", server.uri()));
+    s.headers.push(nv("X-Key", "{{secret.k}}"));
+    ws.send(s.clone(), false).await.unwrap();
+    ws.send_for_endpoint("ep-1".into(), s, false).await.unwrap();
+
+    let none = HistoryFilter {
+        service_id: None,
+        endpoint_id: None,
+        method: None,
+        status_class: None,
+    };
+    assert_eq!(hist.count(none.clone()).unwrap(), 2);
+    let list = hist.list(none.clone(), 10, 0).unwrap();
+    assert_eq!(list[0].endpoint_id.as_deref(), Some("ep-1"));
+    assert_eq!(list[1].endpoint_id, None);
+    assert_eq!(list[0].status, Some(200));
+    let full = hist.get(list[0].id).unwrap().unwrap();
+    assert_eq!(full.response_body, "hello ••••••");
+    assert_eq!(full.request_headers[0].value, "••••••");
+    let only_ep = HistoryFilter {
+        endpoint_id: Some("ep-1".into()),
+        ..none.clone()
+    };
+    assert_eq!(hist.count(only_ep).unwrap(), 1);
+    hist.clear().unwrap();
+    assert_eq!(hist.count(none).unwrap(), 0);
+}

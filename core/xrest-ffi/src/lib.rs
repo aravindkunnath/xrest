@@ -274,6 +274,174 @@ pub struct HttpResponse {
     pub unresolved_variables: Vec<String>,
 }
 
+// ---- history --------------------------------------------------------------------------------
+
+/// A listing row of the execution history (no headers or bodies).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HistorySummary {
+    pub id: i64,
+    /// Unix milliseconds.
+    pub created_at: i64,
+    pub service_id: String,
+    pub service_name: String,
+    pub endpoint_id: Option<String>,
+    pub environment: Option<String>,
+    pub method: String,
+    pub url: String,
+    /// `None` when the request produced no response (see `error`).
+    pub status: Option<u16>,
+    pub truncated: bool,
+    pub time_ms: u64,
+    pub size_bytes: u64,
+    pub error: Option<String>,
+}
+
+/// One recorded send, secrets masked as `••••••`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HistoryEntry {
+    pub id: i64,
+    pub created_at: i64,
+    pub service_id: String,
+    pub service_name: String,
+    pub endpoint_id: Option<String>,
+    pub environment: Option<String>,
+    pub method: String,
+    pub url: String,
+    pub request_headers: Vec<HeaderPair>,
+    pub request_body: String,
+    pub status: Option<u16>,
+    pub status_text: String,
+    pub response_headers: Vec<HeaderPair>,
+    /// UTF-8 text, or base64 when `body_is_base64`.
+    pub response_body: String,
+    pub body_is_base64: bool,
+    /// The body was cut at 1 MiB.
+    pub truncated: bool,
+    pub time_ms: u64,
+    pub size_bytes: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HistoryFilter {
+    pub service_id: Option<String>,
+    pub endpoint_id: Option<String>,
+    pub method: Option<String>,
+    /// 2, 3, 4 or 5 for that status class; 0 for failed requests (no response).
+    pub status_class: Option<u8>,
+}
+
+impl From<HistoryFilter> for core::HistoryFilter {
+    fn from(f: HistoryFilter) -> Self {
+        Self {
+            service_id: f.service_id,
+            endpoint_id: f.endpoint_id,
+            method: f.method,
+            status_class: f.status_class,
+        }
+    }
+}
+
+impl From<core::HistorySummary> for HistorySummary {
+    fn from(s: core::HistorySummary) -> Self {
+        Self {
+            id: s.id,
+            created_at: s.created_at,
+            service_id: s.service_id,
+            service_name: s.service_name,
+            endpoint_id: s.endpoint_id,
+            environment: s.environment,
+            method: s.method,
+            url: s.url,
+            status: s.status,
+            truncated: s.truncated,
+            time_ms: s.time_ms,
+            size_bytes: s.size_bytes,
+            error: s.error,
+        }
+    }
+}
+
+impl From<core::HistoryEntry> for HistoryEntry {
+    fn from(e: core::HistoryEntry) -> Self {
+        let pairs = |v: Vec<(String, String)>| {
+            v.into_iter()
+                .map(|(name, value)| HeaderPair { name, value })
+                .collect()
+        };
+        Self {
+            id: e.id,
+            created_at: e.created_at,
+            service_id: e.service_id,
+            service_name: e.service_name,
+            endpoint_id: e.endpoint_id,
+            environment: e.environment,
+            method: e.method,
+            url: e.url,
+            request_headers: pairs(e.request_headers),
+            request_body: e.request_body,
+            status: e.status,
+            status_text: e.status_text,
+            response_headers: pairs(e.response_headers),
+            response_body: e.response_body,
+            body_is_base64: e.body_is_base64,
+            truncated: e.truncated,
+            time_ms: e.time_ms,
+            size_bytes: e.size_bytes,
+            error: e.error,
+        }
+    }
+}
+
+/// The execution history database, shared by every workspace it is attached to with
+/// [`XRestWorkspace::set_history`]. Thread-safe.
+#[derive(uniffi::Object)]
+pub struct XRestHistory {
+    store: Arc<core::SqliteHistory>,
+}
+
+#[uniffi::export]
+impl XRestHistory {
+    /// Open (creating if needed) the SQLite database at `path`.
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<Self>> {
+        Ok(Arc::new(Self {
+            store: Arc::new(core::SqliteHistory::open(path)?),
+        }))
+    }
+
+    /// Newest first, without headers or bodies.
+    pub fn list(
+        &self,
+        filter: HistoryFilter,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<HistorySummary>> {
+        use core::HistoryStore;
+        Ok(self
+            .store
+            .list(&filter.into(), limit, offset)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn get(&self, id: i64) -> Result<Option<HistoryEntry>> {
+        use core::HistoryStore;
+        Ok(self.store.get(id)?.map(Into::into))
+    }
+
+    pub fn count(&self, filter: HistoryFilter) -> Result<u64> {
+        use core::HistoryStore;
+        Ok(self.store.count(&filter.into())?)
+    }
+
+    pub fn clear(&self) -> Result<()> {
+        use core::HistoryStore;
+        Ok(self.store.clear()?)
+    }
+}
+
 /// The outcome of "Test Preflight": the exchange and the extracted token. `error` is set when the
 /// request failed, returned non-2xx, or the token could not be extracted.
 #[derive(Debug, Clone, uniffi::Record)]
@@ -810,6 +978,27 @@ impl XRestWorkspace {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Prepare under the lock, send and record without it, then report a recording failure.
+    async fn send_recorded(
+        &self,
+        endpoint_id: Option<String>,
+        request: RequestSpec,
+        confirmed: bool,
+    ) -> Result<HttpResponse> {
+        let (prepared, sink) = {
+            let ws = self.lock();
+            (
+                ws.prepare_send(&request.into(), confirmed)?,
+                ws.history_sink(endpoint_id.as_deref()),
+            )
+        };
+        let (result, warning) = prepared.execute_recorded(sink).await;
+        if let Some(w) = warning {
+            self.lock().push_warning(w);
+        }
+        Ok(result?.into())
+    }
+
     /// Run a git command off the workspace lock and off the async executor.
     async fn git_blocking<T: Send + 'static>(
         &self,
@@ -1174,11 +1363,24 @@ impl XRestWorkspace {
     /// Fails with [`XRestError::ConfirmationRequired`] if the environment is unsafe and
     /// `confirmed` is false. A non-2xx status is a normal response, not an error.
     pub async fn send(&self, request: RequestSpec, confirmed: bool) -> Result<HttpResponse> {
-        let prepared = {
-            let ws = self.lock();
-            ws.prepare_send(&request.into(), confirmed)?
-        };
-        Ok(prepared.execute().await?.into())
+        self.send_recorded(None, request, confirmed).await
+    }
+
+    /// Like [`XRestWorkspace::send`], recording the history entry against `endpoint_id`.
+    pub async fn send_for_endpoint(
+        &self,
+        endpoint_id: String,
+        request: RequestSpec,
+        confirmed: bool,
+    ) -> Result<HttpResponse> {
+        self.send_recorded(Some(endpoint_id), request, confirmed)
+            .await
+    }
+
+    /// Record every send of this workspace in `history` (see [`XRestHistory`]). Recording
+    /// failures become `warnings()`; they never fail a send.
+    pub fn set_history(&self, history: Arc<XRestHistory>) {
+        self.lock().set_history(history.store.clone());
     }
 
     /// Run a preflight request once (`None`: the service preflight) and report the exchange and

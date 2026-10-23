@@ -125,8 +125,47 @@ pub struct PreparedSend {
     pub(crate) auth: ResolvedAuth,
     pub(crate) preflight: Option<ResolvedPreflight>,
     pub(crate) unresolved: Vec<String>,
+    /// Every secret value substituted into this send (for masking history).
+    pub(crate) secret_values: Vec<String>,
     pub(crate) tokens: Arc<TokenCache>,
     pub(crate) http: HttpOptions,
+}
+
+/// The request as it went on the wire, for history. Secrets are NOT yet masked.
+pub(crate) struct RecordedRequest {
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
+impl RecordedRequest {
+    fn from(req: &ResolvedRequest) -> Self {
+        let body = match &req.body {
+            ResolvedBody::Empty => String::new(),
+            ResolvedBody::Text { content, .. } => content.clone(),
+            ResolvedBody::Form(pairs) => encode_form(pairs),
+            ResolvedBody::Bytes { data, .. } => format!("<binary body, {} bytes>", data.len()),
+            ResolvedBody::Multipart(parts) => parts
+                .iter()
+                .map(|p| match p {
+                    ResolvedPart::Text { name, value } => format!("{name}: {value}"),
+                    ResolvedPart::File {
+                        name,
+                        file_name,
+                        data,
+                    } => format!("{name}: <file {file_name}, {} bytes>", data.len()),
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        };
+        Self {
+            method: req.method.clone(),
+            url: req.url.to_string(),
+            headers: req.headers.clone(),
+            body,
+        }
+    }
 }
 
 impl PreparedSend {
@@ -148,11 +187,41 @@ impl PreparedSend {
     }
 
     pub async fn execute(self) -> Result<HttpResponse> {
+        self.run().await.2
+    }
+
+    /// Like [`PreparedSend::execute`], and records the exchange (secrets and sensitive headers
+    /// masked) in `sink`'s history when given. The second value is a warning if recording
+    /// failed; recording never changes the send's result.
+    pub async fn execute_recorded(
+        self,
+        sink: Option<crate::history::HistorySink>,
+    ) -> (Result<HttpResponse>, Option<String>) {
+        let environment = self.environment.clone();
+        let (req, secrets, result) = self.run().await;
+        let warning = sink.and_then(|s| {
+            crate::history::record_send(&s, &req, &secrets, environment.as_deref(), &result)
+        });
+        (result, warning)
+    }
+
+    async fn run(self) -> (RecordedRequest, Vec<String>, Result<HttpResponse>) {
+        let mut secrets = self.secret_values.clone();
+        let mut request = self.request.clone();
+        let result = self.run_inner(&mut request, &mut secrets).await;
+        (RecordedRequest::from(&request), secrets, result)
+    }
+
+    async fn run_inner(
+        self,
+        request: &mut ResolvedRequest,
+        secrets: &mut Vec<String>,
+    ) -> Result<HttpResponse> {
         let client = build_client(&self.http)?;
-        let mut request = self.request;
 
         if let Some(pf) = &self.preflight {
             let token = preflight_token(&client, pf, &self.tokens).await?;
+            secrets.push(token.clone());
             let header = pf
                 .config
                 .token_header
@@ -195,9 +264,9 @@ impl PreparedSend {
             }
         }
 
-        default_content_type(&mut request);
+        default_content_type(request);
 
-        let raw = send_raw(&client, &request).await?;
+        let raw = send_raw(&client, request).await?;
         let content_type = raw
             .headers
             .iter()

@@ -20,6 +20,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{Error, Result};
 use crate::exec::HttpOptions;
+use crate::history::{HistorySink, HistoryStore};
 use crate::interpolate::InterpolationPreview;
 use crate::model::*;
 use crate::policy::SendPolicy;
@@ -48,6 +49,7 @@ pub struct Workspace {
     tokens: Arc<TokenCache>,
     secrets: Arc<dyn SecretStore>,
     http: HttpOptions,
+    history: Option<Arc<dyn HistoryStore>>,
 }
 
 impl Workspace {
@@ -76,6 +78,7 @@ impl Workspace {
             tokens: Arc::new(TokenCache::default()),
             secrets: Arc::new(MemorySecretStore::default()),
             http: HttpOptions::default(),
+            history: None,
         })
     }
 
@@ -164,6 +167,26 @@ impl Workspace {
         self.tokens.clear();
         self.auto_commit(&[storage::SERVICE_FILE], "Update service settings");
         Ok(())
+    }
+
+    /// Record every send in `history` (shared between workspaces; not stored in the workspace).
+    pub fn set_history(&mut self, history: Arc<dyn HistoryStore>) {
+        self.history = Some(history);
+    }
+
+    /// Where a send from this workspace is recorded, if a history is attached.
+    pub fn history_sink(&self, endpoint_id: Option<&str>) -> Option<HistorySink> {
+        self.history.as_ref().map(|store| HistorySink {
+            store: store.clone(),
+            service_id: self.service.id.clone(),
+            service_name: self.service.name.clone(),
+            endpoint_id: endpoint_id.map(str::to_string),
+        })
+    }
+
+    /// Add a non-fatal problem to [`Workspace::warnings`].
+    pub fn push_warning(&mut self, warning: String) {
+        self.warnings.push(warning);
     }
 
     pub fn set_secret_store(&mut self, store: Arc<dyn SecretStore>) {
