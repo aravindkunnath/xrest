@@ -7,6 +7,7 @@ struct BodyEditor: View {
     /// Absolute path of the workspace; files are stored relative to it.
     let workspaceRoot: String
     var completions: CompletionProvider? = nil
+    @Environment(\.variableLookup) private var lookup
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,7 +42,7 @@ struct BodyEditor: View {
                 .foregroundStyle(Theme.muted)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .text, .json:
-            CodeEditor(text: $draft.bodyText)
+            CodeEditor(text: $draft.bodyText, variableLookup: lookup)
         case .form:
             KeyValueEditor(
                 rows: $draft.formFields, namePlaceholder: "Field", completions: completions)

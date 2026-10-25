@@ -37,6 +37,7 @@ struct RequestDetailView: View {
                     .hairline(.leading)
             }
         }
+        .environment(\.variableLookup, { model.variableInfo($0) })
         .background(Theme.bg)
     }
 
@@ -300,7 +301,7 @@ struct URLField: View {
                 .accessibilityHidden(true)
             VariableTextField(
                 placeholder: "https://… or {{BASE_URL}}/path", text: $text,
-                completions: completions, font: .mono(13), textColor: .clear,
+                completions: completions, font: .mono(13), fontSize: 13, textColor: .clear,
                 accessibilityLabel: "Request URL", onSubmit: onSubmit)
         }
     }

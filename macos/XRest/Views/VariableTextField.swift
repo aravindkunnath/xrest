@@ -12,6 +12,8 @@ struct VariableTextField: View {
     @Binding var text: String
     var completions: CompletionProvider?
     var font: Font = .mono(12)
+    /// Point size behind `font`, used to place the hover popup over the right characters.
+    var fontSize: CGFloat = 12
     var textColor: Color = Theme.textSoft
     var accessibilityLabel: String? = nil
     var onSubmit: (() -> Void)? = nil
@@ -20,9 +22,11 @@ struct VariableTextField: View {
     @State private var items: [String] = []
     @State private var selected = 0
     @State private var submitGate = SubmitGate()
+    @State private var hovered: (info: VariableInfo, name: String, x: CGFloat)?
     @FocusState private var focused: Bool
+    @Environment(\.variableLookup) private var lookup
 
-    private var isOpen: Bool { trigger != nil && !items.isEmpty }
+    private var isOpen: Bool { trigger != nil }
 
     var body: some View {
         TextField(placeholder, text: $text)
@@ -44,14 +48,28 @@ struct VariableTextField: View {
                 return .handled
             }
             .accessibilityLabel(accessibilityLabel ?? placeholder)
-            .overlay(alignment: .topLeading) {
-                if isOpen { list.offset(y: 22) }
+            .onContinuousHover { phase in hover(phase) }
+            .floatingPopup(
+                isPresented: isOpen || hovered != nil, x: isOpen ? 0 : (hovered?.x ?? 0),
+                interactive: isOpen
+            ) {
+                if isOpen {
+                    list
+                } else if let hovered {
+                    VariableChip(name: hovered.name, info: hovered.info)
+                }
             }
-            .zIndex(isOpen ? 10 : 0)
     }
 
     private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if items.isEmpty {
+                Text("No variables or secrets in this environment")
+                    .font(.mono(12))
+                    .foregroundStyle(Theme.muted)
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 24, alignment: .leading)
+            }
             ForEach(Array(items.prefix(8).enumerated()), id: \.offset) { index, name in
                 Button {
                     insert(name)
@@ -71,12 +89,32 @@ struct VariableTextField: View {
         .fixedSize()
         .padding(.vertical, 3)
         .chrome(fill: Theme.raised, stroke: Theme.borderStrong, radius: 6)
-        .shadow(color: .black.opacity(0.4), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Variable suggestions")
     }
 
     // MARK: Behavior
+
+    /// Width of one character of the field's monospaced face.
+    private var charWidth: CGFloat {
+        let points = fontSize * CGFloat(ZoomStore.shared.zoom)
+        let face = NSFont(name: "JetBrains Mono", size: points)
+            ?? NSFont.monospacedSystemFont(ofSize: points, weight: .regular)
+        return face.maximumAdvancement.width
+    }
+
+    private func hover(_ phase: HoverPhase) {
+        guard case .active(let point) = phase, !isOpen, let lookup else {
+            hovered = nil
+            return
+        }
+        let offset = VariableToken.offset(atX: point.x, charWidth: charWidth)
+        guard let token = VariableToken.name(at: offset, in: text) else {
+            hovered = nil
+            return
+        }
+        hovered = (lookup(token.name), token.name, CGFloat(token.range.location) * charWidth)
+    }
 
     /// UTF-16 caret of the active field editor; end of text when it cannot be read.
     private func caret() -> Int {
@@ -94,7 +132,6 @@ struct VariableTextField: View {
         trigger = found
         items = names
         selected = min(selected, max(names.count - 1, 0))
-        if names.isEmpty { trigger = nil }
     }
 
     private func close() {
@@ -104,7 +141,7 @@ struct VariableTextField: View {
     }
 
     private func move(_ delta: Int) -> KeyPress.Result {
-        guard isOpen else { return .ignored }
+        guard isOpen, !items.isEmpty else { return .ignored }
         let count = min(items.count, 8)
         selected = (selected + delta + count) % count
         return .handled
@@ -130,5 +167,26 @@ struct VariableTextField: View {
                 editor.setSelectedRange(NSRange(location: result.caret, length: 0))
             }
         }
+    }
+}
+
+/// The hover popup: a variable's name and what it resolves to (secrets masked).
+struct VariableChip: View {
+    let name: String
+    let info: VariableInfo
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(name).foregroundStyle(name.hasPrefix("secret.") ? Theme.green : Theme.amberSoft)
+            Text(info.isResolved ? "=" : "—").foregroundStyle(Theme.muted)
+            Text(info.text).foregroundStyle(info.isResolved ? Theme.text : Theme.amber)
+        }
+        .font(.mono(12))
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.horizontal, 8)
+        .frame(minHeight: 24)
+        .chrome(fill: Theme.raised, stroke: Theme.borderStrong, radius: 6)
+        .accessibilityLabel("\(name) \(info.text)")
     }
 }

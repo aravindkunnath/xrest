@@ -755,6 +755,19 @@ final class WorkspaceModel {
         core.previewRequestUrl(spec: spec)
     }
 
+    /// What `{{name}}` resolves to, for the hover popup. Secrets stay masked.
+    func variableInfo(_ name: String) -> VariableInfo {
+        let result = core.preview(text: "{{\(name)}}")
+        guard result.unresolved.contains(name) else {
+            return VariableInfo(text: result.resolved, isResolved: true)
+        }
+        if name.hasPrefix("secret.") {
+            return VariableInfo(text: "secret not set", isResolved: false)
+        }
+        return VariableInfo(
+            text: "not defined in \(selectedEnvironment ?? "any environment")", isResolved: false)
+    }
+
     /// Names offered after typing `{{`: environment variables, then `secret.<key>` entries.
     func completions(prefix: String) -> [String] {
         CompletionTrigger.candidates(

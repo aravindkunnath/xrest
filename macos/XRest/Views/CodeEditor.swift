@@ -10,6 +10,8 @@ struct CodeEditor: NSViewRepresentable {
     /// Read from the observable store while the parent builds this view, so a zoom change makes
     /// SwiftUI call `updateNSView`.
     var zoom = ZoomStore.shared.zoom
+    /// When set, hovering a `{{name}}` shows its value in a small popup.
+    var variableLookup: ((String) -> VariableInfo)? = nil
 
     static func fontSize(zoom: Double) -> CGFloat { 12 * CGFloat(zoom) }
 
@@ -36,6 +38,13 @@ struct CodeEditor: NSViewRepresentable {
         textView.isIncrementalSearchingEnabled = true
         textView.string = text
         JSONHighlighter.apply(to: textView, zoom: zoom)
+        if variableLookup != nil {
+            context.coordinator.textView = textView
+            textView.addTrackingArea(
+                NSTrackingArea(
+                    rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                    owner: context.coordinator, userInfo: nil))
+        }
         return scroll
     }
 
@@ -55,12 +64,39 @@ struct CodeEditor: NSViewRepresentable {
         Coordinator(self)
     }
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditor
+
+        weak var textView: NSTextView?
+        private lazy var popup = FloatingPopupController()
 
         init(_ parent: CodeEditor) {
             self.parent = parent
         }
+
+        @objc func mouseMoved(with event: NSEvent) {
+            guard let textView, let lookup = parent.variableLookup, let layout = textView.layoutManager,
+                let container = textView.textContainer, let window = textView.window
+            else { return }
+            let point = textView.convert(event.locationInWindow, from: nil)
+            let inset = textView.textContainerOrigin
+            let local = NSPoint(x: point.x - inset.x, y: point.y - inset.y)
+            let glyphBox = layout.usedRect(for: container)
+            guard glyphBox.insetBy(dx: -4, dy: -4).contains(local) else { return popup.hide() }
+            let index = layout.characterIndex(
+                for: local, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
+            guard let token = VariableToken.name(at: index, in: textView.string) else { return popup.hide() }
+
+            let glyphs = layout.glyphRange(forCharacterRange: token.range, actualCharacterRange: nil)
+            var box = layout.boundingRect(forGlyphRange: glyphs, in: container)
+            box.origin.x += inset.x
+            box.origin.y += inset.y
+            let screen = window.convertToScreen(textView.convert(box, to: nil))
+            let info = lookup(token.name)
+            popup.show(AnyView(VariableChip(name: token.name, info: info)), in: window, below: screen)
+        }
+
+        @objc func mouseExited(with event: NSEvent) { popup.hide() }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }

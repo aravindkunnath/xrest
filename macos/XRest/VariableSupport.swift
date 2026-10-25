@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// `{name}` path tokens in a URL. The rules mirror `substitute_path_params` in
 /// core/xrest-core/src/resolve.rs: only the path portion (after `://host`, before `?` or `#`)
@@ -217,5 +218,45 @@ final class RecentStore {
     func clear() {
         recents.clear()
         items = []
+    }
+}
+
+/// A completed `{{name}}` token under a position in a text field, for the hover popup.
+enum VariableToken {
+    /// The trimmed name of the `{{…}}` token containing UTF-16 `offset`, if any.
+    static func name(at offset: Int, in text: String) -> (name: String, range: NSRange)? {
+        guard let regex = try? NSRegularExpression(pattern: #"\{\{\s*([^{}]+?)\s*\}\}"#) else {
+            return nil
+        }
+        let ns = text as NSString
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        where NSLocationInRange(offset, match.range) {
+            return (ns.substring(with: match.range(at: 1)), match.range)
+        }
+        return nil
+    }
+
+    /// Character index under horizontal position `x` in a monospaced single-line field.
+    static func offset(atX x: CGFloat, charWidth: CGFloat) -> Int {
+        guard charWidth > 0, x >= 0 else { return -1 }
+        return Int(x / charWidth)
+    }
+}
+
+/// The hover popup's content for one variable.
+struct VariableInfo: Equatable {
+    var text: String
+    var isResolved: Bool
+}
+
+private struct VariableLookupKey: EnvironmentKey {
+    static let defaultValue: ((String) -> VariableInfo)? = nil
+}
+
+extension EnvironmentValues {
+    /// Resolves a variable name for the hover popup; nil where no workspace is available.
+    var variableLookup: ((String) -> VariableInfo)? {
+        get { self[VariableLookupKey.self] }
+        set { self[VariableLookupKey.self] = newValue }
     }
 }

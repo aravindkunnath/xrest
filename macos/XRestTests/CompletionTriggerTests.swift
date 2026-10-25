@@ -100,3 +100,25 @@ final class PreviewSegmentsTests: XCTestCase {
         XCTAssertTrue(PreviewSegments.split("").isEmpty)
     }
 }
+
+final class VariableTokenTests: XCTestCase {
+    func testFindsTokenUnderOffset() {
+        let text = "{{BASE_URL}}/todos?k={{ secret.key }}"
+        XCTAssertEqual(VariableToken.name(at: 0, in: text)?.name, "BASE_URL")
+        XCTAssertEqual(VariableToken.name(at: 11, in: text)?.name, "BASE_URL")
+        XCTAssertEqual(VariableToken.name(at: 25, in: text)?.name, "secret.key")
+        XCTAssertEqual(VariableToken.name(at: 11, in: text)?.range, NSRange(location: 0, length: 12))
+    }
+
+    func testNoTokenOutsideOrWhenUnclosed() {
+        XCTAssertNil(VariableToken.name(at: 12, in: "{{A}}/x"))
+        XCTAssertNil(VariableToken.name(at: 2, in: "{{A"))
+        XCTAssertNil(VariableToken.name(at: 0, in: ""))
+    }
+
+    func testOffsetFromX() {
+        XCTAssertEqual(VariableToken.offset(atX: 0, charWidth: 7), 0)
+        XCTAssertEqual(VariableToken.offset(atX: 15, charWidth: 7), 2)
+        XCTAssertEqual(VariableToken.offset(atX: -1, charWidth: 7), -1)
+    }
+}
