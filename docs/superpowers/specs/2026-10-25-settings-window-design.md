@@ -47,15 +47,16 @@ unsaved edits. Zoom stays in `ZoomStore`.
   | `showLineNumbers` | Bool | true | |
   | `density` | `Density` | `.regular` | `.compact`, `.regular` |
   | `confirmStyle` | `ConfirmStyle` | `.countdown` | `.countdown`, `.confirm`, `.typeName` |
-  | `confirmCountdownSeconds` | Int | 10 | 1...10 (10 keeps today's behavior) |
+  | `confirmCountdownSeconds` | Int | 3 | 1...10 (the design's default) |
   | `returnCancels` | Bool | true | matches today's `.defaultAction` on Cancel |
   | `warnUnresolved` | Bool | true | |
 
 - `ConfirmStyle` and `Density` are `String` raw-value enums like `AppearanceMode`.
-- `ConfirmationPolicy`: a pure value type taking `style`, `countdownSeconds`, `elapsed` and
-  `typedText` against the environment name, and answering `canSend`, `sendLabelSuffix` and
-  `progress`. It replaces the countdown-only logic that `UnsafeConfirmationSheet` encodes today.
-  `ConfirmationCountdown` stays for the `.countdown` style and is constructed with the pref's length.
+- `ConfirmationPolicy`: pure functions from `style`, `countdownSeconds`, remaining seconds and typed
+  text (against the environment name) to the countdown length and whether Send is enabled.
+- **Behavior change:** today the countdown auto-cancels at zero. The design's countdown instead
+  keeps Send locked until it finishes, then leaves the dialog open. `ConfirmationCountdown` changes
+  to match (it unlocks instead of cancelling); Cancel and Escape remain the only ways out.
 - `DensityMetrics`: a table mapping `Density` to row height, vertical padding and tab height.
 - `UnresolvedGuard`: given a request's `preview.unresolved` and `warnUnresolved`, returns whether to
   ask before sending.
