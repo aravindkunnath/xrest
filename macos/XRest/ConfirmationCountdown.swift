@@ -3,12 +3,14 @@ import Observation
 
 /// Countdown behind the unsafe-environment confirmation. Time is injected: the owner calls
 /// `tick()` once per second (the sheet does it from a task; tests call it directly).
-/// Reaching zero cancels; `accept()` is valid only while running and succeeds at most once.
+/// Reaching zero unlocks (`.ready`) and leaves the dialog open; `accept()` is valid while running
+/// or ready and succeeds at most once. Only `cancel()` ends a pending confirmation.
 @MainActor
 @Observable
 final class ConfirmationCountdown {
     enum State: Equatable {
         case running(remaining: Int)
+        case ready
         case accepted
         case cancelled
     }
@@ -20,8 +22,10 @@ final class ConfirmationCountdown {
 
     init(duration: Int = ConfirmationCountdown.defaultDuration) {
         self.duration = duration
-        state = .running(remaining: duration)
+        state = duration > 0 ? .running(remaining: duration) : .ready
     }
+
+    var isReady: Bool { state == .ready }
 
     var isRunning: Bool {
         if case .running = state { return true }
@@ -40,29 +44,29 @@ final class ConfirmationCountdown {
 
     func tick() {
         guard case .running(let r) = state else { return }
-        state = r <= 1 ? .cancelled : .running(remaining: r - 1)
+        state = r <= 1 ? .ready : .running(remaining: r - 1)
     }
 
-    /// Returns true only for the one accept that happens while running.
+    /// Returns true only for the one accept that happens while running or ready.
     @discardableResult
     func accept() -> Bool {
-        guard isRunning else { return false }
+        guard isRunning || isReady else { return false }
         state = .accepted
         return true
     }
 
     func cancel() {
-        if isRunning { state = .cancelled }
+        if isRunning || isReady { state = .cancelled }
     }
 
     func reset() {
-        state = .running(remaining: duration)
+        state = duration > 0 ? .running(remaining: duration) : .ready
     }
 }
 
 /// An action waiting behind the unsafe confirmation. Any send path (Send button, ⌘↩, retry after
 /// `ConfirmationRequired`, Test Preflight) wraps its work in one of these; `action` runs only if
-/// the user accepts while the countdown is still running.
+/// the user accepts once the countdown has not been cancelled.
 @MainActor
 @Observable
 final class PendingConfirmation: Identifiable {

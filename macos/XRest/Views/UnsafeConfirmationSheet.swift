@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Confirmation shown before sending to an unsafe environment. Auto-cancels after the countdown.
+/// Confirmation shown before sending to an unsafe environment. Send stays locked until the countdown ends.
 struct UnsafeConfirmationSheet: View {
     let pending: PendingConfirmation
     let dismiss: () -> Void
@@ -32,7 +32,7 @@ struct UnsafeConfirmationSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: countdown.progress).tint(Theme.red)
                     .animation(.linear(duration: 1), value: countdown.progress)
-                Text("Cancels automatically in \(countdown.remaining)s")
+                Text("Unlocks in \(countdown.remaining)s")
                     .font(.ui(11)).foregroundStyle(Theme.muted)
             }
 
@@ -44,6 +44,7 @@ struct UnsafeConfirmationSheet: View {
                     pending.accept(); dismiss()
                 }
                 .foregroundStyle(Theme.red)
+                .disabled(!countdown.isReady)
             }
         }
         .padding(20)
@@ -54,7 +55,6 @@ struct UnsafeConfirmationSheet: View {
                 if Task.isCancelled { return }
                 countdown.tick()
             }
-            if countdown.state == .cancelled { dismiss() }
         }
         .onExitCommand { pending.cancel(); dismiss() }
     }

@@ -10,14 +10,23 @@ final class ConfirmationCountdownTests: XCTestCase {
         XCTAssertEqual(c.progress, 1.0, accuracy: 0.0001)
     }
 
-    func testReachingZeroCancels() {
+    func testReachingZeroUnlocksWithoutCancelling() {
         let c = ConfirmationCountdown(duration: 3)
         c.tick(); c.tick()
         XCTAssertEqual(c.state, .running(remaining: 1))
+        XCTAssertFalse(c.isReady)
         c.tick()
-        XCTAssertEqual(c.state, .cancelled)
-        XCTAssertFalse(c.accept())
-        XCTAssertEqual(c.state, .cancelled)
+        XCTAssertEqual(c.state, .ready)
+        XCTAssertTrue(c.isReady)
+        XCTAssertFalse(c.isRunning)
+        XCTAssertTrue(c.accept())
+    }
+
+    func testZeroDurationStartsReady() {
+        let c = ConfirmationCountdown(duration: 0)
+        XCTAssertEqual(c.state, .ready)
+        XCTAssertTrue(c.isReady)
+        XCTAssertTrue(c.accept())
     }
 
     func testAcceptWhileRunningOnlyOnce() {
@@ -52,13 +61,14 @@ final class ConfirmationCountdownTests: XCTestCase {
         XCTAssertEqual(runs, 1)
     }
 
-    func testPendingExpiryNeverRunsAction() {
+    func testPendingCancelAfterReadyNeverRunsAction() {
         var runs = 0
         let p = PendingConfirmation(
             environment: "prod", method: "GET", url: "u", countdown: ConfirmationCountdown(duration: 2)
         ) { runs += 1 }
         p.countdown.tick(); p.countdown.tick()
-        p.accept()
+        XCTAssertEqual(p.countdown.state, .ready)
+        p.cancel(); p.accept()
         XCTAssertEqual(runs, 0)
         XCTAssertEqual(p.countdown.state, .cancelled)
     }
