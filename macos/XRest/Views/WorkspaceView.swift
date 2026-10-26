@@ -66,7 +66,7 @@ struct WorkspaceView: View {
             ImportCurlSheet(model: model)
         }
         .sheet(item: $model.pendingConfirmation) { pending in
-            UnsafeConfirmationSheet(pending: pending, dismiss: { model.pendingConfirmation = nil })
+            UnsafeConfirmationSheet(pending: pending, dismiss: { model.dismissConfirmation(pending) })
         }
         .sheet(isPresented: $model.showSecrets) {
             SecretsSheet(model: model)

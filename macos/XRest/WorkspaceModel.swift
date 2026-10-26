@@ -64,6 +64,12 @@ final class WorkspaceModel {
     // UI state driven from the model so menu commands can reach it.
     /// Set while an action waits behind the unsafe-environment confirmation sheet.
     var pendingConfirmation: PendingConfirmation?
+
+    /// Clears the confirmation only if it is still the one the sheet showed: accepting one prompt can
+    /// chain a new one (unresolved, then unsafe), which a plain `= nil` would discard.
+    func dismissConfirmation(_ shown: PendingConfirmation) {
+        if pendingConfirmation === shown { pendingConfirmation = nil }
+    }
     var showImportCurl = false
     var showSecrets = false
     var showExportCode = false

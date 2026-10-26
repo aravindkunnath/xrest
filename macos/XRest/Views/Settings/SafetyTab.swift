@@ -52,7 +52,7 @@ struct SafetyTab: View {
                 .padding(.horizontal, 4)
         }
         .sheet(item: $preview) { pending in
-            UnsafeConfirmationSheet(pending: pending) { preview = nil }
+            UnsafeConfirmationSheet(pending: pending) { if preview === pending { preview = nil } }
         }
     }
 

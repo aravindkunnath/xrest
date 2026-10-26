@@ -186,6 +186,31 @@ final class WorkspaceModelTests: XCTestCase {
         XCTAssertTrue(ran())
     }
 
+    func testDismissAfterAcceptKeepsChainedUnsafeConfirmation() throws {
+        let prefs = makePreferences()
+        prefs.warnUnresolved = true
+        let model = try makeModel(preferences: prefs)
+        try model.saveEnvironments([EnvironmentConfig(name: "prod", isUnsafe: true, variables: [])])
+        model.selectEnvironment("prod")
+        _ = runDraft(model, url: "{{MISSING}}/x")
+        let first = try XCTUnwrap(model.pendingConfirmation)
+        first.accept()
+        model.dismissConfirmation(first)
+        let second = try XCTUnwrap(model.pendingConfirmation)
+        XCTAssertEqual(second.reason, .unsafeEnvironment)
+    }
+
+    func testDismissConfirmationClearsOnlyTheShownPrompt() throws {
+        let model = try makeModel(preferences: makePreferences())
+        let a = PendingConfirmation(environment: "A", method: "GET", url: "u", action: {})
+        let b = PendingConfirmation(environment: "B", method: "GET", url: "u", action: {})
+        model.pendingConfirmation = b
+        model.dismissConfirmation(a)
+        XCTAssertTrue(model.pendingConfirmation === b)
+        model.dismissConfirmation(b)
+        XCTAssertNil(model.pendingConfirmation)
+    }
+
     func testExplicitURLIsNotUnresolvedGuarded() throws {
         let prefs = makePreferences()
         prefs.warnUnresolved = true
