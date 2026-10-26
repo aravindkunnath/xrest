@@ -53,11 +53,12 @@ struct KeyValueEditor: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(row.enabled ? "Disable row" : "Enable row")
 
-                        TextField(namePlaceholder, text: $row.name)
-                            .textFieldStyle(.plain)
-                            .font(.mono(12))
-                            .foregroundStyle(row.enabled ? Theme.text : Theme.muted)
-                            .frame(maxWidth: .infinity)
+                        VariableTextField(
+                            placeholder: namePlaceholder, text: $row.name,
+                            completions: completions,
+                            textColor: row.enabled ? Theme.text : Theme.muted
+                        )
+                        .frame(maxWidth: .infinity)
 
                         HStack(spacing: 6) {
                             if chooseFile != nil {

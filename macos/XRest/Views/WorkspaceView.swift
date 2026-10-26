@@ -223,6 +223,7 @@ struct MainColumn: View {
                 EnvironmentsEditorView(model: model)
             } else if model.panel == .settings {
                 ServiceSettingsView(model: model)
+                    .environment(\.variableLookup, { model.variableInfo($0) })
             } else if model.panel == .git {
                 GitPanelView(model: model)
             } else if model.panel == .history {
