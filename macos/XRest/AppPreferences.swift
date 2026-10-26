@@ -230,3 +230,41 @@ final class ZoomStore {
         if value != zoom { zoom = value }
     }
 }
+
+/// Editor and density preferences as observable values, so views re-render only when a value
+/// they read actually changes.
+@Observable
+final class PreferencesStore {
+    static let shared = PreferencesStore()
+
+    private(set) var editorFontFamily: String
+    private(set) var editorFontSize: Int
+    private(set) var wrapLines: Bool
+    private(set) var showLineNumbers: Bool
+    private(set) var density: Density
+    @ObservationIgnored private var observer: NSObjectProtocol?
+
+    init(defaults: UserDefaults = .standard) {
+        let prefs = AppPreferences(defaults: defaults)
+        editorFontFamily = prefs.editorFontFamily
+        editorFontSize = prefs.editorFontSize
+        wrapLines = prefs.wrapLines
+        showLineNumbers = prefs.showLineNumbers
+        density = prefs.density
+        observer = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: defaults, queue: .main
+        ) { [weak self] _ in
+            self?.refresh(from: defaults)
+        }
+    }
+
+    /// Re-read the preferences; observers are only invalidated for values that actually changed.
+    func refresh(from defaults: UserDefaults = .standard) {
+        let prefs = AppPreferences(defaults: defaults)
+        if prefs.editorFontFamily != editorFontFamily { editorFontFamily = prefs.editorFontFamily }
+        if prefs.editorFontSize != editorFontSize { editorFontSize = prefs.editorFontSize }
+        if prefs.wrapLines != wrapLines { wrapLines = prefs.wrapLines }
+        if prefs.showLineNumbers != showLineNumbers { showLineNumbers = prefs.showLineNumbers }
+        if prefs.density != density { density = prefs.density }
+    }
+}
