@@ -62,7 +62,7 @@ struct SettingsView: View {
         case .appearance: AppearanceTab()
         case .requests: RequestsTab()
         case .versions: VersionsTab()
-        case .safety: Text("Safety settings are coming soon.").foregroundStyle(Theme.muted)
+        case .safety: SafetyTab()
         }
     }
 }
