@@ -31,4 +31,24 @@ final class CodeEditorFontTests: XCTestCase {
         XCTAssertEqual(LineNumberRuler.lineCount(in: "a\nb\nc"), 3)
         XCTAssertEqual(LineNumberRuler.lineCount(in: "\n\n"), 3)
     }
+
+    func testRegularFaceForInstalledFamily() {
+        let font = CodeEditor.font(family: "Menlo", size: 12)
+        XCTAssertTrue(font.isFixedPitch)
+        XCTAssertEqual(font.familyName, "Menlo")
+        XCTAssertFalse(NSFontManager.shared.traits(of: font).contains(.italicFontMask))
+        XCTAssertFalse(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+    }
+
+    func testWrapContainerWidthSubtractsInsets() {
+        XCTAssertEqual(CodeEditor.wrapContainerWidth(contentWidth: 800, inset: 10), 780)
+        XCTAssertEqual(CodeEditor.wrapContainerWidth(contentWidth: 10, inset: 10), 0)
+    }
+
+    func testLineStartsFromNSStringMatchesString() {
+        for text in ["", "a", "a\n", "a\nb\nc", "\n\n", "é\n日本\nx"] {
+            XCTAssertEqual(LineNumberRuler.lineStarts(in: text as NSString), LineNumberRuler.lineStarts(in: text))
+        }
+        XCTAssertEqual(LineNumberRuler.lineStarts(in: "a\nbc\n" as NSString), [0, 2, 5])
+    }
 }

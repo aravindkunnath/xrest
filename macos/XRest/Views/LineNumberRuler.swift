@@ -38,6 +38,19 @@ final class LineNumberRuler: NSRulerView {
         return starts
     }
 
+    static func lineStarts(in text: NSString) -> [Int] {
+        var starts = [0]
+        let length = text.length
+        var index = 0
+        while index < length {
+            let range = text.range(of: "\n", options: .literal, range: NSRange(location: index, length: length - index))
+            if range.location == NSNotFound { break }
+            index = NSMaxRange(range)
+            starts.append(index)
+        }
+        return starts
+    }
+
     static func lineCount(in text: String) -> Int { lineStarts(in: text).count }
 
     @objc private func textChanged(_ note: Notification) { textReplaced() }
@@ -51,7 +64,7 @@ final class LineNumberRuler: NSRulerView {
     @objc private func scrolled(_ note: Notification) { needsDisplay = true }
 
     private func rebuild() {
-        let text = textView?.string ?? ""
+        let text = (textView?.textStorage?.string ?? "") as NSString
         lineStarts = Self.lineStarts(in: text)
         updateThickness()
     }
@@ -75,7 +88,7 @@ final class LineNumberRuler: NSRulerView {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: numberFont, .foregroundColor: NSColor.dynamic(dark: 0x6B7280, light: 0x9AA0AA),
         ]
-        let length = (textView.string as NSString).length
+        let length = textView.textStorage?.length ?? 0
 
         func draw(number: Int, fragment: NSRect) {
             let y = convert(NSPoint(x: 0, y: fragment.minY + origin.y), from: textView).y

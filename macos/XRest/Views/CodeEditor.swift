@@ -26,12 +26,17 @@ struct CodeEditor: NSViewRepresentable {
             return named
         }
         if !family.isEmpty,
-            let member = NSFontManager.shared.availableMembers(ofFontFamily: family)?.first,
-            let name = member[0] as? String, let named = NSFont(name: name, size: size), named.isFixedPitch
+            let regular = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size),
+            regular.isFixedPitch
         {
-            return named
+            return regular
         }
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// `NSTextView` keeps a tracking container narrower than the view by the horizontal insets.
+    static func wrapContainerWidth(contentWidth: CGFloat, inset: CGFloat) -> CGFloat {
+        max(0, contentWidth - 2 * inset)
     }
 
     private var editorFont: NSFont {
@@ -42,23 +47,29 @@ struct CodeEditor: NSViewRepresentable {
         JSONHighlighter.apply(to: textView, zoom: zoom, family: fontFamily, base: baseFontSize)
     }
 
-    private func applyLayout(to scroll: NSScrollView, textView: NSTextView) {
+    private func applyLayout(to scroll: NSScrollView, textView: NSTextView, coordinator: Coordinator) {
         guard let container = textView.textContainer else { return }
-        if wrapLines {
-            textView.isHorizontallyResizable = false
-            container.widthTracksTextView = true
-            // Before the first layout the content size is zero; tracking then sizes the container.
-            let width = scroll.contentSize.width
-            if width > 0, container.size.width != width {
-                container.size = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-                textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
+        // Geometry is only touched when wrapping flips: resetting it on every update would
+        // invalidate the layout of the whole document.
+        if coordinator.appliedWrap != wrapLines {
+            coordinator.appliedWrap = wrapLines
+            if wrapLines {
+                textView.isHorizontallyResizable = false
+                container.widthTracksTextView = true
+                let width = scroll.contentSize.width
+                if width > 0 {
+                    container.size = NSSize(
+                        width: Self.wrapContainerWidth(contentWidth: width, inset: textView.textContainerInset.width),
+                        height: CGFloat.greatestFiniteMagnitude)
+                    textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
+                }
+                scroll.hasHorizontalScroller = false
+            } else {
+                textView.isHorizontallyResizable = true
+                container.widthTracksTextView = false
+                container.size = NSSize(width: 1e7, height: CGFloat.greatestFiniteMagnitude)
+                scroll.hasHorizontalScroller = true
             }
-            scroll.hasHorizontalScroller = false
-        } else {
-            textView.isHorizontallyResizable = true
-            container.widthTracksTextView = false
-            container.size = NSSize(width: 1e7, height: CGFloat.greatestFiniteMagnitude)
-            scroll.hasHorizontalScroller = true
         }
         scroll.rulersVisible = showLineNumbers
         (scroll.verticalRulerView as? LineNumberRuler)?.font = editorFont
@@ -91,7 +102,7 @@ struct CodeEditor: NSViewRepresentable {
         let ruler = LineNumberRuler(scrollView: scroll, textView: textView)
         scroll.hasVerticalRuler = true
         scroll.verticalRulerView = ruler
-        applyLayout(to: scroll, textView: textView)
+        applyLayout(to: scroll, textView: textView, coordinator: context.coordinator)
         if variableLookup != nil {
             context.coordinator.textView = textView
             textView.addTrackingArea(
@@ -113,7 +124,7 @@ struct CodeEditor: NSViewRepresentable {
         } else if textView.font != editorFont {
             highlight(textView)
         }
-        applyLayout(to: scroll, textView: textView)
+        applyLayout(to: scroll, textView: textView, coordinator: context.coordinator)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -122,6 +133,7 @@ struct CodeEditor: NSViewRepresentable {
 
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditor
+        var appliedWrap: Bool?
 
         weak var textView: NSTextView?
         private lazy var popup = FloatingPopupController()
