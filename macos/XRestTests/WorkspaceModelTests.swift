@@ -35,7 +35,12 @@ final class WorkspaceModelTests: XCTestCase {
     }
 
     private func unsafeSendPending(_ model: WorkspaceModel) throws -> PendingConfirmation {
-        try model.saveEnvironments([EnvironmentConfig(name: "prod", isUnsafe: true, variables: [])])
+        // The blank draft URL is {{BASE_URL}}/, so define it to keep the unresolved prompt out of the way.
+        try model.saveEnvironments([
+            EnvironmentConfig(
+                name: "prod", isUnsafe: true,
+                variables: [NameValue(name: "BASE_URL", value: "https://h", enabled: true, secretKey: nil, kind: "plain")])
+        ])
         model.selectEnvironment("prod")
         model.newScratch()
         model.requestSend()
@@ -115,5 +120,80 @@ final class WorkspaceModelTests: XCTestCase {
         let pending = try XCTUnwrap(model.pendingConfirmation)
         XCTAssertEqual(pending.resolvedURL, "https://h/users/42?limit=5")
         XCTAssertEqual(pending.url, "{{BASE}}/users/{id}")
+    }
+
+    private func runDraft(_ model: WorkspaceModel, url: String) -> () -> Bool {
+        model.newScratch()
+        model.draft?.url = url
+        var ran = false
+        model.runGuarded { _ in ran = true }
+        return { ran }
+    }
+
+    func testUnresolvedVariablePromptsWhenEnabled() throws {
+        let prefs = makePreferences()
+        prefs.warnUnresolved = true
+        let model = try makeModel(preferences: prefs)
+        let ran = runDraft(model, url: "{{MISSING}}/x")
+        let pending = try XCTUnwrap(model.pendingConfirmation)
+        XCTAssertEqual(pending.reason, .unresolved(["MISSING"]))
+        XCTAssertEqual(pending.style, .confirm)
+        XCTAssertTrue(pending.countdown.isReady)
+        XCTAssertFalse(ran())
+        pending.accept()
+        XCTAssertTrue(ran())
+    }
+
+    func testUnresolvedDoesNotPromptWhenDisabled() throws {
+        let prefs = makePreferences()
+        prefs.warnUnresolved = false
+        let model = try makeModel(preferences: prefs)
+        let ran = runDraft(model, url: "{{MISSING}}/x")
+        XCTAssertNil(model.pendingConfirmation)
+        XCTAssertTrue(ran())
+    }
+
+    func testNoPromptWhenAllResolved() throws {
+        let prefs = makePreferences()
+        prefs.warnUnresolved = true
+        let model = try makeModel(preferences: prefs)
+        try model.saveEnvironments([
+            EnvironmentConfig(
+                name: "dev", isUnsafe: false,
+                variables: [NameValue(name: "BASE", value: "https://h", enabled: true, secretKey: nil, kind: "plain")])
+        ])
+        model.selectEnvironment("dev")
+        let ran = runDraft(model, url: "{{BASE}}/x")
+        XCTAssertNil(model.pendingConfirmation)
+        XCTAssertTrue(ran())
+    }
+
+    func testAcceptingUnresolvedThenShowsUnsafeConfirmation() throws {
+        let prefs = makePreferences()
+        prefs.warnUnresolved = true
+        let model = try makeModel(preferences: prefs)
+        try model.saveEnvironments([EnvironmentConfig(name: "prod", isUnsafe: true, variables: [])])
+        model.selectEnvironment("prod")
+        let ran = runDraft(model, url: "{{MISSING}}/x")
+        let first = try XCTUnwrap(model.pendingConfirmation)
+        XCTAssertEqual(first.reason, .unresolved(["MISSING"]))
+        first.accept()
+        let second = try XCTUnwrap(model.pendingConfirmation)
+        XCTAssertNotEqual(second.id, first.id)
+        XCTAssertEqual(second.reason, .unsafeEnvironment)
+        XCTAssertFalse(ran())
+        second.accept()
+        XCTAssertTrue(ran())
+    }
+
+    func testExplicitURLIsNotUnresolvedGuarded() throws {
+        let prefs = makePreferences()
+        prefs.warnUnresolved = true
+        let model = try makeModel(preferences: prefs)
+        model.newScratch()
+        var ran = false
+        model.runGuarded(url: "{{MISSING}}/x") { _ in ran = true }
+        XCTAssertNil(model.pendingConfirmation)
+        XCTAssertTrue(ran)
     }
 }

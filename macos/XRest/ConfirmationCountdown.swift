@@ -70,7 +70,13 @@ final class ConfirmationCountdown {
 @MainActor
 @Observable
 final class PendingConfirmation: Identifiable {
+    enum Reason: Equatable {
+        case unsafeEnvironment
+        case unresolved([String])
+    }
+
     let id = UUID()
+    let reason: Reason
     let environment: String
     let method: String
     let url: String
@@ -82,11 +88,13 @@ final class PendingConfirmation: Identifiable {
     @ObservationIgnored private var action: (() -> Void)?
 
     init(
+        reason: Reason = .unsafeEnvironment,
         environment: String, method: String, url: String, resolvedURL: String? = nil,
         countdown: ConfirmationCountdown? = nil,
         style: ConfirmStyle = .countdown, returnCancels: Bool = true,
         action: @escaping () -> Void
     ) {
+        self.reason = reason
         self.environment = environment
         self.method = method
         self.url = url

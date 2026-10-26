@@ -808,16 +808,30 @@ final class WorkspaceModel {
     func runGuarded(
         method: String? = nil, url: String? = nil, _ action: @escaping (_ confirmed: Bool) -> Void
     ) {
-        if core.sendPolicy().requiresConfirmation {
-            presentConfirmation(method: method, url: url) { action(true) }
-        } else {
-            action(false)
+        let proceed = { [weak self] in
+            guard let self else { return }
+            if self.core.sendPolicy().requiresConfirmation {
+                self.presentConfirmation(method: method, url: url) { action(true) }
+            } else {
+                action(false)
+            }
         }
+        // Only the open draft is checked; Test Preflight passes its own url and is not guarded.
+        if url == nil, let draft {
+            let unresolved = previewRequestURL(draft.spec).unresolved
+            if UnresolvedGuard.shouldAsk(unresolved: unresolved, enabled: preferences.warnUnresolved) {
+                presentConfirmation(method: method, url: url, reason: .unresolved(unresolved), proceed)
+                return
+            }
+        }
+        proceed()
     }
 
     private func presentConfirmation(
-        method: String? = nil, url: String? = nil, _ action: @escaping () -> Void
+        method: String? = nil, url: String? = nil, reason: PendingConfirmation.Reason = .unsafeEnvironment,
+        _ action: @escaping () -> Void
     ) {
+        let isUnresolved = reason != .unsafeEnvironment
         let rawURL = url ?? draft?.url ?? ""
         // Without an explicit url this is the draft request: show the URL as it will be sent
         // (path params and query merged). Test Preflight passes its own url.
@@ -830,14 +844,17 @@ final class WorkspaceModel {
             resolved = core.preview(text: rawURL).resolved
         }
         pendingConfirmation = PendingConfirmation(
+            reason: reason,
             environment: selectedEnvironment ?? "environment",
             method: method ?? draft?.method ?? "",
             url: rawURL,
             resolvedURL: resolved,
             countdown: ConfirmationCountdown(
-                duration: ConfirmationPolicy.countdownDuration(
-                    style: preferences.confirmStyle, seconds: preferences.confirmCountdownSeconds)),
-            style: preferences.confirmStyle,
+                duration: isUnresolved
+                    ? 0
+                    : ConfirmationPolicy.countdownDuration(
+                        style: preferences.confirmStyle, seconds: preferences.confirmCountdownSeconds)),
+            style: isUnresolved ? .confirm : preferences.confirmStyle,
             returnCancels: preferences.returnCancels,
             action: action)
     }
