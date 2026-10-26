@@ -265,7 +265,8 @@ struct EndpointRow: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        let metrics = DensityMetrics(PreferencesStore.shared.density)
+        return Button(action: action) {
             HStack(spacing: 8) {
                 MethodBadge(method: method)
                 Text(title.isEmpty ? "Untitled" : title)
@@ -279,7 +280,7 @@ struct EndpointRow: View {
                     .foregroundStyle(Theme.muted)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.vertical, metrics.sidebarRowPadding)
             .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Theme.selected : .clear))
             .contentShape(Rectangle())
         }
@@ -296,7 +297,8 @@ struct ScratchRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        let metrics = DensityMetrics(PreferencesStore.shared.density)
+        return HStack(spacing: 8) {
             MethodBadge(method: method)
             Text(title.isEmpty ? "Untitled" : title)
                 .font(.ui(13).italic())
@@ -318,7 +320,7 @@ struct ScratchRow: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, metrics.sidebarRowPadding)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(selected ? Theme.selected : (hovering ? Theme.hover : .clear))

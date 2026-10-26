@@ -168,7 +168,8 @@ struct UnderlineTabs<Tab: Hashable>: View {
     let label: (Tab) -> AnyView
 
     var body: some View {
-        HStack(spacing: 18) {
+        let metrics = DensityMetrics(PreferencesStore.shared.density)
+        return HStack(spacing: 18) {
             ForEach(tabs, id: \.self) { tab in
                 Button {
                     selection = tab
@@ -191,7 +192,7 @@ struct UnderlineTabs<Tab: Hashable>: View {
             }
         }
         .padding(.horizontal, 16)
-        .frame(height: 36)
+        .frame(height: metrics.tabHeight)
         .hairline(.bottom)
     }
 }

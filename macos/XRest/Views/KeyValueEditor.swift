@@ -13,7 +13,8 @@ struct KeyValueEditor: View {
     var completions: CompletionProvider? = nil
 
     var body: some View {
-        ScrollView {
+        let metrics = DensityMetrics(PreferencesStore.shared.density)
+        return ScrollView {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Color.clear.frame(width: 28)
@@ -47,7 +48,7 @@ struct KeyValueEditor: View {
                                     }
                                 }
                                 .frame(width: 14, height: 14)
-                                .frame(width: 28, height: 24)
+                                .frame(width: 28, height: metrics.rowHeight)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -87,13 +88,13 @@ struct KeyValueEditor: View {
                             Image(systemName: "xmark")
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundStyle(Theme.muted)
-                                .frame(width: 24, height: 24)
+                                .frame(width: 24, height: metrics.rowHeight)
                         }
                         .buttonStyle(HoverButtonStyle(radius: 4))
                         .help("Remove")
                         .accessibilityLabel("Remove \(row.name.isEmpty ? namePlaceholder : row.name)")
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, metrics.rowPadding)
                     .hairline(.top, color: Theme.rowDivider)
                 }
 

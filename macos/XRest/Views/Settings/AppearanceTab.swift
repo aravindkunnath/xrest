@@ -8,6 +8,7 @@ struct AppearanceTab: View {
     @AppStorage(AppPreferences.Key.editorFontSize) private var fontSize = 12
     @AppStorage(AppPreferences.Key.wrapLines) private var wrapLines = true
     @AppStorage(AppPreferences.Key.showLineNumbers) private var showLineNumbers = true
+    @AppStorage(AppPreferences.Key.density) private var density = Density.regular.rawValue
 
     /// Installed families that have a fixed-pitch face.
     private static let monospacedFamilies: [String] = {
@@ -59,6 +60,14 @@ struct AppearanceTab: View {
                 SettingsRow("Wrap long lines") { SettingsSwitch("Wrap long lines", isOn: $wrapLines) }
                 SettingsRow("Show line numbers") {
                     SettingsSwitch("Show line numbers", isOn: $showLineNumbers)
+                }
+            }
+            SettingsSectionHeader("Layout").padding(.top, 14)
+            SettingsCard {
+                SettingsRow("Density") {
+                    SettingsSegmented(
+                        "Density", selection: $density,
+                        options: Density.allCases.map { ($0.rawValue, $0.title) })
                 }
             }
         }
