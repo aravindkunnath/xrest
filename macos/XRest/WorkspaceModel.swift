@@ -112,10 +112,13 @@ final class WorkspaceModel {
     static let maxVersionsKey = "maxVersions"
     static let defaultMaxVersions = 50
 
+    private let preferences: AppPreferences
+
     init(
         url: URL, secrets: KeychainSecretStore = KeychainSecretStore(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard, preferences: AppPreferences = AppPreferences()
     ) throws {
+        self.preferences = preferences
         let opened = try XRestWorkspace.openWorkspace(path: url.path)
         rootURL = url
         core = opened
@@ -831,6 +834,11 @@ final class WorkspaceModel {
             method: method ?? draft?.method ?? "",
             url: rawURL,
             resolvedURL: resolved,
+            countdown: ConfirmationCountdown(
+                duration: ConfirmationPolicy.countdownDuration(
+                    style: preferences.confirmStyle, seconds: preferences.confirmCountdownSeconds)),
+            style: preferences.confirmStyle,
+            returnCancels: preferences.returnCancels,
             action: action)
     }
 

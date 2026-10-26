@@ -77,11 +77,14 @@ final class PendingConfirmation: Identifiable {
     /// The URL with variables resolved and secrets masked, when known.
     let resolvedURL: String?
     let countdown: ConfirmationCountdown
+    let style: ConfirmStyle
+    let returnCancels: Bool
     @ObservationIgnored private var action: (() -> Void)?
 
     init(
         environment: String, method: String, url: String, resolvedURL: String? = nil,
         countdown: ConfirmationCountdown? = nil,
+        style: ConfirmStyle = .countdown, returnCancels: Bool = true,
         action: @escaping () -> Void
     ) {
         self.environment = environment
@@ -89,6 +92,8 @@ final class PendingConfirmation: Identifiable {
         self.url = url
         self.resolvedURL = resolvedURL
         self.countdown = countdown ?? ConfirmationCountdown()
+        self.style = style
+        self.returnCancels = returnCancels
         self.action = action
     }
 

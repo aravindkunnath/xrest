@@ -11,17 +11,55 @@ final class WorkspaceModelTests: XCTestCase {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
+    private var suiteNames: [String] = []
+
     override func tearDown() {
+        for name in suiteNames { UserDefaults().removePersistentDomain(forName: name) }
+        suiteNames = []
         try? FileManager.default.removeItem(at: dir)
     }
 
-    private func makeModel() throws -> WorkspaceModel {
+    private func makePreferences() -> AppPreferences {
+        let name = "xrest-model-prefs-\(UUID().uuidString)"
+        suiteNames.append(name)
+        return AppPreferences(defaults: UserDefaults(suiteName: name)!)
+    }
+
+    private func makeModel(preferences: AppPreferences? = nil) throws -> WorkspaceModel {
         let ws = dir.appendingPathComponent("svc")
         try FileManager.default.createDirectory(at: ws, withIntermediateDirectories: true)
         _ = try XRestWorkspace.createWorkspace(path: ws.path, name: "svc")
         let store = KeychainSecretStore(
             service: "dev.xrest.tests.\(UUID().uuidString)", indexURL: dir.appendingPathComponent("idx.json"))
-        return try WorkspaceModel(url: ws, secrets: store)
+        return try WorkspaceModel(url: ws, secrets: store, preferences: preferences ?? makePreferences())
+    }
+
+    private func unsafeSendPending(_ model: WorkspaceModel) throws -> PendingConfirmation {
+        try model.saveEnvironments([EnvironmentConfig(name: "prod", isUnsafe: true, variables: [])])
+        model.selectEnvironment("prod")
+        model.newScratch()
+        model.requestSend()
+        return try XCTUnwrap(model.pendingConfirmation)
+    }
+
+    func testConfirmationUsesPreferenceStyleAndLength() throws {
+        let prefs = makePreferences()
+        prefs.confirmStyle = .countdown
+        prefs.confirmCountdownSeconds = 5
+        prefs.returnCancels = false
+        let pending = try unsafeSendPending(try makeModel(preferences: prefs))
+        XCTAssertEqual(pending.countdown.duration, 5)
+        XCTAssertEqual(pending.style, .countdown)
+        XCTAssertFalse(pending.returnCancels)
+    }
+
+    func testConfirmStyleHasZeroDelay() throws {
+        let prefs = makePreferences()
+        prefs.confirmStyle = .confirm
+        let pending = try unsafeSendPending(try makeModel(preferences: prefs))
+        XCTAssertEqual(pending.countdown.duration, 0)
+        XCTAssertTrue(pending.countdown.isReady)
+        XCTAssertEqual(pending.style, .confirm)
     }
 
     func testSaveActiveRoutesToOpenPanel() throws {
