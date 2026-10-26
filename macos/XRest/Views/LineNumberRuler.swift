@@ -12,6 +12,7 @@ final class LineNumberRuler: NSRulerView {
     init(scrollView: NSScrollView, textView: NSTextView) {
         self.textView = textView
         super.init(scrollView: scrollView, orientation: .verticalRuler)
+        reservedThicknessForMarkers = 0
         clientView = textView
         rebuild()
         let center = NotificationCenter.default

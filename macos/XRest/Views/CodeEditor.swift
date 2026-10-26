@@ -14,6 +14,8 @@ struct CodeEditor: NSViewRepresentable {
     var fontFamily = PreferencesStore.shared.editorFontFamily
     var baseFontSize = PreferencesStore.shared.editorFontSize
     var wrapLines = PreferencesStore.shared.wrapLines
+    /// When non-nil, overrides the wrap preference (e.g. hex dumps must not wrap).
+    var wrapOverride: Bool? = nil
     var showLineNumbers = PreferencesStore.shared.showLineNumbers
     /// When set, hovering a `{{name}}` shows its value in a small popup.
     var variableLookup: ((String) -> VariableInfo)? = nil
@@ -51,9 +53,10 @@ struct CodeEditor: NSViewRepresentable {
         guard let container = textView.textContainer else { return }
         // Geometry is only touched when wrapping flips: resetting it on every update would
         // invalidate the layout of the whole document.
-        if coordinator.appliedWrap != wrapLines {
-            coordinator.appliedWrap = wrapLines
-            if wrapLines {
+        let wrap = wrapOverride ?? wrapLines
+        if coordinator.appliedWrap != wrap {
+            coordinator.appliedWrap = wrap
+            if wrap {
                 textView.isHorizontallyResizable = false
                 container.widthTracksTextView = true
                 let width = scroll.contentSize.width

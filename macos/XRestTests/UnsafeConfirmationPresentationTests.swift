@@ -61,4 +61,13 @@ final class UnsafeConfirmationPresentationTests: XCTestCase {
         XCTAssertEqual(make(returnCancels: true).defaultButton, .cancel)
         XCTAssertEqual(make(returnCancels: false).defaultButton, .send)
     }
+
+    func testReturnCancelsHintFollowsSwitch() {
+        XCTAssertEqual(
+            UnsafeConfirmationPresentation.returnCancelsHint(returnCancels: true),
+            "Pressing Return in the dialog never sends.")
+        XCTAssertEqual(
+            UnsafeConfirmationPresentation.returnCancelsHint(returnCancels: false),
+            "Pressing Return sends once Send is unlocked.")
+    }
 }

@@ -29,7 +29,10 @@ struct SafetyTab: View {
                 }
                 .disabled(confirmStyle != .countdown)
                 .opacity(confirmStyle == .countdown ? 1 : 0.5)
-                SettingsRow("Return key cancels", hint: "Pressing Return in the dialog never sends.") {
+                SettingsRow(
+                    "Return key cancels",
+                    hint: UnsafeConfirmationPresentation.returnCancelsHint(returnCancels: returnCancels)
+                ) {
                     SettingsSwitch("Return key cancels", isOn: $returnCancels)
                 }
                 SettingsRow("Preview the dialog with these settings") {

@@ -184,7 +184,7 @@ struct ResponseContent: View {
 
     private func rawBinaryView(_ r: HttpResponse) -> some View {
         let data = ResponseBodyBytes.decode(body: r.body, isBase64: true) ?? Data()
-        return CodeEditor(text: .constant(HexDump.format(data)), isEditable: false)
+        return CodeEditor(text: .constant(HexDump.format(data)), isEditable: false, wrapOverride: false)
     }
 
     /// Text body, truncated above 2 MiB until "Show all" is pressed.

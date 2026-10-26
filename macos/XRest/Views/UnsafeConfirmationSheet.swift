@@ -60,6 +60,14 @@ struct UnsafeConfirmationSheet: View {
             HStack {
                 Spacer()
                 cancelButton(isDefault: p.defaultButton == .cancel)
+                if p.defaultButton == .cancel {
+                    // Cancel already holds `.defaultAction`; this hidden button carries Escape.
+                    Button("Cancel") { pending.cancel(); dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                }
                 sendButton(p)
             }
         }
@@ -100,7 +108,8 @@ struct UnsafeConfirmationSheet: View {
         if isDefault {
             button.keyboardShortcut(.defaultAction)
         } else {
-            button
+            // Escape may not reach `.onExitCommand` from inside the type-the-name field.
+            button.keyboardShortcut(.cancelAction)
         }
     }
 

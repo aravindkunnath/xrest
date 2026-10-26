@@ -24,6 +24,13 @@ struct UnsafeConfirmationPresentation: Equatable {
         }
     }
 
+    /// Hint under the "Return key cancels" setting; describes what Return does in the dialog.
+    static func returnCancelsHint(returnCancels: Bool) -> String {
+        returnCancels
+            ? "Pressing Return in the dialog never sends."
+            : "Pressing Return sends once Send is unlocked."
+    }
+
     var showsCountdown: Bool { effectiveStyle == .countdown }
     var showsTypeField: Bool { effectiveStyle == .typeName }
     var typePrompt: String { "Type \(environment) to confirm" }
