@@ -62,6 +62,62 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(AppPreferences(defaults: defaults).timeoutSeconds, 30)
     }
 
+    func testNewDefaults() {
+        let p = AppPreferences(defaults: defaults)
+        XCTAssertEqual(p.editorFontFamily, "")
+        XCTAssertEqual(p.editorFontSize, 12)
+        XCTAssertTrue(p.wrapLines)
+        XCTAssertTrue(p.showLineNumbers)
+        XCTAssertEqual(p.density, .regular)
+        XCTAssertEqual(p.confirmStyle, .countdown)
+        XCTAssertEqual(p.confirmCountdownSeconds, 3)
+        XCTAssertTrue(p.returnCancels)
+        XCTAssertTrue(p.warnUnresolved)
+    }
+
+    func testNewRoundTrip() {
+        let p = AppPreferences(defaults: defaults)
+        p.editorFontFamily = "Menlo"
+        p.editorFontSize = 15
+        p.wrapLines = false
+        p.showLineNumbers = false
+        p.density = .compact
+        p.confirmStyle = .typeName
+        p.confirmCountdownSeconds = 7
+        p.returnCancels = false
+        p.warnUnresolved = false
+        let q = AppPreferences(defaults: defaults)
+        XCTAssertEqual(q.editorFontFamily, "Menlo")
+        XCTAssertEqual(q.editorFontSize, 15)
+        XCTAssertFalse(q.wrapLines)
+        XCTAssertFalse(q.showLineNumbers)
+        XCTAssertEqual(q.density, .compact)
+        XCTAssertEqual(q.confirmStyle, .typeName)
+        XCTAssertEqual(q.confirmCountdownSeconds, 7)
+        XCTAssertFalse(q.returnCancels)
+        XCTAssertFalse(q.warnUnresolved)
+    }
+
+    func testNewClamping() {
+        let p = AppPreferences(defaults: defaults)
+        p.editorFontSize = 999
+        XCTAssertEqual(p.editorFontSize, 24)
+        p.editorFontSize = 1
+        XCTAssertEqual(p.editorFontSize, 9)
+        p.confirmCountdownSeconds = 0
+        XCTAssertEqual(p.confirmCountdownSeconds, 1)
+        p.confirmCountdownSeconds = 99
+        XCTAssertEqual(p.confirmCountdownSeconds, 10)
+    }
+
+    func testBogusEnumFallsBack() {
+        defaults.set("nonsense", forKey: AppPreferences.Key.density)
+        defaults.set("nonsense", forKey: AppPreferences.Key.confirmStyle)
+        let p = AppPreferences(defaults: defaults)
+        XCTAssertEqual(p.density, .regular)
+        XCTAssertEqual(p.confirmStyle, .countdown)
+    }
+
     func testHttpOptionsMapping() {
         var p = AppPreferences(defaults: defaults)
         var o = p.httpOptions

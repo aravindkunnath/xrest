@@ -24,6 +24,26 @@ enum ProxyMode: String, CaseIterable, Identifiable {
     var title: String { rawValue.capitalized }
 }
 
+enum Density: String, CaseIterable, Identifiable {
+    case compact, regular
+    var id: String { rawValue }
+
+    var title: String { rawValue.capitalized }
+}
+
+enum ConfirmStyle: String, CaseIterable, Identifiable {
+    case countdown, confirm, typeName
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .countdown: return "Countdown"
+        case .confirm: return "Confirm"
+        case .typeName: return "Type name"
+        }
+    }
+}
+
 /// App-wide preferences (Settings window), stored in `UserDefaults` and never in a workspace.
 /// The same keys back `@AppStorage` in the views.
 struct AppPreferences {
@@ -36,12 +56,23 @@ struct AppPreferences {
         static let proxyMode = "http.proxyMode"
         static let proxyURL = "http.proxyURL"
         static let maxVersions = "maxVersions"
+        static let editorFontFamily = "editor.fontFamily"
+        static let editorFontSize = "editor.fontSize"
+        static let wrapLines = "editor.wrapLines"
+        static let showLineNumbers = "editor.showLineNumbers"
+        static let density = "density"
+        static let confirmStyle = "safety.confirmStyle"
+        static let confirmCountdownSeconds = "safety.countdownSeconds"
+        static let returnCancels = "safety.returnCancels"
+        static let warnUnresolved = "safety.warnUnresolved"
     }
 
     static let zoomRange: ClosedRange<Double> = 0.8...2.0
     static let zoomSteps: [Double] = [0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0]
     static let defaultTimeoutSeconds = 30.0
     static let maxVersionsRange = 5...50
+    static let editorFontSizeRange = 9...24
+    static let countdownRange = 1...10
 
     var defaults: UserDefaults = .standard
 
@@ -103,6 +134,58 @@ struct AppPreferences {
             return min(max(v, Self.maxVersionsRange.lowerBound), Self.maxVersionsRange.upperBound)
         }
         nonmutating set { defaults.set(newValue, forKey: Key.maxVersions) }
+    }
+
+    /// Empty means the system monospaced font.
+    var editorFontFamily: String {
+        get { defaults.string(forKey: Key.editorFontFamily) ?? "" }
+        nonmutating set { defaults.set(newValue, forKey: Key.editorFontFamily) }
+    }
+
+    var editorFontSize: Int {
+        get {
+            let v = defaults.object(forKey: Key.editorFontSize) as? Int ?? 12
+            return min(max(v, Self.editorFontSizeRange.lowerBound), Self.editorFontSizeRange.upperBound)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.editorFontSize) }
+    }
+
+    var wrapLines: Bool {
+        get { defaults.object(forKey: Key.wrapLines) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.wrapLines) }
+    }
+
+    var showLineNumbers: Bool {
+        get { defaults.object(forKey: Key.showLineNumbers) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.showLineNumbers) }
+    }
+
+    var density: Density {
+        get { (defaults.string(forKey: Key.density)).flatMap(Density.init) ?? .regular }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.density) }
+    }
+
+    var confirmStyle: ConfirmStyle {
+        get { (defaults.string(forKey: Key.confirmStyle)).flatMap(ConfirmStyle.init) ?? .countdown }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.confirmStyle) }
+    }
+
+    var confirmCountdownSeconds: Int {
+        get {
+            let v = defaults.object(forKey: Key.confirmCountdownSeconds) as? Int ?? 3
+            return min(max(v, Self.countdownRange.lowerBound), Self.countdownRange.upperBound)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.confirmCountdownSeconds) }
+    }
+
+    var returnCancels: Bool {
+        get { defaults.object(forKey: Key.returnCancels) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.returnCancels) }
+    }
+
+    var warnUnresolved: Bool {
+        get { defaults.object(forKey: Key.warnUnresolved) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.warnUnresolved) }
     }
 
     /// The transport defaults handed to the core (`set_http_options`).
