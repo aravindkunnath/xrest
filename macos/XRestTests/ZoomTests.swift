@@ -72,8 +72,8 @@ final class ZoomTests: XCTestCase {
     }
 
     func testEditorFontSizeIsDerivedFromZoom() {
-        XCTAssertEqual(CodeEditor.fontSize(zoom: 1.0), 12)
-        XCTAssertEqual(CodeEditor.fontSize(zoom: 1.5), 18)
+        XCTAssertEqual(CodeEditor.fontSize(zoom: 1.0, base: 12), 12)
+        XCTAssertEqual(CodeEditor.fontSize(zoom: 1.5, base: 12), 18)
         let tv = NSTextView()
         tv.string = "{\"a\": 1}"
         JSONHighlighter.apply(to: tv, zoom: 2.0)

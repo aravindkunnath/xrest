@@ -10,10 +10,60 @@ struct CodeEditor: NSViewRepresentable {
     /// Read from the observable store while the parent builds this view, so a zoom change makes
     /// SwiftUI call `updateNSView`.
     var zoom = ZoomStore.shared.zoom
+    /// Editor preferences, read from the store the same way as `zoom`.
+    var fontFamily = PreferencesStore.shared.editorFontFamily
+    var baseFontSize = PreferencesStore.shared.editorFontSize
+    var wrapLines = PreferencesStore.shared.wrapLines
+    var showLineNumbers = PreferencesStore.shared.showLineNumbers
     /// When set, hovering a `{{name}}` shows its value in a small popup.
     var variableLookup: ((String) -> VariableInfo)? = nil
 
-    static func fontSize(zoom: Double) -> CGFloat { 12 * CGFloat(zoom) }
+    static func fontSize(zoom: Double, base: Int) -> CGFloat { CGFloat(base) * CGFloat(zoom) }
+
+    /// The named family when it is installed and fixed-pitch, else the system monospaced face.
+    static func font(family: String, size: CGFloat) -> NSFont {
+        if !family.isEmpty, let named = NSFont(name: family, size: size), named.isFixedPitch {
+            return named
+        }
+        if !family.isEmpty,
+            let member = NSFontManager.shared.availableMembers(ofFontFamily: family)?.first,
+            let name = member[0] as? String, let named = NSFont(name: name, size: size), named.isFixedPitch
+        {
+            return named
+        }
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    private var editorFont: NSFont {
+        Self.font(family: fontFamily, size: Self.fontSize(zoom: zoom, base: baseFontSize))
+    }
+
+    private func highlight(_ textView: NSTextView) {
+        JSONHighlighter.apply(to: textView, zoom: zoom, family: fontFamily, base: baseFontSize)
+    }
+
+    private func applyLayout(to scroll: NSScrollView, textView: NSTextView) {
+        guard let container = textView.textContainer else { return }
+        if wrapLines {
+            textView.isHorizontallyResizable = false
+            container.widthTracksTextView = true
+            // Before the first layout the content size is zero; tracking then sizes the container.
+            let width = scroll.contentSize.width
+            if width > 0, container.size.width != width {
+                container.size = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+                textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
+            }
+            scroll.hasHorizontalScroller = false
+        } else {
+            textView.isHorizontallyResizable = true
+            container.widthTracksTextView = false
+            container.size = NSSize(width: 1e7, height: CGFloat.greatestFiniteMagnitude)
+            scroll.hasHorizontalScroller = true
+        }
+        scroll.rulersVisible = showLineNumbers
+        (scroll.verticalRulerView as? LineNumberRuler)?.font = editorFont
+        textView.needsDisplay = true
+    }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
@@ -37,7 +87,11 @@ struct CodeEditor: NSViewRepresentable {
         textView.usesFindBar = true
         textView.isIncrementalSearchingEnabled = true
         textView.string = text
-        JSONHighlighter.apply(to: textView, zoom: zoom)
+        highlight(textView)
+        let ruler = LineNumberRuler(scrollView: scroll, textView: textView)
+        scroll.hasVerticalRuler = true
+        scroll.verticalRulerView = ruler
+        applyLayout(to: scroll, textView: textView)
         if variableLookup != nil {
             context.coordinator.textView = textView
             textView.addTrackingArea(
@@ -54,10 +108,12 @@ struct CodeEditor: NSViewRepresentable {
         textView.isEditable = isEditable
         if textView.string != text {
             textView.string = text
-            JSONHighlighter.apply(to: textView, zoom: zoom)
-        } else if (textView.font?.pointSize).map({ abs($0 - Self.fontSize(zoom: zoom)) > 0.01 }) ?? true {
-            JSONHighlighter.apply(to: textView, zoom: zoom)
+            highlight(textView)
+            (scroll.verticalRulerView as? LineNumberRuler)?.textReplaced()
+        } else if textView.font != editorFont {
+            highlight(textView)
         }
+        applyLayout(to: scroll, textView: textView)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -100,7 +156,7 @@ struct CodeEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            JSONHighlighter.apply(to: textView, zoom: parent.zoom)
+            parent.highlight(textView)
             if parent.text != textView.string {
                 parent.text = textView.string
             }
@@ -114,10 +170,14 @@ enum JSONHighlighter {
         pattern:
             #"("(?:\\.|[^"\\])*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b"#)
 
-    static func apply(to textView: NSTextView, zoom: Double = ZoomStore.shared.zoom) {
+    static func apply(
+        to textView: NSTextView, zoom: Double = ZoomStore.shared.zoom,
+        family: String = PreferencesStore.shared.editorFontFamily,
+        base: Int = PreferencesStore.shared.editorFontSize
+    ) {
         guard let storage = textView.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
-        let font = NSFont.monospacedSystemFont(ofSize: CodeEditor.fontSize(zoom: zoom), weight: .regular)
+        let font = CodeEditor.font(family: family, size: CodeEditor.fontSize(zoom: zoom, base: base))
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineHeightMultiple = 1.35
 
