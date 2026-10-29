@@ -53,7 +53,7 @@ jobs:
         run: macos/scripts/generate-bindings.sh --check
 
   macos:
-    name: macOS app (build)
+    name: macOS app (build, test)
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -90,10 +90,20 @@ jobs:
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log \
             | xcbeautify --renderer github-actions
 
-      - name: Upload build log
+      - name: Test app
+        run: |
+          set -o pipefail
+          xcodebuild -project macos/XRest.xcodeproj -scheme XRest \
+            -configuration Debug -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO test 2>&1 | tee xcodetest.log \
+            | xcbeautify --renderer github-actions
+
+      - name: Upload build and test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-log
-          path: xcodebuild.log
+          path: |
+            xcodebuild.log
+            xcodetest.log
           if-no-files-found: ignore
