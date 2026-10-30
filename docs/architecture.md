@@ -38,8 +38,8 @@ GTK app is planned, so nothing in the core may assume a platform.
 
 The unsafe guardrail is enforced in the core: `Workspace::prepare_send` returns
 `Error::ConfirmationRequired { environment }` when the selected environment is unsafe and `confirmed`
-is false, before anything touches the network. Apps use `send_policy().requires_confirmation` to
-decide whether to show a dialog, but a buggy app cannot bypass the check.
+is false, before anything touches the network. Apps use `send_policy_for(method)` to decide whether
+to show a dialog (and how long its countdown must be), but a buggy app cannot bypass the check.
 
 ## Core crate layout
 
@@ -55,6 +55,7 @@ xrest-core/src/
 │   ├── endpoints.rs  versioned endpoints
 │   ├── scratch.rs    scratchpad, promotion, cURL import
 │   └── send.rs       hands workspace state to `resolve`
+├── variables.rs  variable layers (global, workspace, environment, local, built-ins), report
 ├── resolve.rs    RequestSpec → PreparedSend: variables, secrets, auth, preflight, body files
 ├── exec.rs       PreparedSend → HTTP (reqwest), response decoding
 ├── storage.rs    file layout, atomic writes, loading, format check
@@ -76,12 +77,14 @@ Field names are `camelCase`, matching the legacy Go app. Unknown fields are igno
 | --- | --- | --- |
 | 0 (key absent) | legacy Go app | bodies are plain strings |
 | 1 | earlier core | typed `body`, per-request `options` |
-| 2 | this core | `pathParams` on requests |
+| 2 | earlier core | `pathParams` on requests |
+| 3 | this core | `variables.yaml`; environment `color`, `confirm`, `minCountdownSeconds`; `appearance` in `service.yaml` |
 
 * A workspace with a **newer** version is refused (`UnsupportedFormat`) instead of being partially
   read and then rewritten with data loss.
 * An **older** workspace opens as-is; opening never rewrites tracked files. The first save of an
-  endpoint, scratch request or the environments stamps the current version (and moves a legacy
+  endpoint, scratch request, the environments, the workspace variables or the appearance stamps
+  the current version (local overrides are per user and do not). It also moves a legacy
   `selectedEnvironment` into `.xrest/state.yaml` so the user's choice survives).
 * Readers stay backward compatible: a plain-string `body` (format 0) still loads, in endpoint
   files, scratch files and version snapshots alike.
@@ -91,9 +94,11 @@ Field names are `camelCase`, matching the legacy Go app. Unknown fields are igno
 <workspace>/
 ├── service.yaml
 ├── environments.yaml
+├── variables.yaml                     # shared by every environment (optional)
 ├── endpoints/<id>.yaml
 ├── scratchpad/<id>.yaml
 ├── .xrest/state.yaml
+├── .xrest/overrides.yaml              # this user's overrides, per environment
 ├── .xrest/versions/<endpoint-id>.json
 └── .gitignore
 ```
@@ -101,7 +106,7 @@ Field names are `camelCase`, matching the legacy Go app. Unknown fields are igno
 ### `service.yaml`
 
 ```yaml
-formatVersion: 2
+formatVersion: 3
 id: s-<uuid>
 name: Petstore
 isAuthenticated: true          # master switch for service-level auth
@@ -117,6 +122,7 @@ auth:                          # values may use {{VAR}} / {{secret.KEY}}
   apiKeyLocation: ""           # header (default) | query
 preflight: { ... }             # optional service-level preflight (see below)
 gitUrl: ...                    # optional
+appearance: { color: blue, icon: server }   # optional; names from the palette / icon list
 ```
 
 Service auth is injected into a request only when `isAuthenticated` is true **and** the request has
@@ -131,13 +137,50 @@ Service auth is injected into a request only when `isAuthenticated` is true **an
     - { name: BASE_URL, value: "http://localhost:8080", enabled: true, type: plain }
 - name: PROD
   isUnsafe: true
+  color: red                   # optional: red orange amber green teal blue purple pink graphite
+  confirm: changes             # every (default, omitted) | changes: GET, HEAD, OPTIONS send unasked
+  minCountdownSeconds: 5       # team minimum for the confirmation countdown, 0-30 (default 0)
   variables:
     - { name: BASE_URL, value: "https://api.example.com", enabled: true, type: plain }
     - { name: API_KEY, value: "", enabled: true, secretKey: prod-api-key, type: secret }
 ```
 
 A variable with a non-empty `secretKey` resolves to `{{secret.<secretKey>}}`, which is looked up in
-the `SecretStore`. Disabled variables are not used.
+the `SecretStore`. Disabled variables are not used. New workspaces color DEV green, STAGE amber and
+PROD red.
+
+`confirm` and `minCountdownSeconds` only matter when `isUnsafe`. The scope is judged by the request's
+own method (for Test Preflight, the preflight's method). Apps run the countdown for the longer of
+the user's own setting and `minCountdownSeconds`, whatever confirmation style the user picked.
+
+### Variable layers
+
+A `{{NAME}}` takes its value from the most specific layer that defines it (enabled, non-empty name):
+
+| Layer | Stored in | Shared |
+| --- | --- | --- |
+| Local override | `.xrest/overrides.yaml`, keyed by environment name | no (gitignored) |
+| Environment | `environments.yaml` | yes |
+| Workspace | `variables.yaml` (same row shape as environment variables) | yes |
+| Global | the app's file (macOS: `Application Support/XRest/variables.yaml`) | no |
+| Built-in | computed per send | — |
+
+```yaml
+# variables.yaml
+- { name: API_VERSION, value: "2024-06-01", enabled: true, type: plain }
+# .xrest/overrides.yaml
+DEV:
+  - { name: USER_ID, value: "7", enabled: true, type: plain }
+```
+
+* A disabled row lets the next layer down show through.
+* Secret-backed rows work in every layer; secret keys referenced anywhere count as in use.
+* Built-ins: `$uuid`, `$timestamp` (Unix seconds), `$isoTimestamp` (UTC, `YYYY-MM-DDTHH:MM:SSZ`),
+  `$randomInt` (0-1000). Each gets one value per send. A user variable of the same name wins.
+  Previews leave built-ins as written and never list them as unresolved; code export fills them.
+* Overrides are keyed by environment name: renaming an environment leaves its overrides behind.
+* `variable_report(environment)` returns, per name, every layer's row and the winning layer; the
+  macOS Variables panel is built on it.
 
 ### `endpoints/<id>.yaml`
 
@@ -250,6 +293,7 @@ content is preserved.
 
 ### Per-user state (`.xrest/`)
 
+* `overrides.yaml`: this user's variable overrides per environment (see Variable layers).
 * `state.yaml`: `selectedEnvironment`, `gitMode` (`auto|manual`, default manual, omitted when manual),
   `lastSync` (unix seconds of the last successful pull/push/sync). Not shared through git.
 * `versions/<endpoint-id>.json`: endpoint version history, newest `maxVersions` (5-50, default 50).
@@ -286,8 +330,10 @@ Preflight token expiry may be a relative lifetime or an absolute time (`epoch`, 
 
 ## Request resolution (what `send` does)
 
-1. Check the unsafe policy for the selected environment (`ConfirmationRequired` unless `confirmed`).
-2. Build the variable map from the enabled variables of the selected environment.
+1. Check the unsafe policy for the selected environment and the request's method
+   (`ConfirmationRequired` unless `confirmed`).
+2. Build the variable map from every layer (local override › environment › workspace › global ›
+   built-ins).
 3. Interpolate URL, params, headers, body, auth fields and preflight fields: `{{ NAME }}`
    (whitespace trimmed), recursive up to 10 levels, unknown names left verbatim and reported in
    `unresolved_variables`.
@@ -326,11 +372,19 @@ XRestWorkspace
     selected_environment() -> String?
     select_environment(name)                          // persisted in .xrest/state.yaml
     save_environments(envs: [EnvironmentConfig])      // trimmed, non-empty, unique names else InvalidInput; selection kept or falls back to first
-    variable_names() -> [String]                      // enabled variables of the selected environment (autocomplete)
+    variable_names() -> [String]                      // every layer's enabled names for the selected environment, then built-ins (autocomplete)
     preview(text) -> InterpolationPreview             // { resolved, unresolved }; secrets shown as ••••••, never their value
     preview_request_url(spec) -> InterpolationPreview // the URL as send builds it (variables, path params, enabled query params), secrets masked; no I/O
     export_code(spec, language: CodeLanguage, include_secrets) -> String // curl | axios | java | kotlin; no I/O, no unsafe-env confirmation
-    send_policy() -> SendPolicy                       // { environment, requires_confirmation }
+    send_policy() -> SendPolicy                       // is the selected environment unsafe at all (any method)
+    send_policy_for(method) -> SendPolicy             // { environment, requires_confirmation, min_countdown_seconds } for one send
+  variable layers
+    set_global_variables(XRestGlobals)                // attach the app's global list (shared, read live)
+    workspace_variables() / save_workspace_variables(vars)   // variables.yaml; names trimmed, unnamed rows dropped
+    local_overrides(env) / save_local_overrides(env, vars)   // .xrest/overrides.yaml; empty list removes; UnknownEnvironment
+    variable_report(env?) -> [VariableReport]         // { name, values: [LayerValue], winner: VariableLayer? }
+  appearance
+    appearance() / set_appearance(WorkspaceAppearance)       // { color?, icon? }; unknown names are InvalidInput
   endpoints
     list_endpoints() / get_endpoint(id) -> Endpoint
     create_endpoint(name, spec) / update_endpoint(id, name, spec) -> Endpoint   // update snapshots a version when the request changed
@@ -365,7 +419,14 @@ Records: `NameValue`, `Preflight`, `RequestSpec`, `RequestOptions`, `Endpoint`, 
 `change` is `added`/`removed`/`changed`; `before`/`after` optional text),
 `EnvironmentConfig` (not `Environment`, which would clash with SwiftUI's), `ServiceInfo`, `ServiceSettings`,
 `InterpolationPreview`, `SendPolicy`,
-`HeaderPair`, `HttpResponse`, `PreflightTestResult`.
+`HeaderPair`, `HttpResponse`, `PreflightTestResult`, `WorkspaceAppearance`, `VariableReport`,
+`LayerValue`, `BuiltinVariable`; enums `ConfirmScope` (`every`, `changes`) and `VariableLayer`
+(`local`, `environment`, `workspace`, `global`, `builtIn`).
+
+`XRestGlobals` holds the user's global variables: `XRestGlobals.open(path:)` loads a YAML list (a
+missing file is empty), `variables()`, `save(variables:)` writes it. One object is shared by every
+workspace through `set_global_variables`, so a save reaches every window's next send. Free
+functions: `builtin_variables()`, `color_palette()`, `workspace_icons()`.
 
 Errors (`XRestError`, a Swift `Error` enum): `ConfirmationRequired(environment)`,
 `UnsupportedFormat(found, supported)`, `NotFound(message)`,

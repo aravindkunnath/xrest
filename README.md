@@ -38,13 +38,19 @@ See [docs/architecture.md](docs/architecture.md) for details.
 
 ```text
 my-service/
-├── service.yaml        # formatVersion, name, service-level auth, service preflight
-├── environments.yaml   # DEV / STAGE / PROD (isUnsafe), variables
+├── service.yaml        # formatVersion, name, service-level auth, service preflight, appearance
+├── environments.yaml   # DEV / STAGE / PROD: variables, color, unsafe rules
+├── variables.yaml      # variables shared by every environment
 ├── endpoints/          # versioned requests, one YAML file each
 ├── scratchpad/         # loose requests (gitignored)
-├── .xrest/             # per-user state: selected environment, version history (gitignored)
+├── .xrest/             # per-user: selected environment, your variable overrides, version history (gitignored)
 └── .gitignore          # created by XRest; ignores /scratchpad/ and /.xrest/
 ```
+
+Variables come from layers, most specific first: your local override, the environment, the
+workspace (every environment), your global variables, then built-ins such as `{{$uuid}}`. An
+unsafe environment can confirm every request or only those that change data, and can set a
+minimum countdown for everyone.
 
 Request bodies are typed (text, JSON, form, multipart, file) and each request can override the
 timeout, redirects, TLS verification and proxy. Files a request uploads must live inside the
