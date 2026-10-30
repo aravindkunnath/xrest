@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AppearanceTab: View {
     @AppStorage(AppPreferences.Key.appearance) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(AppPreferences.Key.accent) private var accent = AccentChoice.amber.rawValue
     @AppStorage(AppPreferences.Key.zoom) private var zoom = 1.0
     @AppStorage(AppPreferences.Key.editorFontFamily) private var fontFamily = ""
     @AppStorage(AppPreferences.Key.editorFontSize) private var fontSize = 12
@@ -31,6 +32,12 @@ struct AppearanceTab: View {
             SettingsCard {
                 SettingsRow("Theme") { ThemeSwatchPicker(selection: $appearance) }
             }
+            SettingsCard {
+                SettingsRow("Accent color", hint: "System follows System Settings › Appearance.") {
+                    AccentPicker(selection: $accent)
+                }
+            }
+            .padding(.top, 8)
             SettingsSectionHeader("Zoom").padding(.top, 14)
             SettingsCard {
                 SettingsRow("Zoom", hint: "Scales code, request bodies and responses.") {

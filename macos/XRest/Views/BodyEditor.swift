@@ -17,7 +17,7 @@ struct BodyEditor: View {
                 }
                 .labelsHidden()
                 .fixedSize()
-                .tint(Theme.amber)
+                .tint(Theme.accent)
 
                 if draft.bodyKind == .text || draft.bodyKind == .binary {
                     TextField("Content-Type (automatic)", text: $draft.bodyContentType)

@@ -70,7 +70,7 @@ struct VersionsPanel: View {
                 Button("Restore this version") { model.requestRestore(row.version) }
                     .buttonStyle(.plain)
                     .font(.ui(12))
-                    .foregroundStyle(Theme.amber)
+                    .foregroundStyle(Theme.accent)
                     .padding(.horizontal, 10)
                     .frame(height: 26)
                     .chrome(fill: Theme.amberFill, stroke: Theme.amberBorder, radius: 4)
@@ -96,7 +96,7 @@ private struct VersionRowView: View {
             HStack(spacing: 10) {
                 Text("v\(row.version)")
                     .font(.mono(12, weight: .semibold))
-                    .foregroundStyle(isCurrent ? Theme.amber : Theme.textSoft)
+                    .foregroundStyle(isCurrent ? Theme.accent : Theme.textSoft)
                     .frame(width: 34, alignment: .leading)
                 Text(row.summary)
                     .font(.mono(12)).foregroundStyle(Theme.text)

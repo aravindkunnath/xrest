@@ -33,11 +33,11 @@ struct KeyValueEditor: View {
                             row.enabled.toggle()
                         } label: {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(row.enabled ? Theme.amber : .clear)
+                                .fill(row.enabled ? Theme.accent : .clear)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 3)
                                         .stroke(
-                                            row.enabled ? Theme.amber : Theme.controlOff,
+                                            row.enabled ? Theme.accent : Theme.controlOff,
                                             lineWidth: 1)
                                 )
                                 .overlay {

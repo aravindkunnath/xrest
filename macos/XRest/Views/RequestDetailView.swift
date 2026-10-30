@@ -104,7 +104,7 @@ struct RequestDetailView: View {
                 .frame(height: 36)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(model.selectedEnvironmentIsUnsafe ? Theme.red : Theme.amber)
+                        .fill(model.selectedEnvironmentIsUnsafe ? Theme.red : Theme.accent)
                 )
             }
             .buttonStyle(.plain)
@@ -199,7 +199,7 @@ struct RequestDetailView: View {
                 Button("Promote ↑") { model.promoteSelected() }
                     .buttonStyle(.plain)
                     .font(.ui(11))
-                    .foregroundStyle(Theme.amber)
+                    .foregroundStyle(Theme.accent)
                     .padding(.horizontal, 7)
                     .frame(height: 22)
                     .chrome(fill: Theme.amberFill, stroke: Theme.amberBorder, radius: 4)
@@ -265,7 +265,7 @@ struct RequestDetailView: View {
                     .foregroundStyle(Theme.text)
             }
             .toggleStyle(.checkbox)
-            .tint(Theme.amber)
+            .tint(Theme.accent)
             .disabled(!model.service.isAuthenticated)
             Text(
                 model.service.isAuthenticated
@@ -302,7 +302,7 @@ struct URLField: View {
             VariableTextField(
                 placeholder: "https://… or {{BASE_URL}}/path", text: $text,
                 completions: completions, font: .mono(13), fontSize: 13, textColor: .clear,
-                accessibilityLabel: "Request URL", onSubmit: onSubmit)
+                accessibilityLabel: "Request URL", highlightsVariables: false, onSubmit: onSubmit)
         }
     }
 

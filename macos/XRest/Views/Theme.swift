@@ -19,6 +19,10 @@ enum Theme {
     static let textSoft = Color(nsColor: .dynamic(dark: 0xC9CDD4, light: 0x3A404B))
     static let muted = Color(nsColor: .dynamic(dark: 0x9AA1AD, light: 0x626A78))
 
+    /// The user's accent (Settings › Appearance). Reads the observable store, so views that use it
+    /// re-render when it changes.
+    static var accent: Color { Color(nsColor: PreferencesStore.shared.accent.nsColor) }
+
     static let amber = Color(nsColor: .dynamic(dark: 0xF2A93B, light: 0xB26A00))
     static let amberSoft = Color(nsColor: .dynamic(dark: 0xFFC56B, light: 0x935700))
     static let amberFill = Color(nsColor: .dynamic(dark: 0x2A2217, light: 0xFFF1D6))

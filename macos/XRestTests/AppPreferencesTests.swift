@@ -17,6 +17,15 @@ final class AppPreferencesTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testAccentDefaultsToAmberAndRoundTrips() {
+        let p = AppPreferences(defaults: defaults)
+        XCTAssertEqual(p.accent, .amber)
+        p.accent = .purple
+        XCTAssertEqual(AppPreferences(defaults: defaults).accent, .purple)
+        defaults.set("nonsense", forKey: AppPreferences.Key.accent)
+        XCTAssertEqual(AppPreferences(defaults: defaults).accent, .amber)
+    }
+
     func testDefaults() {
         let p = AppPreferences(defaults: defaults)
         XCTAssertEqual(p.appearance, .system)

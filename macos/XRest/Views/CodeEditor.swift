@@ -17,6 +17,7 @@ struct CodeEditor: NSViewRepresentable {
     /// When non-nil, overrides the wrap preference (e.g. hex dumps must not wrap).
     var wrapOverride: Bool? = nil
     var showLineNumbers = PreferencesStore.shared.showLineNumbers
+    var accent = PreferencesStore.shared.accent
     /// When set, hovering a `{{name}}` shows its value in a small popup.
     var variableLookup: ((String) -> VariableInfo)? = nil
 
@@ -46,7 +47,9 @@ struct CodeEditor: NSViewRepresentable {
     }
 
     private func highlight(_ textView: NSTextView) {
-        JSONHighlighter.apply(to: textView, zoom: zoom, family: fontFamily, base: baseFontSize)
+        JSONHighlighter.apply(
+            to: textView, zoom: zoom, family: fontFamily, base: baseFontSize,
+            variables: variableLookup != nil)
     }
 
     private func applyLayout(to scroll: NSScrollView, textView: NSTextView, coordinator: Coordinator) {
@@ -94,7 +97,7 @@ struct CodeEditor: NSViewRepresentable {
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.drawsBackground = false
-        textView.insertionPointColor = NSColor.dynamic(dark: 0xF2A93B, light: 0xB26A00)
+        textView.insertionPointColor = accent.nsColor
         textView.selectedTextAttributes = [.backgroundColor: NSColor.dynamic(dark: 0x3A3F4A, light: 0xBBD3F2)]
         textView.textContainerInset = NSSize(width: 10, height: 12)
         textView.isEditable = isEditable
@@ -105,6 +108,10 @@ struct CodeEditor: NSViewRepresentable {
         let ruler = LineNumberRuler(scrollView: scroll, textView: textView)
         scroll.hasVerticalRuler = true
         scroll.verticalRulerView = ruler
+        // On recent macOS the ruler hosts a system edge decoration that draws a line outside its
+        // frame, up through the toolbar; clip both so it stays beside the text.
+        ruler.clipsToBounds = true
+        scroll.clipsToBounds = true
         applyLayout(to: scroll, textView: textView, coordinator: context.coordinator)
         if variableLookup != nil {
             context.coordinator.textView = textView
@@ -120,6 +127,7 @@ struct CodeEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard let textView = scroll.documentView as? NSTextView else { return }
         textView.isEditable = isEditable
+        textView.insertionPointColor = accent.nsColor
         if textView.string != text {
             textView.string = text
             highlight(textView)
@@ -188,7 +196,8 @@ enum JSONHighlighter {
     static func apply(
         to textView: NSTextView, zoom: Double = ZoomStore.shared.zoom,
         family: String = PreferencesStore.shared.editorFontFamily,
-        base: Int = PreferencesStore.shared.editorFontSize
+        base: Int = PreferencesStore.shared.editorFontSize,
+        variables: Bool = false
     ) {
         guard let storage = textView.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
@@ -224,6 +233,20 @@ enum JSONHighlighter {
                 }
             }
         }
+        // Editable bodies tint `{{name}}` placeholders like the URL bar does; applied last so it
+        // wins over the string color inside JSON values.
+        if variables, storage.length <= 256 * 1024 {
+            placeholder.enumerateMatches(in: string, range: full) { match, _, _ in
+                guard let match else { return }
+                storage.addAttributes(
+                    [
+                        .foregroundColor: NSColor.dynamic(dark: 0xF2A93B, light: 0xB26A00),
+                        .backgroundColor: NSColor.dynamic(dark: 0x2A2217, light: 0xFFF1D6),
+                    ], range: match.range)
+            }
+        }
         storage.endEditing()
     }
+
+    private static let placeholder = try! NSRegularExpression(pattern: #"\{\{[^}]*\}\}"#)
 }

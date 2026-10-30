@@ -37,7 +37,7 @@ struct WorkspaceView: View {
         .background(Theme.bg)
         .foregroundStyle(Theme.text)
         .font(.ui(13))
-        .tint(Theme.amber)
+        .tint(Theme.accent)
         .ignoresSafeArea()
         .navigationTitle(model.service.name)
         .task {
@@ -63,6 +63,17 @@ struct WorkspaceView: View {
         } message: {
             Text("This removes the file from the workspace.")
         }
+        .alert(
+            "Close \"\(closingTitle)\"?", isPresented: closeBinding
+        ) {
+            Button("Save") { if let id = model.pendingTabClose { model.saveAndCloseTab(id) } }
+            Button("Discard Changes", role: .destructive) {
+                if let id = model.pendingTabClose { model.closeTabNow(id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This request has unsaved changes.")
+        }
         .sheet(isPresented: $model.showImportCurl) {
             ImportCurlSheet(model: model)
         }
@@ -84,6 +95,16 @@ struct WorkspaceView: View {
         Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } })
+    }
+
+    private var closeBinding: Binding<Bool> {
+        Binding(
+            get: { model.pendingTabClose != nil },
+            set: { if !$0 { model.pendingTabClose = nil } })
+    }
+
+    private var closingTitle: String {
+        model.tabItems.first { $0.id == model.pendingTabClose }?.title ?? ""
     }
 
     private var deleteBinding: Binding<Bool> {
@@ -250,28 +271,18 @@ struct MainColumn: View {
 
     private var tabStrip: some View {
         HStack(spacing: 0) {
-            if let draft = model.draft {
-                HStack(spacing: 8) {
-                    Text(draft.method)
-                        .font(.mono(10, weight: .semibold))
-                        .foregroundStyle(Theme.methodColor(draft.method))
-                    Text(draft.name.isEmpty ? "Untitled" : draft.name)
-                        .font(model.isScratchSelected ? .ui(13).italic() : .ui(13))
-                        .lineLimit(1)
-                    if model.isScratchSelected {
-                        Tag(text: "scratch")
-                    }
-                    if model.isDirty {
-                        Circle().fill(Theme.amber).frame(width: 6, height: 6)
-                            .accessibilityLabel("Unsaved")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(model.tabItems) { tab in
+                        TabButton(
+                            tab: tab, active: tab.id == model.activeTabID,
+                            select: { model.activateTab(tab.id) },
+                            pin: { model.pinTab(tab.id) },
+                            close: { model.requestCloseTab(tab.id) })
                     }
                 }
-                .padding(.horizontal, 14)
-                .frame(maxHeight: .infinity)
-                .background(Theme.bg)
-                .overlay(alignment: .top) { Rectangle().fill(Theme.amber).frame(height: 2) }
-                .hairline(.trailing)
             }
+            .fixedSize(horizontal: true, vertical: false)
             Button {
                 model.newScratch()
             } label: {
@@ -290,6 +301,62 @@ struct MainColumn: View {
         .frame(height: 38)
         .background(Theme.panel)
         .hairline(.bottom)
+    }
+}
+
+/// One tab: method, name, unsaved dot and a close button. Italic while it is a preview tab.
+private struct TabButton: View {
+    let tab: OpenTab
+    let active: Bool
+    let select: () -> Void
+    let pin: () -> Void
+    let close: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let method = tab.draft?.method {
+                Text(method)
+                    .font(.mono(10, weight: .semibold))
+                    .foregroundStyle(Theme.methodColor(method))
+            }
+            Text(tab.title)
+                .font(tab.isPreview || tab.isScratch ? .ui(13).italic() : .ui(13))
+                .foregroundStyle(active ? Theme.text : Theme.muted)
+                .lineLimit(1)
+                .frame(maxWidth: 160, alignment: .leading)
+            if tab.isScratch { Tag(text: "scratch") }
+            ZStack {
+                if tab.isDirty && !hovering {
+                    Circle().fill(Theme.accent).frame(width: 6, height: 6)
+                        .accessibilityLabel("Unsaved")
+                } else if active || hovering {
+                    Button(action: close) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(Theme.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close tab")
+                    .accessibilityLabel("Close \(tab.title)")
+                }
+            }
+            .frame(width: 14, height: 14)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxHeight: .infinity)
+        .background(active ? Theme.bg : (hovering ? Theme.hover : .clear))
+        .overlay(alignment: .top) {
+            if active { Rectangle().fill(Theme.accent).frame(height: 2) }
+        }
+        .hairline(.trailing)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(count: 2, perform: pin)
+        .onTapGesture(perform: select)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
     }
 }
 

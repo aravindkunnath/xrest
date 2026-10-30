@@ -23,6 +23,7 @@ struct SettingsView: View {
         .frame(minHeight: 360, idealHeight: 460)
         .background(Theme.bg)
         .navigationTitle(section.title)
+        .tint(Theme.accent)
         .preferredColorScheme(AppearanceMode(rawValue: appearance)?.colorScheme)
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftUI
 
 enum AppearanceMode: String, CaseIterable, Identifiable {
@@ -13,6 +14,32 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         case .system: return nil
         case .light: return .light
         case .dark: return .dark
+        }
+    }
+}
+
+/// The app's accent: switches, selection, tint and the active tab. Warnings stay amber.
+enum AccentChoice: String, CaseIterable, Identifiable {
+    case amber, system, blue, green, purple, pink, red
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .amber: return "Amber"
+        case .system: return "System"
+        default: return rawValue.capitalized
+        }
+    }
+
+    var nsColor: NSColor {
+        switch self {
+        case .amber: return .dynamic(dark: 0xF2A93B, light: 0xB26A00)
+        case .system: return .controlAccentColor
+        case .blue: return .dynamic(dark: 0x6CB6FF, light: 0x1C6AC0)
+        case .green: return .dynamic(dark: 0x5EC28A, light: 0x1D8750)
+        case .purple: return .dynamic(dark: 0xB79CFF, light: 0x6D45C9)
+        case .pink: return .dynamic(dark: 0xF28BC0, light: 0xB22A74)
+        case .red: return .dynamic(dark: 0xF07178, light: 0xC9313D)
         }
     }
 }
@@ -49,6 +76,7 @@ enum ConfirmStyle: String, CaseIterable, Identifiable {
 struct AppPreferences {
     enum Key {
         static let appearance = "appearance"
+        static let accent = "accent"
         static let zoom = "zoom"
         static let timeoutSeconds = "http.timeoutSeconds"
         static let followRedirects = "http.followRedirects"
@@ -88,6 +116,11 @@ struct AppPreferences {
     var appearance: AppearanceMode {
         get { (defaults.string(forKey: Key.appearance)).flatMap(AppearanceMode.init) ?? .system }
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.appearance) }
+    }
+
+    var accent: AccentChoice {
+        get { (defaults.string(forKey: Key.accent)).flatMap(AccentChoice.init) ?? .amber }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.accent) }
     }
 
     var zoom: Double {
@@ -242,6 +275,7 @@ final class PreferencesStore {
     private(set) var wrapLines: Bool
     private(set) var showLineNumbers: Bool
     private(set) var density: Density
+    private(set) var accent: AccentChoice
     @ObservationIgnored private var observer: NSObjectProtocol?
 
     init(defaults: UserDefaults = .standard) {
@@ -251,6 +285,7 @@ final class PreferencesStore {
         wrapLines = prefs.wrapLines
         showLineNumbers = prefs.showLineNumbers
         density = prefs.density
+        accent = prefs.accent
         observer = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: defaults, queue: .main
         ) { [weak self] _ in
@@ -266,5 +301,6 @@ final class PreferencesStore {
         if prefs.wrapLines != wrapLines { wrapLines = prefs.wrapLines }
         if prefs.showLineNumbers != showLineNumbers { showLineNumbers = prefs.showLineNumbers }
         if prefs.density != density { density = prefs.density }
+        if prefs.accent != accent { accent = prefs.accent }
     }
 }

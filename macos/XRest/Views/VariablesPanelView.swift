@@ -288,7 +288,7 @@ struct VariablesPanelView: View {
                     Text("In use").font(.ui(10, weight: .semibold))
                         .foregroundStyle(Theme.bg)
                         .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(Capsule().fill(Theme.amber))
+                        .background(Capsule().fill(Theme.accent))
                 } else if entry.overridden {
                     Text(entry.value?.enabled == false ? "Disabled" : "Overridden")
                         .font(.ui(10)).foregroundStyle(Theme.muted)
@@ -317,7 +317,7 @@ struct VariablesPanelView: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.bg))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(entry.inUse ? Theme.amber : Theme.border, lineWidth: entry.inUse ? 1.5 : 1))
+                .stroke(entry.inUse ? Theme.accent : Theme.border, lineWidth: entry.inUse ? 1.5 : 1))
     }
 
     @ViewBuilder

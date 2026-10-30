@@ -130,7 +130,7 @@ struct ServiceSettingsView: View {
             .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Theme.selected : .clear))
             .overlay(
                 RoundedRectangle(cornerRadius: 7)
-                    .stroke(selected ? Theme.amber : Theme.border, lineWidth: selected ? 1.5 : 1))
+                    .stroke(selected ? Theme.accent : Theme.border, lineWidth: selected ? 1.5 : 1))
         }
         .buttonStyle(.plain)
         .help(name ?? "Initial")

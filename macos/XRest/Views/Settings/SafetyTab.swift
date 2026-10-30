@@ -66,7 +66,7 @@ struct SafetyTab: View {
         } label: {
             SettingsRow(option.title, hint: Self.hints[option]) {
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(selected ? Theme.amber : Theme.controlOff)
+                    .foregroundStyle(selected ? Theme.accent : Theme.controlOff)
                     .accessibilityHidden(true)
             }
             .contentShape(Rectangle())

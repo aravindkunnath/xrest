@@ -49,14 +49,29 @@ final class WorkspaceModel {
     private(set) var variablesRevision = 0
     @ObservationIgnored private var globalsStore: GlobalVariablesStore?
 
+    /// The active tab's item. Together with `draft`, `savedDraft` and the send state below this is
+    /// the live state of the active tab; the other tabs are stored in `tabs`.
     private(set) var selection: SidebarSelection? {
-        didSet { scheduleSessionSave() }
+        didSet {
+            if let i = activeIndex { tabs[i].selection = selection }
+            scheduleSessionSave()
+        }
     }
     /// The request being edited. Written by the editor views.
     var draft: RequestDraft? {
-        didSet { scheduleSessionSave() }
+        didSet {
+            pinIfEdited()
+            scheduleSessionSave()
+        }
     }
     private var savedDraft: RequestDraft?
+
+    // Tabs. The active tab's entry here is stale: read `tabItems`.
+    private(set) var tabs: [OpenTab] = []
+    private(set) var activeTabID: UUID?
+    /// A tab with unsaved edits waiting behind the Save / Discard / Cancel prompt.
+    var pendingTabClose: UUID?
+    @ObservationIgnored private var suppressPin = false
 
     private(set) var response: HttpResponse?
     private(set) var sendError: String?
@@ -180,9 +195,20 @@ final class WorkspaceModel {
 
     func persistSessionNow() {
         guard let sessionStore else { return }
+        let items = tabItems
+        let snapshots: [TabSnapshot] = items.compactMap { tab in
+            guard let target = tab.selection else { return nil }
+            return TabSnapshot(
+                selection: SessionSelection(target),
+                draft: tab.isDirty ? tab.draft.map(DraftSnapshot.init) : nil,
+                isPreview: tab.isPreview)
+        }
+        let activeSelection = selection.map(SessionSelection.init)
         let state = SessionState(
-            workspacePath: sessionPath, selection: selection.map(SessionSelection.init),
-            draft: isDirty ? draft.map(DraftSnapshot.init) : nil)
+            workspacePath: sessionPath, selection: activeSelection,
+            draft: isDirty ? draft.map(DraftSnapshot.init) : nil,
+            tabs: snapshots,
+            activeTab: activeSelection.flatMap { sel in snapshots.firstIndex { $0.selection == sel } })
         try? sessionStore.save(state)
     }
 
@@ -198,35 +224,62 @@ final class WorkspaceModel {
         }
     }
 
-    /// Re-select what was open and bring back the unsaved draft (as an unsaved edit). If the item
-    /// was deleted on disk meanwhile, a draft is kept as a new scratch request, with a notice.
+    /// The stored draft of an item, or nil when it no longer exists.
+    private func storedDraft(for target: SidebarSelection) -> RequestDraft? {
+        switch target {
+        case .endpoint(let id):
+            return (try? core.getEndpoint(id: id)).map { RequestDraft(name: $0.name, spec: $0.spec) }
+        case .scratch(let id):
+            return (try? core.getScratch(id: id)).map { RequestDraft(name: $0.name, spec: $0.spec) }
+        }
+    }
+
+    /// Reopen the tabs that were open, each with its unsaved edits (as unsaved edits). An item that
+    /// was deleted on disk meanwhile is dropped, unless it had edits: those are kept as a new
+    /// scratch request, with a notice. Sessions from before tabs existed hold a single selection.
     func restoreSession() {
         defer { persistSessionNow() }
-        guard let state = sessionStore?.load(path: sessionPath), let ref = state.selection else { return }
-        let target = ref.sidebar
-        let exists: Bool
-        switch target {
-        case .endpoint(let id): exists = endpoints.contains { $0.id == id }
-        case .scratch(let id): exists = scratch.contains { $0.id == id }
+        guard let state = sessionStore?.load(path: sessionPath) else { return }
+        var snapshots = state.tabs ?? []
+        var activeIndex = state.activeTab
+        if snapshots.isEmpty, let ref = state.selection {
+            snapshots = [TabSnapshot(selection: ref, draft: state.draft, isPreview: false)]
+            activeIndex = 0
         }
-        if exists {
-            selection = target
-            loadDraft(for: target)
-            if let snapshot = state.draft, let base = draft { draft = snapshot.apply(to: base) }
-            return
+        var restored: [OpenTab] = []
+        var activeID: UUID?
+        for (index, snapshot) in snapshots.enumerated() {
+            var tab = OpenTab(isPreview: snapshot.isPreview)
+            let target = snapshot.selection.sidebar
+            if let base = storedDraft(for: target) {
+                tab.selection = target
+                tab.savedDraft = base
+                tab.draft = snapshot.draft.map { $0.apply(to: base) } ?? base
+            } else if let edits = snapshot.draft {
+                let recovered = edits.apply(to: .blank)
+                do {
+                    let created = try core.createScratch(name: recovered.name, spec: recovered.spec)
+                    reload()
+                    let target = SidebarSelection.scratch(created.id)
+                    tab.selection = target
+                    tab.savedDraft = storedDraft(for: target)
+                    tab.draft = tab.savedDraft
+                    tab.isPreview = false
+                    warningBanner =
+                        "\"\(recovered.name)\" no longer exists on disk. Your unsaved edits were kept as a scratch request."
+                } catch {
+                    errorMessage = describe(error)
+                    continue
+                }
+            } else {
+                continue
+            }
+            restored.append(tab)
+            if index == activeIndex { activeID = tab.id }
         }
-        guard let snapshot = state.draft else { return }
-        let recovered = snapshot.apply(to: .blank)
-        do {
-            let created = try core.createScratch(name: recovered.name, spec: recovered.spec)
-            reload()
-            selection = .scratch(created.id)
-            loadDraft(for: selection)
-            warningBanner =
-                "\"\(recovered.name)\" no longer exists on disk. Your unsaved edits were kept as a scratch request."
-        } catch {
-            errorMessage = describe(error)
-        }
+        guard !restored.isEmpty else { return }
+        tabs = restored
+        adopt(restored.first { $0.id == activeID } ?? restored[restored.count - 1])
     }
 
     /// The window closed. A clean close with nothing unsaved forgets the session; unsaved edits
@@ -236,7 +289,7 @@ final class WorkspaceModel {
         if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
         terminationObserver = nil
         guard let sessionStore, !Self.isTerminating else { return }
-        if isDirty { persistSessionNow() } else { sessionStore.remove(path: sessionPath) }
+        if hasUnsavedTabs { persistSessionNow() } else { sessionStore.remove(path: sessionPath) }
     }
 
     /// Create a new workspace in `url` (the folder must not contain a service.yaml yet).
@@ -277,9 +330,12 @@ final class WorkspaceModel {
         workspaceVariables = core.workspaceVariables()
         appearance = core.appearance()
         variablesRevision += 1
+        pruneMissingTabs()
     }
 
     private func loadDraft(for selection: SidebarSelection?) {
+        suppressPin = true
+        defer { suppressPin = false }
         versionRows = []
         selectedVersion = nil
         diffRows = []
@@ -309,9 +365,176 @@ final class WorkspaceModel {
         }
     }
 
+    // MARK: Tabs
+
+    private var activeIndex: Int? { tabs.firstIndex { $0.id == activeTabID } }
+
+    /// Every tab, with the live state laid over the active one.
+    var tabItems: [OpenTab] {
+        tabs.map { $0.id == activeTabID ? live($0) : $0 }
+    }
+
+    var hasUnsavedTabs: Bool { tabItems.contains { $0.isDirty } }
+
+    private func live(_ tab: OpenTab) -> OpenTab {
+        var t = tab
+        t.selection = selection
+        t.draft = draft
+        t.savedDraft = savedDraft
+        t.response = response
+        t.sendError = sendError
+        t.missingSecretKeys = missingSecretKeys
+        t.wasCancelled = wasCancelled
+        return t
+    }
+
+    private func stashActive() {
+        if let i = activeIndex { tabs[i] = live(tabs[i]) }
+    }
+
+    /// Make `tab` the active one by loading its stored state into the live properties.
+    private func adopt(_ tab: OpenTab) {
+        suppressPin = true
+        defer { suppressPin = false }
+        versionRows = []
+        selectedVersion = nil
+        diffRows = []
+        pendingRestore = nil
+        activeTabID = tab.id
+        selection = tab.selection
+        draft = tab.draft
+        savedDraft = tab.savedDraft
+        response = tab.response
+        sendError = tab.sendError
+        missingSecretKeys = tab.missingSecretKeys
+        wasCancelled = tab.wasCancelled
+    }
+
+    /// A send belongs to the tab that started it, so leaving the tab drops it silently.
+    private func abortSend() {
+        guard isSending else { return }
+        sendGeneration += 1
+        sendTask?.cancel()
+        sendTask = nil
+        isSending = false
+    }
+
+    private func addTab(isPreview: Bool) {
+        stashActive()
+        abortSend()
+        let tab = OpenTab(isPreview: isPreview)
+        tabs.append(tab)
+        activeTabID = tab.id
+        selection = nil
+        draft = nil
+        savedDraft = nil
+    }
+
+    /// Open `target`: focus its tab if it has one, else reuse a clean preview tab, else add a tab.
+    private func openTarget(_ target: SidebarSelection, preview: Bool) {
+        if let existing = tabItems.first(where: { $0.selection == target }) {
+            _ = activateTab(existing.id)
+            return
+        }
+        if preview, let i = activeIndex, tabs[i].isPreview, !isDirty {
+            abortSend()
+            selection = target
+            loadDraft(for: target)
+            return
+        }
+        addTab(isPreview: preview)
+        selection = target
+        loadDraft(for: target)
+    }
+
+    /// Open a freshly created item in a new, kept tab.
+    private func openInNewTab(_ target: SidebarSelection) {
+        addTab(isPreview: false)
+        selection = target
+        loadDraft(for: target)
+    }
+
+    /// Switch to a tab. Refused (with a message) while a panel holds unsaved edits.
+    @discardableResult
+    func activateTab(_ id: UUID) -> Bool {
+        if panel != nil {
+            guard !panelDirty else {
+                errorMessage = "Save or revert your changes in the editor first."
+                return false
+            }
+            closePanel()
+        }
+        guard id != activeTabID, let tab = tabs.first(where: { $0.id == id }) else { return true }
+        stashActive()
+        abortSend()
+        adopt(tabs.first { $0.id == id } ?? tab)
+        return true
+    }
+
+    /// Keep a preview tab (double-click, first edit, first send).
+    func pinTab(_ id: UUID) {
+        if let i = tabs.firstIndex(where: { $0.id == id }) { tabs[i].isPreview = false }
+    }
+
+    private func pinIfEdited() {
+        guard !suppressPin, let i = activeIndex, tabs[i].isPreview, isDirty else { return }
+        tabs[i].isPreview = false
+    }
+
+    /// Close a tab, asking first when it has unsaved edits.
+    func requestCloseTab(_ id: UUID) {
+        guard let tab = tabItems.first(where: { $0.id == id }) else { return }
+        if tab.isDirty { pendingTabClose = id } else { closeTabNow(id) }
+    }
+
+    /// Save the tab's edits, then close it. The tab stays open if saving fails.
+    func saveAndCloseTab(_ id: UUID) {
+        guard activateTab(id), flush() else { return }
+        closeTabNow(id)
+    }
+
+    func closeTabNow(_ id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        if id == activeTabID {
+            abortSend()
+            tabs.remove(at: index)
+            if tabs.isEmpty {
+                activeTabID = nil
+                selection = nil
+                draft = nil
+                savedDraft = nil
+                response = nil
+                sendError = nil
+                missingSecretKeys = []
+                wasCancelled = false
+                versionRows = []
+                selectedVersion = nil
+                diffRows = []
+                pendingRestore = nil
+            } else {
+                adopt(tabs[min(index, tabs.count - 1)])
+            }
+        } else {
+            tabs.remove(at: index)
+        }
+        scheduleSessionSave()
+    }
+
+    /// Clean background tabs whose item vanished (a pull deleted it) have nothing left to show.
+    private func pruneMissingTabs() {
+        let gone = tabs.filter { tab in
+            guard tab.id != activeTabID, !tab.isDirty, let target = tab.selection else { return false }
+            switch target {
+            case .endpoint(let id): return !endpoints.contains { $0.id == id }
+            case .scratch(let id): return !scratch.contains { $0.id == id }
+            }
+        }
+        tabs.removeAll { t in gone.contains { $0.id == t.id } }
+    }
+
     // MARK: SidebarSelection and saving
 
-    /// Change the selection. Unsaved edits are saved first; if that fails the selection stays.
+    /// Open an item from the sidebar in the preview tab (or focus the tab that already has it).
     func select(_ new: SidebarSelection?) {
         if panel != nil {
             guard !panelDirty else {
@@ -320,10 +543,8 @@ final class WorkspaceModel {
             }
             closePanel()
         }
-        guard new != selection else { return }
-        guard flush() else { return }
-        selection = new
-        loadDraft(for: new)
+        guard let new else { return }
+        openTarget(new, preview: true)
     }
 
     /// Save the current draft if it changed. Returns false (and shows an error) on failure.
@@ -459,8 +680,7 @@ final class WorkspaceModel {
         case .keep: break
         case .reloadDraft: loadDraft(for: selection)
         case .closeDeleted:
-            selection = nil
-            loadDraft(for: nil)
+            if let id = activeTabID { closeTabNow(id) }
         case .keepEditsWithNotice:
             gitNotice = "This request changed on disk during the pull. Your unsaved edits were kept."
         }
@@ -556,14 +776,13 @@ final class WorkspaceModel {
 
     /// Create a scratch request from the selected entry and open it in the editor.
     func openHistoryAsScratch() {
-        guard let entry = historyDetail, flush() else { return }
+        guard let entry = historyDetail else { return }
         let converted = HistoryScratch.make(from: entry)
         do {
             let created = try core.createScratch(name: converted.name, spec: converted.spec)
             closePanel()
             reload()
-            selection = .scratch(created.id)
-            loadDraft(for: selection)
+            openInNewTab(.scratch(created.id))
             if let notice = converted.notice { warningBanner = notice }
         } catch {
             errorMessage = describe(error)
@@ -645,13 +864,11 @@ final class WorkspaceModel {
     // MARK: Scratch requests and endpoints
 
     func newScratch() {
-        guard flush() else { return }
         let blank = RequestDraft.blank
         do {
             let created = try core.createScratch(name: blank.name, spec: blank.spec)
             reload()
-            selection = .scratch(created.id)
-            loadDraft(for: selection)
+            openInNewTab(.scratch(created.id))
         } catch {
             errorMessage = describe(error)
         }
@@ -672,12 +889,10 @@ final class WorkspaceModel {
     }
 
     func importCurl(_ command: String) {
-        guard flush() else { return }
         do {
             let created = try core.importCurlAsScratch(command: command)
             reload()
-            selection = .scratch(created.id)
-            loadDraft(for: selection)
+            openInNewTab(.scratch(created.id))
             showImportCurl = false
         } catch {
             errorMessage = describe(error)
@@ -703,10 +918,7 @@ final class WorkspaceModel {
             case .endpoint(let id): try core.deleteEndpoint(id: id)
             case .scratch(let id): try core.deleteScratch(id: id)
             }
-            if selection == target {
-                selection = nil
-                loadDraft(for: nil)
-            }
+            for tab in tabItems where tab.selection == target { closeTabNow(tab.id) }
             reload()
         } catch {
             errorMessage = describe(error)
@@ -942,6 +1154,7 @@ final class WorkspaceModel {
 
     private func start(confirmed: Bool) {
         guard let draft, !isSending else { return }
+        if let id = activeTabID { pinTab(id) }
         if case .scratch? = selection { flush() }
         sendGeneration += 1
         let generation = sendGeneration

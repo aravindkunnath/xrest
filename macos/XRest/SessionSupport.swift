@@ -115,11 +115,14 @@ struct DraftSnapshot: Codable, Equatable {
     }
 }
 
-/// What one window had open: the workspace, the selected item and the unsaved draft (if any).
+/// What one window had open: the workspace, its tabs and any unsaved drafts.
 struct SessionState: Codable, Equatable {
     var workspacePath: String
+    /// The active tab, kept for sessions written before tabs existed.
     var selection: SessionSelection?
     var draft: DraftSnapshot?
+    var tabs: [TabSnapshot]?
+    var activeTab: Int?
 }
 
 /// One JSON file per workspace (named by a hash of its path) in `directory`

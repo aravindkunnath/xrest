@@ -89,7 +89,7 @@ private struct SwitchToggleStyle: ToggleStyle {
             withAnimation(.easeOut(duration: 0.12)) { configuration.isOn.toggle() }
         } label: {
             ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                Capsule().fill(configuration.isOn ? Theme.amber : Theme.controlOff)
+                Capsule().fill(configuration.isOn ? Theme.accent : Theme.controlOff)
                 Circle()
                     .fill(Color.white)
                     .frame(width: 18, height: 18)
@@ -197,6 +197,38 @@ struct SettingsSegmented<Value: Hashable>: View {
     }
 }
 
+/// A row of color dots bound to `AccentChoice` raw values.
+struct AccentPicker: View {
+    @Binding var selection: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(AccentChoice.allCases) { choice in
+                let selected = selection == choice.rawValue
+                Button {
+                    selection = choice.rawValue
+                } label: {
+                    Circle()
+                        .fill(Color(nsColor: choice.nsColor))
+                        .frame(width: 16, height: 16)
+                        .overlay {
+                            if choice == .system {
+                                Circle().trim(from: 0, to: 0.5).stroke(Theme.bg, lineWidth: 2).rotationEffect(.degrees(90))
+                            }
+                        }
+                        .padding(3)
+                        .overlay(Circle().stroke(selected ? Theme.text : .clear, lineWidth: 1.5))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(choice.title)
+                .accessibilityLabel("\(choice.title) accent")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+    }
+}
+
 /// Three 84x56 previews bound to `AppearanceMode` raw values.
 struct ThemeSwatchPicker: View {
     @Binding var selection: String
@@ -215,7 +247,7 @@ struct ThemeSwatchPicker: View {
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(
-                                        selected ? Theme.amber : Theme.border,
+                                        selected ? Theme.accent : Theme.border,
                                         lineWidth: selected ? 2 : 1)
                             )
                             .accessibilityHidden(true)
@@ -255,7 +287,7 @@ struct ThemeSwatchPicker: View {
             HStack(spacing: 0) {
                 side.frame(width: 22)
                 VStack(alignment: .leading, spacing: 5) {
-                    Capsule().fill(Theme.amber).frame(width: 28, height: 4)
+                    Capsule().fill(Theme.accent).frame(width: 28, height: 4)
                     Capsule().fill(line).frame(width: 36, height: 4)
                     Capsule().fill(line).frame(width: 24, height: 4)
                 }

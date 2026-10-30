@@ -16,6 +16,9 @@ struct VariableTextField: View {
     var fontSize: CGFloat = 12
     var textColor: Color = Theme.textSoft
     var accessibilityLabel: String? = nil
+    /// Tints `{{…}}` tokens by drawing a styled copy of the text under transparent field text.
+    /// Off for callers that draw their own copy (the URL bar).
+    var highlightsVariables = true
     var onSubmit: (() -> Void)? = nil
 
     @State private var trigger: CompletionTrigger?
@@ -29,11 +32,26 @@ struct VariableTextField: View {
     private var isOpen: Bool { trigger != nil }
 
     var body: some View {
+        ZStack(alignment: .leading) {
+            if highlightsVariables {
+                Text(VariableStyle.attributed(text, color: textColor))
+                    .font(font)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            field
+        }
+    }
+
+    private var field: some View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
             .font(font)
-            .foregroundStyle(textColor)
-            .tint(Theme.amber)
+            .foregroundStyle(highlightsVariables ? Color.clear : textColor)
+            .tint(Theme.accent)
             .focused($focused)
             .onSubmit { if submitGate.shouldSubmit() { onSubmit?() } }
             .onChange(of: text) { refresh() }
@@ -167,6 +185,24 @@ struct VariableTextField: View {
                 editor.setSelectedRange(NSRange(location: result.caret, length: 0))
             }
         }
+    }
+}
+
+enum VariableStyle {
+    /// `text` in `color`, with each `{{…}}` token amber on a soft amber fill.
+    static func attributed(_ text: String, color: Color) -> AttributedString {
+        var result = AttributedString(text.isEmpty ? " " : text)
+        result.foregroundColor = color
+        guard let regex = try? NSRegularExpression(pattern: #"\{\{[^}]*\}\}"#) else { return result }
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)) {
+            guard let range = Range(match.range, in: text),
+                let lower = AttributedString.Index(range.lowerBound, within: result),
+                let upper = AttributedString.Index(range.upperBound, within: result)
+            else { continue }
+            result[lower..<upper].foregroundColor = Theme.amber
+            result[lower..<upper].backgroundColor = Theme.amberFill
+        }
+        return result
     }
 }
 

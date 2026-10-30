@@ -57,12 +57,12 @@ struct ActivityRail: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 15))
-                .foregroundStyle(active ? Theme.amber : Theme.muted)
+                .foregroundStyle(active ? Theme.accent : Theme.muted)
                 .frame(width: 34, height: 34)
                 .background(RoundedRectangle(cornerRadius: 8).fill(active ? Theme.selected : .clear))
                 .overlay(alignment: .topTrailing) {
                     if label == "Git" && gitBadge {
-                        Circle().fill(Theme.amber).frame(width: 8, height: 8).padding(5)
+                        Circle().fill(Theme.accent).frame(width: 8, height: 8).padding(5)
                     }
                 }
         }
@@ -313,7 +313,7 @@ struct ScratchRow: View {
                 Button(action: promote) {
                     Text("Promote ↑")
                         .font(.ui(11))
-                        .foregroundStyle(Theme.amber)
+                        .foregroundStyle(Theme.accent)
                         .padding(.horizontal, 7)
                         .frame(height: 22)
                         .chrome(fill: Theme.amberFill, stroke: Theme.amberBorder, radius: 4)

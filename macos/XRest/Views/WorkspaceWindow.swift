@@ -131,7 +131,7 @@ struct WelcomeView: View {
         VStack(spacing: 14) {
             Image(systemName: "paperplane.fill")
                 .font(.system(size: 30))
-                .foregroundStyle(Theme.amber)
+                .foregroundStyle(Theme.accent)
             Text("XRest").font(.ui(20, weight: .semibold))
             Text("One service per workspace. Open a service directory to get started.")
                 .font(.ui(13))
@@ -142,7 +142,7 @@ struct WelcomeView: View {
                     .foregroundStyle(Theme.bg)
                     .padding(.horizontal, 20)
                     .frame(height: 36)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.amber))
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.accent))
             }
             .buttonStyle(.plain)
             Button("New Service from OpenAPI…", action: newFromOpenAPI)
