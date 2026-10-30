@@ -9,7 +9,14 @@ struct EnvironmentGrid {
     struct Column: Equatable {
         var name: String
         var isUnsafe: Bool
+        /// Carried through untouched unless edited, so a save never drops an environment's rules.
+        var color: String? = nil
+        var confirm: ConfirmScope = .every
+        var minCountdownSeconds: UInt32 = 0
     }
+
+    /// Range offered for the team minimum countdown (mirrors the core's clamp).
+    static let minCountdownRange: ClosedRange<Int> = 0...30
 
     struct Row: Identifiable {
         let id = UUID()
@@ -23,7 +30,11 @@ struct EnvironmentGrid {
     private(set) var rows: [Row]
 
     init(environments: [EnvironmentConfig]) {
-        columns = environments.map { Column(name: $0.name, isUnsafe: $0.isUnsafe) }
+        columns = environments.map {
+            Column(
+                name: $0.name, isUnsafe: $0.isUnsafe, color: $0.color, confirm: $0.confirm,
+                minCountdownSeconds: $0.minCountdownSeconds)
+        }
         var rows: [Row] = []
         for env in environments {
             for (index, v) in env.variables.enumerated() {
@@ -56,7 +67,8 @@ struct EnvironmentGrid {
                     var cell = row.cells[col.name]!
                     cell.name = row.name.trimmingCharacters(in: .whitespaces)
                     return cell
-                })
+                },
+                color: col.color, confirm: col.confirm, minCountdownSeconds: col.minCountdownSeconds)
         }
     }
 
@@ -148,6 +160,21 @@ struct EnvironmentGrid {
 
     mutating func setUnsafe(env: String, _ unsafe: Bool) {
         if let i = columns.firstIndex(where: { $0.name == env }) { columns[i].isUnsafe = unsafe }
+    }
+
+    mutating func setColor(env: String, _ color: String?) {
+        if let i = columns.firstIndex(where: { $0.name == env }) { columns[i].color = color }
+    }
+
+    mutating func setConfirm(env: String, _ scope: ConfirmScope) {
+        if let i = columns.firstIndex(where: { $0.name == env }) { columns[i].confirm = scope }
+    }
+
+    mutating func setMinCountdown(env: String, _ seconds: Int) {
+        let clamped = min(max(seconds, Self.minCountdownRange.lowerBound), Self.minCountdownRange.upperBound)
+        if let i = columns.firstIndex(where: { $0.name == env }) {
+            columns[i].minCountdownSeconds = UInt32(clamped)
+        }
     }
 
     mutating func setValue(rowID: UUID, env: String, _ value: String) {

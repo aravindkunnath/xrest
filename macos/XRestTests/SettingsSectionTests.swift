@@ -5,7 +5,8 @@ import XCTest
 final class SettingsSectionTests: XCTestCase {
     func testOrderAndTitles() {
         XCTAssertEqual(
-            SettingsSection.allCases.map(\.title), ["Appearance", "Requests", "Versions", "Safety"])
+            SettingsSection.allCases.map(\.title),
+            ["Appearance", "Requests", "Variables", "Versions", "Safety"])
     }
 
     func testUnknownStoredTabFallsBackToAppearance() {

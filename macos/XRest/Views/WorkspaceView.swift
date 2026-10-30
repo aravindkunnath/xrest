@@ -22,6 +22,7 @@ struct WorkspaceView: View {
                 ActivityRail(
                     openSecrets: { model.openSecrets() },
                     openEnvironments: { model.openPanel(.environments) },
+                    openVariables: { model.openPanel(.variables) },
                     openSettings: { model.openPanel(.settings) },
                     openGit: { model.openPanel(.git) },
                     openHistory: { model.openPanel(.history) },
@@ -124,11 +125,8 @@ struct TitleBar: View {
             }
         } label: {
             HStack(spacing: 8) {
-                Text(String(model.service.name.prefix(1)).uppercased())
-                    .font(.ui(11, weight: .bold))
-                    .foregroundStyle(Theme.bg)
-                    .frame(width: 18, height: 18)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(Theme.amber))
+                WorkspaceBadge(
+                    name: model.service.name, appearance: model.appearance, size: 18)
                 Text(model.service.name)
                     .font(.ui(13, weight: .semibold))
                     .foregroundStyle(Theme.text)
@@ -157,7 +155,7 @@ struct TitleBar: View {
         } label: {
             HStack(spacing: 6) {
                 Circle()
-                    .fill(unsafe ? Theme.red : Theme.green)
+                    .fill(PaletteColor.color(model.selectedEnvironmentColor) ?? (unsafe ? Theme.red : Theme.green))
                     .frame(width: 7, height: 7)
                 Text(model.selectedEnvironment ?? "No environment")
                     .font(.mono(12))
@@ -221,6 +219,8 @@ struct MainColumn: View {
             if model.panel == nil { tabStrip }
             if model.panel == .environments {
                 EnvironmentsEditorView(model: model)
+            } else if model.panel == .variables {
+                VariablesPanelView(model: model)
             } else if model.panel == .settings {
                 ServiceSettingsView(model: model)
                     .environment(\.variableLookup, { model.variableInfo($0) })
@@ -348,5 +348,29 @@ struct ImportCurlSheet: View {
         }
         .padding(20)
         .frame(width: 560)
+    }
+}
+
+/// The workspace's icon (or initial) on its color, for the title bar and settings.
+struct WorkspaceBadge: View {
+    let name: String
+    let appearance: WorkspaceAppearance
+    var size: CGFloat = 18
+
+    var body: some View {
+        let fill = PaletteColor.color(appearance.color) ?? Theme.amber
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.22).fill(fill)
+            if let symbol = WorkspaceIcon.symbol(appearance.icon) {
+                Image(systemName: symbol)
+                    .font(.system(size: size * 0.55, weight: .semibold))
+            } else {
+                Text(String(name.prefix(1)).uppercased())
+                    .font(.ui(size * 0.6, weight: .bold))
+            }
+        }
+        .foregroundStyle(Theme.bg)
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }

@@ -72,6 +72,7 @@ struct EnvironmentsEditorView: View {
             ForEach(Array(grid.columns.enumerated()), id: \.offset) { index, col in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 2) {
+                        colorMenu(col)
                         ColumnNameField(name: col.name) { grid.renameColumn(from: col.name, to: $0) }
                         columnButton("chevron.left", "Move left", disabled: index == 0) {
                             grid.moveColumn(from: IndexSet(integer: index), to: index - 1)
@@ -93,7 +94,8 @@ struct EnvironmentsEditorView: View {
                     .toggleStyle(.checkbox)
                     .font(.ui(11))
                     .foregroundStyle(col.isUnsafe ? Theme.amber : Theme.muted)
-                    .help("Sends in an unsafe environment need a countdown confirmation")
+                    .help("Sends in an unsafe environment need confirmation")
+                    if col.isUnsafe { unsafeRules(col) }
                 }
                 .frame(width: cellWidth, alignment: .leading)
             }
@@ -106,6 +108,67 @@ struct EnvironmentsEditorView: View {
             Color.clear.frame(width: 24)
         }
         .padding(.bottom, 6)
+    }
+
+    /// Environment color: a dot that opens the shared palette.
+    private func colorMenu(_ col: EnvironmentGrid.Column) -> some View {
+        Menu {
+            Button("No color") { grid.setColor(env: col.name, nil) }
+            Divider()
+            ForEach(PaletteColor.names, id: \.self) { name in
+                Button {
+                    grid.setColor(env: col.name, name)
+                } label: {
+                    Label(PaletteColor.title(name), systemImage: col.color == name ? "checkmark" : "circle.fill")
+                }
+            }
+        } label: {
+            Circle()
+                .fill(PaletteColor.color(col.color) ?? Theme.controlOff)
+                .frame(width: 10, height: 10)
+                .frame(width: 20, height: 20)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Environment color")
+        .accessibilityLabel("\(col.name) color: \(col.color.map(PaletteColor.title) ?? "none")")
+    }
+
+    /// Shared rules for an unsafe environment: which sends ask, and the team minimum countdown.
+    private func unsafeRules(_ col: EnvironmentGrid.Column) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker(
+                "Ask before",
+                selection: Binding(
+                    get: { col.confirm }, set: { grid.setConfirm(env: col.name, $0) })
+            ) {
+                Text("Every request").tag(ConfirmScope.every)
+                Text("Changes only").tag(ConfirmScope.changes)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .help(
+                col.confirm == .changes
+                    ? "GET, HEAD and OPTIONS send without asking"
+                    : "Every request asks for confirmation")
+            Stepper(
+                value: Binding(
+                    get: { Int(col.minCountdownSeconds) },
+                    set: { grid.setMinCountdown(env: col.name, $0) }),
+                in: EnvironmentGrid.minCountdownRange
+            ) {
+                Text(
+                    col.minCountdownSeconds == 0
+                        ? "No minimum countdown" : "Wait at least \(col.minCountdownSeconds)s"
+                )
+                .font(.ui(11))
+                .foregroundStyle(Theme.muted)
+            }
+            .controlSize(.small)
+            .help("Applies to everyone using this workspace, even if their own countdown is shorter")
+        }
     }
 
     private func columnButton(
@@ -227,8 +290,11 @@ struct EnvironmentsEditorView: View {
             ForEach(errors, id: \.self) { Text($0).font(.ui(12)).foregroundStyle(Theme.red) }
             if let saveError { Text(saveError).font(.ui(12)).foregroundStyle(Theme.red) }
             HStack {
-                Text("Secrets are referenced by key; values stay in the Keychain.")
+                Text("Secrets are referenced by key; values stay in the Keychain. Shared, workspace-wide and personal values are in Variables.")
                     .font(.ui(11)).foregroundStyle(Theme.muted)
+                Button("Variables…") { model.openPanel(.variables) }
+                    .disabled(isDirty)
+                    .help(isDirty ? "Save or revert first" : "Open the Variables panel")
                 Spacer()
                 Button("Revert") {
                     grid = EnvironmentGrid(environments: model.environments)

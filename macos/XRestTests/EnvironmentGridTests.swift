@@ -27,6 +27,42 @@ final class EnvironmentGridTests: XCTestCase {
         XCTAssertEqual(grid.toConfigs(), sample)
     }
 
+    func testRulesAndColorSurviveRoundTripRenameAndEdits() {
+        var envs = sample
+        envs[1].color = "red"
+        envs[1].confirm = .changes
+        envs[1].minCountdownSeconds = 5
+        var grid = EnvironmentGrid(environments: envs)
+        XCTAssertEqual(grid.toConfigs(), envs)
+        XCTAssertFalse(grid.isDirty(comparedTo: envs))
+
+        grid.renameColumn(from: "prod", to: "production")
+        let renamed = grid.toConfigs()[1]
+        XCTAssertEqual(renamed.color, "red")
+        XCTAssertEqual(renamed.confirm, .changes)
+        XCTAssertEqual(renamed.minCountdownSeconds, 5)
+
+        grid.setColor(env: "production", "purple")
+        grid.setConfirm(env: "production", .every)
+        grid.setMinCountdown(env: "production", 99)
+        let edited = grid.toConfigs()[1]
+        XCTAssertEqual(edited.color, "purple")
+        XCTAssertEqual(edited.confirm, .every)
+        XCTAssertEqual(edited.minCountdownSeconds, 30, "clamped to the core's maximum")
+        grid.setMinCountdown(env: "production", -4)
+        XCTAssertEqual(grid.toConfigs()[1].minCountdownSeconds, 0)
+        XCTAssertTrue(grid.isDirty(comparedTo: envs))
+    }
+
+    func testNewColumnHasDefaultRules() {
+        var grid = EnvironmentGrid(environments: sample)
+        grid.addColumn(name: "qa")
+        let qa = grid.toConfigs().last!
+        XCTAssertNil(qa.color)
+        XCTAssertEqual(qa.confirm, .every)
+        XCTAssertEqual(qa.minCountdownSeconds, 0)
+    }
+
     func testRowsAreUnionInFirstSeenOrder() {
         let grid = EnvironmentGrid(environments: sample)
         XCTAssertEqual(grid.rows.map(\.name), ["BASE_URL", "TOKEN", "OFF", "EXTRA"])

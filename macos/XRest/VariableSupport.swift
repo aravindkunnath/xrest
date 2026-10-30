@@ -100,7 +100,7 @@ struct CompletionTrigger: Equatable {
     func insert(_ name: String, into text: String) -> (text: String, caret: Int) {
         let ns = text as NSString
         var end = range.location + range.length
-        let nameChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_.-"))
+        let nameChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_.-$"))
         while end < ns.length {
             let ch = ns.substring(with: NSRange(location: end, length: 1))
             if ch.rangeOfCharacter(from: nameChars) == nil { break }

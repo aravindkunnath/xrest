@@ -8,8 +8,19 @@ final class ConfirmationPolicyTests: XCTestCase {
         XCTAssertTrue(ConfirmationPolicy.canSend(style: .countdown, remaining: 0, typed: "", environment: "PROD"))
     }
 
-    func testConfirmAlwaysAllows() {
-        XCTAssertTrue(ConfirmationPolicy.canSend(style: .confirm, remaining: 5, typed: "", environment: "PROD"))
+    func testConfirmAllowsOnceAnyCountdownHasRunOut() {
+        XCTAssertTrue(ConfirmationPolicy.canSend(style: .confirm, remaining: 0, typed: "", environment: "PROD"))
+        // A team minimum runs a countdown even for the confirm style.
+        XCTAssertFalse(ConfirmationPolicy.canSend(style: .confirm, remaining: 5, typed: "", environment: "PROD"))
+        XCTAssertFalse(ConfirmationPolicy.canSend(style: .typeName, remaining: 2, typed: "PROD", environment: "PROD"))
+    }
+
+    func testTeamMinimumIsAFloorForEveryStyle() {
+        XCTAssertEqual(ConfirmationPolicy.countdownDuration(style: .countdown, seconds: 3, teamMinimum: 5), 5)
+        XCTAssertEqual(ConfirmationPolicy.countdownDuration(style: .countdown, seconds: 8, teamMinimum: 5), 8)
+        XCTAssertEqual(ConfirmationPolicy.countdownDuration(style: .confirm, seconds: 8, teamMinimum: 5), 5)
+        XCTAssertEqual(ConfirmationPolicy.countdownDuration(style: .typeName, seconds: 8, teamMinimum: 0), 0)
+        XCTAssertEqual(ConfirmationPolicy.countdownDuration(style: .confirm, seconds: 8, teamMinimum: -1), 0)
     }
 
     func testTypeNameRequiresTrimmedExactMatch() {

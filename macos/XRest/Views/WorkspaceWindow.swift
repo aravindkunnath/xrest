@@ -79,6 +79,7 @@ struct WorkspaceWindow: View {
 
     private func attachSession(_ opened: WorkspaceModel) {
         opened.attachHistory(HistoryStore.shared)
+        opened.attachGlobals(GlobalVariablesStore.shared)
         opened.attachSession(SessionStore.standard)
         opened.restoreSession()
     }

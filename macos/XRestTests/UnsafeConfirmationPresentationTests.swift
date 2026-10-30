@@ -5,11 +5,29 @@ final class UnsafeConfirmationPresentationTests: XCTestCase {
     private func make(
         reason: PendingConfirmation.Reason = .unsafeEnvironment,
         style: ConfirmStyle = .countdown, returnCancels: Bool = true,
-        remaining: Int = 3, typed: String = ""
+        remaining: Int = 3, typed: String = "", teamMinimum: Int = 0
     ) -> UnsafeConfirmationPresentation {
         UnsafeConfirmationPresentation(
             reason: reason, style: style, environment: "PROD",
-            returnCancels: returnCancels, remaining: remaining, typed: typed)
+            returnCancels: returnCancels, remaining: remaining, typed: typed,
+            teamMinimum: teamMinimum)
+    }
+
+    func testTeamMinimumRunsACountdownForTheConfirmStyle() {
+        let running = make(style: .confirm, remaining: 4, teamMinimum: 5)
+        XCTAssertTrue(running.showsCountdown)
+        XCTAssertFalse(running.sendEnabled)
+        XCTAssertEqual(running.sendLabel, "Send to PROD (4)")
+        XCTAssertEqual(running.teamMinimumNote, "This workspace waits at least 5s before sending to PROD.")
+        XCTAssertTrue(make(style: .confirm, remaining: 0, teamMinimum: 5).sendEnabled)
+        XCTAssertNil(make(style: .countdown, remaining: 0).teamMinimumNote)
+    }
+
+    func testUnresolvedPromptIgnoresTeamMinimum() {
+        let p = make(reason: .unresolved(["A"]), style: .confirm, remaining: 0, teamMinimum: 5)
+        XCTAssertFalse(p.showsCountdown)
+        XCTAssertNil(p.teamMinimumNote)
+        XCTAssertTrue(p.sendEnabled)
     }
 
     func testCountdownRunningLocksAndShowsRemaining() {

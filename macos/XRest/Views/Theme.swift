@@ -31,6 +31,12 @@ enum Theme {
     static let red = Color(nsColor: .dynamic(dark: 0xF07178, light: 0xC9313D))
     static let redFill = Color(nsColor: .dynamic(dark: 0x241517, light: 0xFCE9EB))
     static let redBorder = Color(nsColor: .dynamic(dark: 0x5C2A30, light: 0xEDB0B6))
+    // Palette colors for environments and workspaces (`PaletteColor`).
+    static let orange = Color(nsColor: .dynamic(dark: 0xF5935A, light: 0xC2520F))
+    static let teal = Color(nsColor: .dynamic(dark: 0x4FC9C2, light: 0x16797A))
+    static let purple = Color(nsColor: .dynamic(dark: 0xB79CFF, light: 0x6D45C9))
+    static let pink = Color(nsColor: .dynamic(dark: 0xF28BC0, light: 0xB22A74))
+    static let graphite = Color(nsColor: .dynamic(dark: 0xA0A7B4, light: 0x5A616E))
 
     /// Disabled-toggle track and similar neutral controls.
     static let controlOff = Color(nsColor: .dynamic(dark: 0x3A3F4A, light: 0xB9BFCA))

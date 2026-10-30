@@ -11,6 +11,7 @@ enum SidebarSelection: Hashable {
 /// Editors that replace the request detail pane.
 enum DetailPanel: Equatable {
     case environments
+    case variables
     case settings
     case git
     case history
@@ -41,6 +42,12 @@ final class WorkspaceModel {
     private(set) var environments: [EnvironmentConfig] = []
     private(set) var selectedEnvironment: String?
     private(set) var warnings: [String] = []
+    /// Variables shared by every environment (`variables.yaml`).
+    private(set) var workspaceVariables: [NameValue] = []
+    private(set) var appearance = WorkspaceAppearance(color: nil, icon: nil)
+    /// Bumped after any variable layer changes, so views re-read `variableRows`.
+    private(set) var variablesRevision = 0
+    @ObservationIgnored private var globalsStore: GlobalVariablesStore?
 
     private(set) var selection: SidebarSelection? {
         didSet { scheduleSessionSave() }
@@ -246,6 +253,11 @@ final class WorkspaceModel {
         environments.first { $0.name == selectedEnvironment }?.isUnsafe ?? false
     }
 
+    /// The selected environment's palette color, if it has one.
+    var selectedEnvironmentColor: String? {
+        environments.first { $0.name == selectedEnvironment }?.color
+    }
+
     var canPromote: Bool {
         if case .scratch? = selection { return true }
         return false
@@ -262,6 +274,9 @@ final class WorkspaceModel {
         environments = core.environments()
         selectedEnvironment = core.selectedEnvironment()
         warnings = core.warnings()
+        workspaceVariables = core.workspaceVariables()
+        appearance = core.appearance()
+        variablesRevision += 1
     }
 
     private func loadDraft(for selection: SidebarSelection?) {
@@ -452,6 +467,19 @@ final class WorkspaceModel {
     }
 
     // MARK: History
+
+    /// Attach the user's global variables (called on every workspace open). The core reads them
+    /// live, so a save in Settings reaches every open window's next send.
+    func attachGlobals(_ store: GlobalVariablesStore) {
+        globalsStore = store
+        if let globals = store.globals { core.setGlobalVariables(globals: globals) }
+        variablesRevision += 1
+    }
+
+    /// Re-read variable sources after the global list changed elsewhere.
+    func globalsChanged() {
+        variablesRevision += 1
+    }
 
     /// Attach the shared history database (called on every workspace open). A failed open is
     /// reported by the History panel; sending keeps working without history.
@@ -726,6 +754,44 @@ final class WorkspaceModel {
         afterSave()
     }
 
+    // MARK: Variable layers
+
+    /// Every variable available in `environment` (the selected one when `nil`) with its source.
+    func variableRows(environment: String? = nil) -> [VariableRow] {
+        _ = variablesRevision
+        do {
+            return try core.variableReport(environment: environment).map(VariableRow.init)
+        } catch {
+            return []
+        }
+    }
+
+    func saveWorkspaceVariables(_ rows: [NameValue]) throws {
+        try core.saveWorkspaceVariables(variables: rows)
+        workspaceVariables = core.workspaceVariables()
+        variablesRevision += 1
+        afterSave()
+    }
+
+    func localOverrides(environment: String) -> [NameValue] {
+        core.localOverrides(environment: environment)
+    }
+
+    /// Set (or with `nil`, remove) this user's override of one variable in `environment`. Local
+    /// overrides are never committed, so this saves straight away.
+    func setLocalOverride(environment: String, name: String, value: String?) throws {
+        var rows = core.localOverrides(environment: environment).filter { $0.name != name }
+        if let value { rows.append(.plain(name, value)) }
+        try core.saveLocalOverrides(environment: environment, variables: rows)
+        variablesRevision += 1
+    }
+
+    func setAppearance(_ appearance: WorkspaceAppearance) throws {
+        try core.setAppearance(appearance: appearance)
+        self.appearance = core.appearance()
+        afterSave()
+    }
+
     func saveServiceSettings(_ settings: ServiceSettings) throws {
         try core.updateServiceSettings(settings: settings)
         reload()
@@ -766,6 +832,9 @@ final class WorkspaceModel {
 
     /// What `{{name}}` resolves to, for the hover popup. Secrets stay masked.
     func variableInfo(_ name: String) -> VariableInfo {
+        if let builtin = builtinVariables().first(where: { $0.name == name }) {
+            return VariableInfo(text: "built-in: \(builtin.description)", isResolved: true)
+        }
         let result = core.preview(text: "{{\(name)}}")
         guard result.unresolved.contains(name) else {
             return VariableInfo(text: result.resolved, isResolved: true)
@@ -816,8 +885,12 @@ final class WorkspaceModel {
     ) {
         let proceed = { [weak self] in
             guard let self else { return }
-            if self.core.sendPolicy().requiresConfirmation {
-                self.presentConfirmation(method: method, url: url) { action(true) }
+            // Method-aware: an environment that confirms "changes only" lets reads through.
+            let policy = self.core.sendPolicyFor(method: method ?? self.draft?.method ?? "GET")
+            if policy.requiresConfirmation {
+                self.presentConfirmation(
+                    method: method, url: url, teamMinimum: Int(policy.minCountdownSeconds)
+                ) { action(true) }
             } else {
                 action(false)
             }
@@ -835,7 +908,7 @@ final class WorkspaceModel {
 
     private func presentConfirmation(
         method: String? = nil, url: String? = nil, reason: PendingConfirmation.Reason = .unsafeEnvironment,
-        _ action: @escaping () -> Void
+        teamMinimum: Int = 0, _ action: @escaping () -> Void
     ) {
         let isUnresolved = reason != .unsafeEnvironment
         let rawURL = url ?? draft?.url ?? ""
@@ -859,9 +932,11 @@ final class WorkspaceModel {
                 duration: isUnresolved
                     ? 0
                     : ConfirmationPolicy.countdownDuration(
-                        style: preferences.confirmStyle, seconds: preferences.confirmCountdownSeconds)),
+                        style: preferences.confirmStyle, seconds: preferences.confirmCountdownSeconds,
+                        teamMinimum: teamMinimum)),
             style: isUnresolved ? .confirm : preferences.confirmStyle,
             returnCancels: preferences.returnCancels,
+            teamMinimum: isUnresolved ? 0 : teamMinimum,
             action: action)
     }
 
@@ -929,8 +1004,11 @@ final class WorkspaceModel {
         if let error = error as? XRestError {
             response = nil
             if case .ConfirmationRequired = error {
-                // The environment changed under us; ask again.
-                presentConfirmation { [weak self] in self?.start(confirmed: true) }
+                // The environment changed under us; ask again, with its rules.
+                let policy = core.sendPolicyFor(method: draft?.method ?? "GET")
+                presentConfirmation(teamMinimum: Int(policy.minCountdownSeconds)) { [weak self] in
+                    self?.start(confirmed: true)
+                }
             } else {
                 missingSecretKeys = SecretsState.missingKeys(in: error)
                 sendError = error.message

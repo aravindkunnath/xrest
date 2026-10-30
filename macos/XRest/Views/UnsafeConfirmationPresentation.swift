@@ -10,6 +10,8 @@ struct UnsafeConfirmationPresentation: Equatable {
     let returnCancels: Bool
     let remaining: Int
     let typed: String
+    /// The workspace's minimum countdown for this environment (0 = none).
+    var teamMinimum: Int = 0
 
     /// Unresolved-variable prompts are a zero-delay confirm regardless of the preferred style.
     private var effectiveStyle: ConfirmStyle {
@@ -31,7 +33,18 @@ struct UnsafeConfirmationPresentation: Equatable {
             : "Pressing Return sends once Send is unlocked."
     }
 
-    var showsCountdown: Bool { effectiveStyle == .countdown }
+    /// A team minimum runs a countdown even when the user's style has none.
+    var showsCountdown: Bool {
+        if case .unresolved = reason { return false }
+        return effectiveStyle == .countdown || teamMinimum > 0
+    }
+
+    /// Explains a countdown the user did not choose, or one longer than theirs.
+    var teamMinimumNote: String? {
+        if case .unresolved = reason { return nil }
+        guard teamMinimum > 0 else { return nil }
+        return "This workspace waits at least \(teamMinimum)s before sending to \(environment)."
+    }
     var showsTypeField: Bool { effectiveStyle == .typeName }
     var typePrompt: String { "Type \(environment) to confirm" }
 
@@ -42,7 +55,7 @@ struct UnsafeConfirmationPresentation: Equatable {
 
     var sendLabel: String {
         if case .unresolved = reason { return "Send Anyway" }
-        if effectiveStyle == .countdown, remaining > 0 { return "Send to \(environment) (\(remaining))" }
+        if showsCountdown, remaining > 0 { return "Send to \(environment) (\(remaining))" }
         return "Send to \(environment)"
     }
 

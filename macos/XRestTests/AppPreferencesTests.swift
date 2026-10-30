@@ -29,7 +29,7 @@ final class AppPreferencesTests: XCTestCase {
     }
 
     func testRoundTripAndClamping() {
-        var p = AppPreferences(defaults: defaults)
+        let p = AppPreferences(defaults: defaults)
         p.appearance = .light
         p.zoom = 1.25
         p.timeoutSeconds = 5
@@ -119,7 +119,7 @@ final class AppPreferencesTests: XCTestCase {
     }
 
     func testHttpOptionsMapping() {
-        var p = AppPreferences(defaults: defaults)
+        let p = AppPreferences(defaults: defaults)
         var o = p.httpOptions
         XCTAssertEqual(o.timeoutMs, 30_000)
         XCTAssertTrue(o.followRedirects)
@@ -170,7 +170,7 @@ final class AppPreferencesTests: XCTestCase {
         _ = try XRestWorkspace.createWorkspace(path: dir.path, name: "svc")
         let store = KeychainSecretStore(
             service: "dev.xrest.tests.\(UUID().uuidString)", indexURL: dir.appendingPathComponent("idx.json"))
-        var p = AppPreferences(defaults: defaults)
+        let p = AppPreferences(defaults: defaults)
         p.maxVersions = 5
         let model = try WorkspaceModel(url: dir, secrets: store, defaults: defaults)
         model.newScratch()

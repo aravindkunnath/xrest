@@ -49,26 +49,26 @@ final class ZoomTests: XCTestCase {
     }
 
     func testZoomStoreIsObservableAndFontsReadIt() {
-        var changed = false
+        let changed = ObservationFlag()
         withObservationTracking {
             _ = Font.mono(12)
         } onChange: {
-            changed = true
+            changed.set()
         }
         AppPreferences(defaults: defaults).zoom = 1.25
         ZoomStore.shared.refresh(from: defaults)
-        XCTAssertTrue(changed, "views using Font.mono must re-render when zoom changes")
+        XCTAssertTrue(changed.value, "views using Font.mono must re-render when zoom changes")
     }
 
     func testRefreshWithSameZoomDoesNotInvalidate() {
-        var changed = false
+        let changed = ObservationFlag()
         withObservationTracking {
             _ = ZoomStore.shared.zoom
         } onChange: {
-            changed = true
+            changed.set()
         }
         ZoomStore.shared.refresh(from: defaults)  // still 1.0
-        XCTAssertFalse(changed)
+        XCTAssertFalse(changed.value)
     }
 
     func testEditorFontSizeIsDerivedFromZoom() {

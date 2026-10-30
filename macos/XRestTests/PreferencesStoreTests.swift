@@ -40,16 +40,34 @@ final class PreferencesStoreTests: XCTestCase {
     func testNoRepublishWhenUnchanged() {
         let defaults = makeDefaults()
         let store = PreferencesStore(defaults: defaults)
-        var fired = false
+        let fired = ObservationFlag()
         withObservationTracking {
             _ = store.density
         } onChange: {
-            fired = true
+            fired.set()
         }
         store.refresh(from: defaults)
-        XCTAssertFalse(fired)
+        XCTAssertFalse(fired.value)
         AppPreferences(defaults: defaults).density = .compact
         store.refresh(from: defaults)
-        XCTAssertTrue(fired)
+        XCTAssertTrue(fired.value)
+    }
+}
+
+/// Set from `withObservationTracking`'s `onChange`, which may run on another thread.
+final class ObservationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var raised = false
+
+    func set() {
+        lock.lock()
+        raised = true
+        lock.unlock()
+    }
+
+    var value: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return raised
     }
 }

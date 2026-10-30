@@ -61,6 +61,7 @@ struct SettingsView: View {
         switch section {
         case .appearance: AppearanceTab()
         case .requests: RequestsTab()
+        case .variables: VariablesTab()
         case .versions: VersionsTab()
         case .safety: SafetyTab()
         }

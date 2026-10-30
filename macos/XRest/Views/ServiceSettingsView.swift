@@ -29,6 +29,7 @@ struct ServiceSettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     generalSection
+                    appearanceSection
                     authSection
                     preflightSection
                 }
@@ -74,6 +75,74 @@ struct ServiceSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("General")
             TextField("Name", text: $form.name).textFieldStyle(.roundedBorder)
+        }
+    }
+
+    /// Color and icon identify the workspace in its title bar. Shared through git; saved at once.
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Appearance")
+            HStack(spacing: 8) {
+                Text("Color").font(.ui(12)).frame(width: 60, alignment: .leading)
+                swatch(nil)
+                ForEach(PaletteColor.names, id: \.self) { swatch($0) }
+            }
+            HStack(spacing: 6) {
+                Text("Icon").font(.ui(12)).frame(width: 60, alignment: .leading)
+                iconChoice(nil)
+                ForEach(WorkspaceIcon.names, id: \.self) { iconChoice($0) }
+            }
+            Text("Shown in the title bar so windows are easy to tell apart. Saved immediately and shared with the workspace.")
+                .font(.ui(11)).foregroundStyle(Theme.muted)
+        }
+    }
+
+    private func swatch(_ name: String?) -> some View {
+        let selected = model.appearance.color == name
+        return Button {
+            applyAppearance(color: name, icon: model.appearance.icon)
+        } label: {
+            Circle()
+                .fill(PaletteColor.color(name) ?? Theme.amber)
+                .frame(width: 16, height: 16)
+                .overlay(Circle().stroke(selected ? Theme.text : .clear, lineWidth: 2).padding(-3))
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.plain)
+        .help(name.map(PaletteColor.title) ?? "Default")
+        .accessibilityLabel("Color \(name.map(PaletteColor.title) ?? "default")")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func iconChoice(_ name: String?) -> some View {
+        let selected = model.appearance.icon == name
+        return Button {
+            applyAppearance(color: model.appearance.color, icon: name)
+        } label: {
+            Group {
+                if let symbol = WorkspaceIcon.symbol(name) {
+                    Image(systemName: symbol).font(.system(size: 13))
+                } else {
+                    Text(String(model.service.name.prefix(1)).uppercased()).font(.ui(12, weight: .bold))
+                }
+            }
+            .frame(width: 30, height: 30)
+            .background(RoundedRectangle(cornerRadius: 7).fill(selected ? Theme.selected : .clear))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(selected ? Theme.amber : Theme.border, lineWidth: selected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .help(name ?? "Initial")
+        .accessibilityLabel("Icon \(name ?? "initial")")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func applyAppearance(color: String?, icon: String?) {
+        do {
+            try model.setAppearance(WorkspaceAppearance(color: color, icon: icon))
+        } catch {
+            model.errorMessage = describe(error)
         }
     }
 

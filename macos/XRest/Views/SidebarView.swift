@@ -4,6 +4,7 @@ import SwiftUI
 struct ActivityRail: View {
     let openSecrets: () -> Void
     let openEnvironments: () -> Void
+    let openVariables: () -> Void
     let openSettings: () -> Void
     let openGit: () -> Void
     let openHistory: () -> Void
@@ -20,6 +21,7 @@ struct ActivityRail: View {
         Item(id: "Explorer", symbol: "line.3.horizontal", active: true),
         Item(id: "History", symbol: "clock", enabled: true),
         Item(id: "Environments and variables", symbol: "curlybraces", enabled: true),
+        Item(id: "Variables", symbol: "square.stack.3d.up", enabled: true),
         Item(id: "Git", symbol: "arrow.triangle.branch", enabled: true),
         Item(id: "Secrets", symbol: "key", enabled: true),
     ]
@@ -46,6 +48,7 @@ struct ActivityRail: View {
             switch label {
             case "Secrets": openSecrets()
             case "Environments and variables": openEnvironments()
+            case "Variables": openVariables()
             case "Settings": openSettings()
             case "Git": openGit()
             case "History": openHistory()

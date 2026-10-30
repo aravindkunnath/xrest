@@ -12,7 +12,7 @@ struct UnsafeConfirmationSheet: View {
         UnsafeConfirmationPresentation(
             reason: pending.reason, style: pending.style, environment: pending.environment,
             returnCancels: pending.returnCancels, remaining: pending.countdown.remaining,
-            typed: typed)
+            typed: typed, teamMinimum: pending.teamMinimum)
     }
 
     var body: some View {
@@ -54,6 +54,9 @@ struct UnsafeConfirmationSheet: View {
                         .animation(.linear(duration: 1), value: countdown.progress)
                     Text(p.countdownCaption)
                         .font(.ui(11)).foregroundStyle(Theme.muted)
+                    if let note = p.teamMinimumNote {
+                        Text(note).font(.ui(11)).foregroundStyle(Theme.muted)
+                    }
                 }
             }
 

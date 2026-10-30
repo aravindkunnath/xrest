@@ -15,7 +15,7 @@ final class ConfirmationCountdown {
         case cancelled
     }
 
-    static let defaultDuration = 10
+    nonisolated static let defaultDuration = 10
 
     let duration: Int
     private(set) var state: State
@@ -85,13 +85,15 @@ final class PendingConfirmation: Identifiable {
     let countdown: ConfirmationCountdown
     let style: ConfirmStyle
     let returnCancels: Bool
+    /// The workspace's minimum countdown for the environment (0 = none).
+    let teamMinimum: Int
     @ObservationIgnored private var action: (() -> Void)?
 
     init(
         reason: Reason = .unsafeEnvironment,
         environment: String, method: String, url: String, resolvedURL: String? = nil,
         countdown: ConfirmationCountdown? = nil,
-        style: ConfirmStyle = .countdown, returnCancels: Bool = true,
+        style: ConfirmStyle = .countdown, returnCancels: Bool = true, teamMinimum: Int = 0,
         action: @escaping () -> Void
     ) {
         self.reason = reason
@@ -102,6 +104,7 @@ final class PendingConfirmation: Identifiable {
         self.countdown = countdown ?? ConfirmationCountdown()
         self.style = style
         self.returnCancels = returnCancels
+        self.teamMinimum = teamMinimum
         self.action = action
     }
 
