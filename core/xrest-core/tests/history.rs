@@ -68,11 +68,13 @@ async fn fx() -> Fx {
             name: "DEV".into(),
             is_unsafe: false,
             variables: vec![NameValue::new("BASE_URL", server.uri())],
+            ..Default::default()
         },
         Environment {
             name: "PROD".into(),
             is_unsafe: true,
             variables: vec![NameValue::new("BASE_URL", server.uri())],
+            ..Default::default()
         },
     ])
     .unwrap();

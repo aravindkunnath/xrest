@@ -26,7 +26,8 @@ use crate::model::*;
 use crate::policy::SendPolicy;
 use crate::preflight::TokenCache;
 use crate::secrets::{MemorySecretStore, SecretStore};
-use crate::storage;
+use crate::storage::{self, LocalOverrides};
+use crate::variables::{GlobalVariables, VariableLayers, VariableReport};
 use crate::versions::{clamp_max_versions, FileVersionStore, VersionStore, DEFAULT_VERSIONS_LIMIT};
 
 fn now_secs() -> u64 {
@@ -43,6 +44,12 @@ pub struct Workspace {
     endpoints: Vec<Endpoint>,
     scratch: Vec<ScratchRequest>,
     state: WorkspaceState,
+    /// `variables.yaml`: shared by every environment.
+    variables: Vec<NameValue>,
+    /// `.xrest/overrides.yaml`: this user's overrides, per environment.
+    overrides: LocalOverrides,
+    /// Global variables shared by every open workspace (attached by the app).
+    globals: Option<Arc<GlobalVariables>>,
     warnings: Vec<String>,
     versions: Box<dyn VersionStore>,
     max_versions: usize,
@@ -72,6 +79,9 @@ impl Workspace {
             endpoints: loaded.endpoints,
             scratch: loaded.scratch,
             state: loaded.state,
+            variables: loaded.variables,
+            overrides: loaded.overrides,
+            globals: None,
             warnings: loaded.warnings,
             versions,
             max_versions: DEFAULT_VERSIONS_LIMIT,
@@ -99,15 +109,21 @@ impl Workspace {
             }),
             ..Default::default()
         };
-        let env = |n: &str, is_unsafe: bool| Environment {
+        let env = |n: &str, is_unsafe: bool, color: &str| Environment {
             name: n.to_string(),
             is_unsafe,
             variables: vec![NameValue::new("BASE_URL", "")],
+            color: Some(color.to_string()),
+            ..Default::default()
         };
         storage::save_service(root, &service)?;
         storage::save_environments(
             root,
-            &[env("DEV", false), env("STAGE", false), env("PROD", true)],
+            &[
+                env("DEV", false, "green"),
+                env("STAGE", false, "amber"),
+                env("PROD", true, "red"),
+            ],
         )?;
         std::fs::create_dir_all(root.join(storage::ENDPOINTS_DIR))
             .map_err(|e| Error::io(root.join(storage::ENDPOINTS_DIR), e))?;
@@ -202,6 +218,11 @@ impl Workspace {
         scan(serde_json::to_value(&self.environments).unwrap_or_default());
         scan(serde_json::to_value(&self.endpoints).unwrap_or_default());
         scan(serde_json::to_value(&self.scratch).unwrap_or_default());
+        scan(serde_json::to_value(&self.variables).unwrap_or_default());
+        scan(serde_json::to_value(&self.overrides).unwrap_or_default());
+        if let Some(g) = &self.globals {
+            scan(serde_json::to_value(g.get()).unwrap_or_default());
+        }
         keys.into_iter().collect()
     }
 
@@ -273,6 +294,8 @@ impl Workspace {
                     e.name
                 )));
             }
+            e.color = checked_name(e.color.take(), PALETTE, "color")?;
+            e.min_countdown_seconds = e.min_countdown_seconds.min(MAX_MIN_COUNTDOWN_SECONDS);
         }
         self.ensure_current_format()?;
         let current = self.selected_environment().map(|e| e.name.clone());
@@ -292,26 +315,117 @@ impl Workspace {
         Ok(())
     }
 
-    /// Enabled, non-empty variable names of the selected environment (for autocomplete).
+    /// Every enabled variable name available in the selected environment, from all layers,
+    /// most specific first, then the built-ins (for autocomplete).
     pub fn variable_names(&self) -> Vec<String> {
-        let mut out: Vec<String> = vec![];
-        let vars = self
-            .selected_environment()
-            .map(|e| e.variables.as_slice())
-            .unwrap_or_default();
-        for v in vars.iter().filter(|v| v.enabled && !v.name.is_empty()) {
-            if !out.contains(&v.name) {
-                out.push(v.name.clone());
-            }
+        let env = self.selected_environment();
+        self.variable_layers(env).names(env)
+    }
+
+    // ---- variable layers -------------------------------------------------------------------
+
+    /// The list layers for `env`: globals (if attached), workspace variables and this user's
+    /// overrides for that environment.
+    pub fn variable_layers(&self, env: Option<&Environment>) -> VariableLayers {
+        VariableLayers {
+            global: self.globals.as_ref().map(|g| g.get()).unwrap_or_default(),
+            workspace: self.variables.clone(),
+            local: env
+                .and_then(|e| self.overrides.get(&e.name))
+                .cloned()
+                .unwrap_or_default(),
         }
-        out
+    }
+
+    /// Attach the app's global variables (shared by every open workspace).
+    pub fn set_global_variables(&mut self, globals: Arc<GlobalVariables>) {
+        self.globals = Some(globals);
+    }
+
+    /// Variables shared by every environment (`variables.yaml`).
+    pub fn workspace_variables(&self) -> &[NameValue] {
+        &self.variables
+    }
+
+    /// Replace the workspace variables. Names are trimmed; rows with no name are dropped.
+    pub fn save_workspace_variables(&mut self, vars: Vec<NameValue>) -> Result<()> {
+        let vars = clean_rows(vars);
+        self.ensure_current_format()?;
+        storage::save_variables(&self.root, &vars)?;
+        self.variables = vars;
+        self.auto_commit(&[storage::VARIABLES_FILE], "Update workspace variables");
+        Ok(())
+    }
+
+    /// This user's overrides for `environment` (empty if none).
+    pub fn local_overrides(&self, environment: &str) -> &[NameValue] {
+        self.overrides
+            .get(environment)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// Replace this user's overrides for `environment`; an empty list removes them. Stored in
+    /// `.xrest/overrides.yaml`, never committed. Overrides are keyed by environment name, so
+    /// renaming an environment leaves its old overrides behind (they reappear if the name
+    /// comes back).
+    pub fn save_local_overrides(&mut self, environment: &str, rows: Vec<NameValue>) -> Result<()> {
+        if !self.environments.iter().any(|e| e.name == environment) {
+            return Err(Error::UnknownEnvironment(environment.to_string()));
+        }
+        let rows = clean_rows(rows);
+        let mut next = self.overrides.clone();
+        if rows.is_empty() {
+            next.remove(environment);
+        } else {
+            next.insert(environment.to_string(), rows);
+        }
+        storage::save_overrides(&self.root, &next)?;
+        self.overrides = next;
+        Ok(())
+    }
+
+    /// Where each variable's value comes from in `environment` (the selected one when `None`).
+    pub fn variable_report(&self, environment: Option<&str>) -> Result<Vec<VariableReport>> {
+        let env = match environment {
+            Some(name) => Some(
+                self.environments
+                    .iter()
+                    .find(|e| e.name == name)
+                    .ok_or_else(|| Error::UnknownEnvironment(name.to_string()))?,
+            ),
+            None => self.selected_environment(),
+        };
+        Ok(self.variable_layers(env).report(env))
+    }
+
+    // ---- appearance ------------------------------------------------------------------------
+
+    pub fn appearance(&self) -> &WorkspaceAppearance {
+        &self.service.appearance
+    }
+
+    /// Set the workspace color and icon. Unknown names are [`Error::InvalidInput`].
+    pub fn set_appearance(&mut self, appearance: WorkspaceAppearance) -> Result<()> {
+        let appearance = WorkspaceAppearance {
+            color: checked_name(appearance.color, PALETTE, "color")?,
+            icon: checked_name(appearance.icon, WORKSPACE_ICONS, "icon")?,
+        };
+        self.ensure_current_format()?;
+        let mut service = self.service.clone();
+        service.appearance = appearance;
+        storage::save_service(&self.root, &service)?;
+        self.service = service;
+        self.auto_commit(&[storage::SERVICE_FILE], "Update workspace appearance");
+        Ok(())
     }
 
     /// Resolve `text` against the selected environment for display. Secret values are masked,
     /// never returned; unresolved names are listed. Only secret lookup touches anything outside
     /// memory.
     pub fn preview(&self, text: &str) -> InterpolationPreview {
-        let vars = crate::resolve::variables(self.selected_environment());
+        let env = self.selected_environment();
+        let vars = self.variable_layers(env).resolve_static(env);
         crate::interpolate::preview(text, &vars, &|k| self.secrets.contains(k))
     }
 
@@ -320,8 +434,10 @@ impl Workspace {
     /// `••••••`. No network, no file reads, no policy check; secrets are only tested for
     /// existence. Unresolved variables, `{name}` path params and missing secrets are listed.
     pub fn preview_request_url(&self, spec: &RequestSpec) -> InterpolationPreview {
+        let env = self.selected_environment();
         crate::resolve::preview_request_url(
-            self.selected_environment(),
+            env,
+            &self.variable_layers(env),
             self.secrets.as_ref(),
             spec,
         )
@@ -351,8 +467,39 @@ impl Workspace {
         Ok(())
     }
 
+    /// Whether the selected environment is unsafe at all (any method).
     pub fn send_policy(&self) -> SendPolicy {
         SendPolicy::for_environment(self.selected_environment())
+    }
+
+    /// The policy for sending a `method` request in the selected environment: whether it needs
+    /// confirmation and the workspace's minimum countdown.
+    pub fn send_policy_for(&self, method: &str) -> SendPolicy {
+        SendPolicy::for_request(self.selected_environment(), method)
+    }
+}
+
+/// Trim names and drop rows without one.
+fn clean_rows(rows: Vec<NameValue>) -> Vec<NameValue> {
+    rows.into_iter()
+        .map(|mut r| {
+            r.name = r.name.trim().to_string();
+            r
+        })
+        .filter(|r| !r.name.is_empty())
+        .collect()
+}
+
+/// `None` and empty stay `None`; anything else must be in `allowed`.
+fn checked_name(value: Option<String>, allowed: &[&str], what: &str) -> Result<Option<String>> {
+    match value.map(|v| v.trim().to_ascii_lowercase()) {
+        None => Ok(None),
+        Some(v) if v.is_empty() => Ok(None),
+        Some(v) if allowed.contains(&v.as_str()) => Ok(Some(v)),
+        Some(v) => Err(Error::InvalidInput(format!(
+            "unknown {what} {v:?}; expected one of {}",
+            allowed.join(", ")
+        ))),
     }
 }
 

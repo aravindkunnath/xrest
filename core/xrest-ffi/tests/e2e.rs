@@ -35,6 +35,9 @@ fn env(name: &str, is_unsafe: bool, base_url: &str) -> EnvironmentConfig {
         name: name.into(),
         is_unsafe,
         variables: vec![nv("BASE_URL", base_url)],
+        color: None,
+        confirm: ConfirmScope::Every,
+        min_countdown_seconds: 0,
     }
 }
 
@@ -194,4 +197,69 @@ async fn preflight_token_is_cached_and_scoped_per_environment() {
     ws.select_environment("DEV".into()).unwrap();
     ws.clear_token_cache();
     assert_eq!(ws.send(s, false).await.unwrap().status, 200); // DEV: fetch #3
+}
+
+#[tokio::test]
+async fn changes_only_unsafe_env_and_layered_variables() {
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    let server = MockServer::start().await;
+    Mock::given(path("/v2/users/me"))
+        .and(header("x-email", "me@example.com"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let ws = XRestWorkspace::create_workspace(path_of(&dir), "Demo".into()).unwrap();
+    let mut prod = env("PROD", true, &server.uri());
+    prod.confirm = ConfirmScope::Changes;
+    prod.min_countdown_seconds = 5;
+    ws.save_environments(vec![env("DEV", false, &server.uri()), prod])
+        .unwrap();
+    ws.select_environment("PROD".into()).unwrap();
+
+    // Global, workspace and local layers all feed the request.
+    let globals = XRestGlobals::open(
+        dir.path()
+            .join("app/globals.yaml")
+            .to_string_lossy()
+            .into_owned(),
+    )
+    .unwrap();
+    globals.save(vec![nv("EMAIL", "me@example.com")]).unwrap();
+    ws.set_global_variables(globals);
+    ws.save_workspace_variables(vec![nv("API", "v2"), nv("WHO", "someone")])
+        .unwrap();
+    ws.save_local_overrides("PROD".into(), vec![nv("WHO", "me")])
+        .unwrap();
+
+    let mut read = spec("{{BASE_URL}}/{{API}}/users/{{WHO}}");
+    read.headers.push(nv("X-Email", "{{EMAIL}}"));
+    assert!(!ws.send_policy_for("GET".into()).requires_confirmation);
+    assert_eq!(ws.send(read, false).await.unwrap().status, 200);
+
+    // A write still needs confirmation, and nothing reaches the server without it.
+    let mut write = spec("{{BASE_URL}}/{{API}}/users/{{WHO}}");
+    write.method = "DELETE".into();
+    let policy = ws.send_policy_for("DELETE".into());
+    assert!(policy.requires_confirmation);
+    assert_eq!(policy.min_countdown_seconds, 5);
+    let before = server.received_requests().await.unwrap().len();
+    assert!(matches!(
+        ws.send(write.clone(), false).await,
+        Err(XRestError::ConfirmationRequired { .. })
+    ));
+    assert_eq!(server.received_requests().await.unwrap().len(), before);
+    assert_eq!(ws.send(write, true).await.unwrap().status, 204);
+
+    // Reopened from disk: shared rules and workspace variables survive, overrides too.
+    let again = XRestWorkspace::open_workspace(path_of(&dir)).unwrap();
+    assert!(again.send_policy_for("POST".into()).requires_confirmation);
+    assert!(!again.send_policy_for("HEAD".into()).requires_confirmation);
+    assert_eq!(again.local_overrides("PROD".into())[0].value, "me");
+    assert_eq!(again.workspace_variables().len(), 2);
 }

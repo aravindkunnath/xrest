@@ -4,12 +4,14 @@
 //! <workspace>/
 //! ├── service.yaml
 //! ├── environments.yaml
+//! ├── variables.yaml            (workspace variables, every environment)
 //! ├── endpoints/<id>.yaml
 //! ├── scratchpad/<id>.yaml      (gitignored)
-//! ├── .xrest/                   (gitignored: state.yaml, versions/)
+//! ├── .xrest/                   (gitignored: state.yaml, overrides.yaml, versions/)
 //! └── .gitignore
 //! ```
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -19,11 +21,16 @@ use serde::Serialize;
 
 use crate::error::{Error, Result};
 use crate::model::{
-    Endpoint, Environment, ScratchRequest, ServiceFile, WorkspaceState, FORMAT_VERSION,
+    Endpoint, Environment, NameValue, ScratchRequest, ServiceFile, WorkspaceState, FORMAT_VERSION,
 };
 
 pub const SERVICE_FILE: &str = "service.yaml";
 pub const ENVIRONMENTS_FILE: &str = "environments.yaml";
+pub const VARIABLES_FILE: &str = "variables.yaml";
+pub const OVERRIDES_FILE: &str = "overrides.yaml";
+
+/// The user's local overrides: environment name → rows (`.xrest/overrides.yaml`).
+pub type LocalOverrides = BTreeMap<String, Vec<NameValue>>;
 pub const ENDPOINTS_DIR: &str = "endpoints";
 pub const SCRATCH_DIR: &str = "scratchpad";
 pub const LOCAL_DIR: &str = ".xrest";
@@ -148,6 +155,10 @@ pub struct Loaded {
     pub endpoints: Vec<Endpoint>,
     pub scratch: Vec<ScratchRequest>,
     pub state: WorkspaceState,
+    /// `variables.yaml`: variables shared by every environment.
+    pub variables: Vec<NameValue>,
+    /// `.xrest/overrides.yaml`.
+    pub overrides: LocalOverrides,
     /// Non-fatal problems (unparsable endpoint files and the like).
     pub warnings: Vec<String>,
 }
@@ -228,14 +239,34 @@ pub fn load(root: &Path) -> Result<Loaded> {
         WorkspaceState::default()
     };
 
+    let variables = read_optional::<Vec<NameValue>>(&root.join(VARIABLES_FILE), &mut warnings);
+    let overrides =
+        read_optional::<LocalOverrides>(&root.join(LOCAL_DIR).join(OVERRIDES_FILE), &mut warnings);
+
     Ok(Loaded {
         service,
         environments,
         endpoints,
         scratch,
         state,
+        variables,
+        overrides,
         warnings,
     })
+}
+
+/// Read a file that may be missing or empty; a parse error becomes a warning and the default.
+fn read_optional<T: DeserializeOwned + Default>(path: &Path, warnings: &mut Vec<String>) -> T {
+    if !path.is_file() {
+        return T::default();
+    }
+    match read_yaml::<Option<T>>(path) {
+        Ok(v) => v.unwrap_or_default(),
+        Err(e) => {
+            warnings.push(e.to_string());
+            T::default()
+        }
+    }
 }
 
 pub fn endpoint_path(root: &Path, id: &str) -> Result<PathBuf> {
@@ -254,6 +285,40 @@ pub fn save_service(root: &Path, service: &ServiceFile) -> Result<()> {
 
 pub fn save_environments(root: &Path, envs: &[Environment]) -> Result<()> {
     write_yaml(&root.join(ENVIRONMENTS_FILE), &envs)
+}
+
+pub fn save_variables(root: &Path, vars: &[NameValue]) -> Result<()> {
+    write_yaml(&root.join(VARIABLES_FILE), &vars)
+}
+
+pub fn save_overrides(root: &Path, overrides: &LocalOverrides) -> Result<()> {
+    ensure_gitignore(root)?;
+    write_yaml(&root.join(LOCAL_DIR).join(OVERRIDES_FILE), overrides)
+}
+
+/// Read the user's global variables from `path` (the app decides where it lives). A missing or
+/// empty file is no variables.
+pub fn load_global_variables(path: &Path) -> Result<Vec<NameValue>> {
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    Ok(read_yaml::<Option<Vec<NameValue>>>(path)?.unwrap_or_default())
+}
+
+/// Write the user's global variables to `path`, creating its folder. Rows without a name are
+/// dropped and names are trimmed.
+pub fn save_global_variables(path: &Path, rows: &[NameValue]) -> Result<Vec<NameValue>> {
+    let rows: Vec<NameValue> = rows
+        .iter()
+        .cloned()
+        .map(|mut r| {
+            r.name = r.name.trim().to_string();
+            r
+        })
+        .filter(|r| !r.name.is_empty())
+        .collect();
+    write_yaml(path, &rows)?;
+    Ok(rows)
 }
 
 pub fn save_endpoint(root: &Path, ep: &Endpoint) -> Result<()> {
@@ -281,6 +346,25 @@ pub fn remove_file_if_exists(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn global_variables_round_trip_and_missing_file_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested/variables.yaml");
+        assert!(load_global_variables(&path).unwrap().is_empty());
+        let saved = save_global_variables(
+            &path,
+            &[
+                NameValue::new(" EMAIL ", "me@example.com"),
+                NameValue::new("", "x"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(saved, vec![NameValue::new("EMAIL", "me@example.com")]);
+        assert_eq!(load_global_variables(&path).unwrap(), saved);
+        fs::write(&path, "not: [valid").unwrap();
+        assert!(load_global_variables(&path).is_err());
+    }
 
     #[test]
     fn id_validation() {

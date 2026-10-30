@@ -226,6 +226,70 @@ pub struct EnvironmentConfig {
     pub name: String,
     pub is_unsafe: bool,
     pub variables: Vec<NameValue>,
+    /// One of `color_palette()`, or `None`.
+    pub color: Option<String>,
+    /// Which sends need confirmation when `is_unsafe`.
+    pub confirm: ConfirmScope,
+    /// Team minimum countdown in seconds (0 = none, at most 30).
+    pub min_countdown_seconds: u32,
+}
+
+/// Which requests to an unsafe environment ask for confirmation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ConfirmScope {
+    /// Every request.
+    Every,
+    /// Anything but GET, HEAD and OPTIONS.
+    Changes,
+}
+
+/// Workspace color and icon; names from `color_palette()` and `workspace_icons()`.
+#[derive(Debug, Clone, Default, uniffi::Record)]
+pub struct WorkspaceAppearance {
+    pub color: Option<String>,
+    pub icon: Option<String>,
+}
+
+/// One source of variable values, most specific first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum VariableLayer {
+    /// This user's override for the environment (`.xrest/overrides.yaml`, not shared).
+    Local,
+    /// The environment (`environments.yaml`).
+    Environment,
+    /// Every environment of the workspace (`variables.yaml`).
+    Workspace,
+    /// This user, every workspace (`XRestGlobals`).
+    Global,
+    /// `{{$uuid}}` and friends.
+    BuiltIn,
+}
+
+/// One layer's row for a variable.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct LayerValue {
+    pub layer: VariableLayer,
+    /// The stored value; empty for a secret-backed row.
+    pub value: String,
+    pub secret_key: Option<String>,
+    pub enabled: bool,
+}
+
+/// Where a variable's value comes from in one environment.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct VariableReport {
+    pub name: String,
+    /// Every layer with a row for the name, most specific first.
+    pub values: Vec<LayerValue>,
+    /// The layer whose value is used; `None` when every row is disabled.
+    pub winner: Option<VariableLayer>,
+}
+
+/// A built-in dynamic variable such as `$uuid`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BuiltinVariable {
+    pub name: String,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -277,6 +341,9 @@ pub struct InterpolationPreview {
 pub struct SendPolicy {
     pub environment: Option<String>,
     pub requires_confirmation: bool,
+    /// The workspace's minimum countdown (0 = none); only set when `requires_confirmation`.
+    /// Apps use the longer of this and the user's own countdown.
+    pub min_countdown_seconds: u32,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -879,6 +946,9 @@ impl From<core::Environment> for EnvironmentConfig {
             name: e.name,
             is_unsafe: e.is_unsafe,
             variables: nv_out(e.variables),
+            color: e.color,
+            confirm: e.confirm.into(),
+            min_countdown_seconds: e.min_countdown_seconds,
         }
     }
 }
@@ -889,8 +959,131 @@ impl From<EnvironmentConfig> for core::Environment {
             name: e.name,
             is_unsafe: e.is_unsafe,
             variables: nv_in(e.variables),
+            color: e.color,
+            confirm: e.confirm.into(),
+            min_countdown_seconds: e.min_countdown_seconds,
         }
     }
+}
+
+impl From<core::ConfirmScope> for ConfirmScope {
+    fn from(c: core::ConfirmScope) -> Self {
+        match c {
+            core::ConfirmScope::Every => ConfirmScope::Every,
+            core::ConfirmScope::Changes => ConfirmScope::Changes,
+        }
+    }
+}
+
+impl From<ConfirmScope> for core::ConfirmScope {
+    fn from(c: ConfirmScope) -> Self {
+        match c {
+            ConfirmScope::Every => core::ConfirmScope::Every,
+            ConfirmScope::Changes => core::ConfirmScope::Changes,
+        }
+    }
+}
+
+impl From<core::SendPolicy> for SendPolicy {
+    fn from(p: core::SendPolicy) -> Self {
+        Self {
+            environment: p.environment,
+            requires_confirmation: p.requires_confirmation,
+            min_countdown_seconds: p.min_countdown_seconds,
+        }
+    }
+}
+
+impl From<core::VariableLayer> for VariableLayer {
+    fn from(l: core::VariableLayer) -> Self {
+        match l {
+            core::VariableLayer::Local => VariableLayer::Local,
+            core::VariableLayer::Environment => VariableLayer::Environment,
+            core::VariableLayer::Workspace => VariableLayer::Workspace,
+            core::VariableLayer::Global => VariableLayer::Global,
+            core::VariableLayer::BuiltIn => VariableLayer::BuiltIn,
+        }
+    }
+}
+
+impl From<core::VariableReport> for VariableReport {
+    fn from(r: core::VariableReport) -> Self {
+        Self {
+            name: r.name,
+            values: r
+                .values
+                .into_iter()
+                .map(|v| LayerValue {
+                    layer: v.layer.into(),
+                    value: v.value,
+                    secret_key: v.secret_key,
+                    enabled: v.enabled,
+                })
+                .collect(),
+            winner: r.winner.map(Into::into),
+        }
+    }
+}
+
+/// The user's global variables: one list shared by every workspace it is attached to with
+/// [`XRestWorkspace::set_global_variables`], stored as YAML at the path the app chooses.
+/// Thread-safe; a `save` is seen by every attached workspace's next send.
+#[derive(uniffi::Object)]
+pub struct XRestGlobals {
+    path: std::path::PathBuf,
+    store: Arc<core::GlobalVariables>,
+}
+
+#[uniffi::export]
+impl XRestGlobals {
+    /// Load the file at `path` (a missing file is an empty list).
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<Self>> {
+        let path = std::path::PathBuf::from(path);
+        let rows = core::storage::load_global_variables(&path)?;
+        Ok(Arc::new(Self {
+            path,
+            store: Arc::new(core::GlobalVariables::new(rows)),
+        }))
+    }
+
+    pub fn variables(&self) -> Vec<NameValue> {
+        nv_out(self.store.get())
+    }
+
+    /// Replace and write the list. Names are trimmed; rows without one are dropped.
+    pub fn save(&self, variables: Vec<NameValue>) -> Result<()> {
+        let saved = core::storage::save_global_variables(&self.path, &nv_in(variables))?;
+        self.store.set(saved);
+        Ok(())
+    }
+}
+
+/// Every built-in dynamic variable (`$uuid`, `$timestamp`, …) with a description.
+#[uniffi::export]
+pub fn builtin_variables() -> Vec<BuiltinVariable> {
+    core::BUILTIN_VARIABLES
+        .iter()
+        .map(|b| BuiltinVariable {
+            name: b.name.to_string(),
+            description: b.description.to_string(),
+        })
+        .collect()
+}
+
+/// Color names accepted for environments and workspaces.
+#[uniffi::export]
+pub fn color_palette() -> Vec<String> {
+    core::PALETTE.iter().map(|c| c.to_string()).collect()
+}
+
+/// Icon names accepted for workspaces.
+#[uniffi::export]
+pub fn workspace_icons() -> Vec<String> {
+    core::WORKSPACE_ICONS
+        .iter()
+        .map(|c| c.to_string())
+        .collect()
 }
 
 impl From<core::ServiceSettings> for ServiceSettings {
@@ -1218,13 +1411,78 @@ impl XRestWorkspace {
         Ok(self.lock().select_environment(&name)?)
     }
 
-    /// Whether a send in the current environment needs `confirmed = true`.
+    /// Whether the current environment is unsafe at all, for any method. To decide whether a
+    /// particular send needs `confirmed = true`, use [`XRestWorkspace::send_policy_for`].
     pub fn send_policy(&self) -> SendPolicy {
-        let p = self.lock().send_policy();
-        SendPolicy {
-            environment: p.environment,
-            requires_confirmation: p.requires_confirmation,
+        self.lock().send_policy().into()
+    }
+
+    /// Whether sending a `method` request in the current environment needs `confirmed = true`,
+    /// and the workspace's minimum countdown for it. The same rule `send` enforces.
+    pub fn send_policy_for(&self, method: String) -> SendPolicy {
+        self.lock().send_policy_for(&method).into()
+    }
+
+    // variable layers
+
+    /// Attach the user's global variables (shared by every open workspace).
+    pub fn set_global_variables(&self, globals: Arc<XRestGlobals>) {
+        self.lock().set_global_variables(globals.store.clone());
+    }
+
+    /// Variables shared by every environment (`variables.yaml`, committed with the workspace).
+    pub fn workspace_variables(&self) -> Vec<NameValue> {
+        nv_out(self.lock().workspace_variables().to_vec())
+    }
+
+    /// Replace the workspace variables. Names are trimmed; rows without one are dropped.
+    pub fn save_workspace_variables(&self, variables: Vec<NameValue>) -> Result<()> {
+        Ok(self.lock().save_workspace_variables(nv_in(variables))?)
+    }
+
+    /// This user's overrides for `environment` (`.xrest/overrides.yaml`, never committed).
+    pub fn local_overrides(&self, environment: String) -> Vec<NameValue> {
+        nv_out(self.lock().local_overrides(&environment).to_vec())
+    }
+
+    /// Replace this user's overrides for `environment`; an empty list removes them.
+    pub fn save_local_overrides(
+        &self,
+        environment: String,
+        variables: Vec<NameValue>,
+    ) -> Result<()> {
+        Ok(self
+            .lock()
+            .save_local_overrides(&environment, nv_in(variables))?)
+    }
+
+    /// For every variable defined in any layer: each layer's row and which one is used, in
+    /// `environment` (the selected one when `None`).
+    pub fn variable_report(&self, environment: Option<String>) -> Result<Vec<VariableReport>> {
+        Ok(self
+            .lock()
+            .variable_report(environment.as_deref())?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    // appearance
+
+    pub fn appearance(&self) -> WorkspaceAppearance {
+        let a = self.lock().appearance().clone();
+        WorkspaceAppearance {
+            color: a.color,
+            icon: a.icon,
         }
+    }
+
+    /// Set the workspace color and icon (`InvalidInput` for unknown names).
+    pub fn set_appearance(&self, appearance: WorkspaceAppearance) -> Result<()> {
+        Ok(self.lock().set_appearance(core::WorkspaceAppearance {
+            color: appearance.color,
+            icon: appearance.icon,
+        })?)
     }
 
     // endpoints

@@ -37,6 +37,8 @@ impl Workspace {
         self.endpoints = loaded.endpoints;
         self.scratch = loaded.scratch;
         self.state = loaded.state;
+        self.variables = loaded.variables;
+        self.overrides = loaded.overrides;
         self.warnings = loaded.warnings;
         self.tokens.clear();
         Ok(())

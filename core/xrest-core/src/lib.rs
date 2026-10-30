@@ -18,6 +18,7 @@ mod resolve;
 pub mod secrets;
 pub mod storage;
 pub mod swagger;
+pub mod variables;
 pub mod versions;
 pub mod workspace;
 
@@ -35,4 +36,8 @@ pub use preflight::PreflightTestResult;
 pub use resolve::MAX_BODY_FILE_BYTES;
 pub use secrets::{MemorySecretStore, SecretStore};
 pub use swagger::{ImportSummary, ImportedEndpoint, ImportedSpec};
+pub use variables::{
+    BuiltinVariable, GlobalVariables, LayerValue, VariableLayer, VariableLayers, VariableReport,
+    BUILTIN_VARIABLES,
+};
 pub use workspace::Workspace;

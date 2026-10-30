@@ -24,11 +24,14 @@ impl Workspace {
     /// [`Error::ConfirmationRequired`](crate::Error::ConfirmationRequired) unless `confirmed` is
     /// true. Nothing touches the network until [`PreparedSend::execute`].
     pub fn prepare_send(&self, spec: &RequestSpec, confirmed: bool) -> Result<PreparedSend> {
+        let env = self.selected_environment();
+        let layers = self.variable_layers(env);
         resolve::prepare_send(
             SendContext {
                 root: &self.root,
                 service: &self.service,
-                environment: self.selected_environment(),
+                environment: env,
+                layers: &layers,
                 secrets: self.secrets.as_ref(),
                 tokens: self.tokens.clone(),
                 http: &self.http,
@@ -45,11 +48,14 @@ impl Workspace {
         preflight: Option<Preflight>,
         confirmed: bool,
     ) -> Result<PreparedPreflightTest> {
+        let env = self.selected_environment();
+        let layers = self.variable_layers(env);
         resolve::prepare_test_preflight(
             SendContext {
                 root: &self.root,
                 service: &self.service,
-                environment: self.selected_environment(),
+                environment: env,
+                layers: &layers,
                 secrets: self.secrets.as_ref(),
                 tokens: self.tokens.clone(),
                 http: &self.http,
@@ -83,10 +89,13 @@ impl Workspace {
         language: CodeLanguage,
         include_secrets: bool,
     ) -> Result<String> {
+        let env = self.selected_environment();
+        let layers = self.variable_layers(env);
         let req = resolve::resolve_for_export(
             ExportContext {
                 service: &self.service,
-                environment: self.selected_environment(),
+                environment: env,
+                layers: &layers,
                 secrets: self.secrets.as_ref(),
             },
             spec,

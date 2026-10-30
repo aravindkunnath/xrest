@@ -187,7 +187,7 @@ fn typed_body_and_options_round_trip_through_ffi() {
     let dir = tempfile::tempdir().unwrap();
     let ws =
         XRestWorkspace::create_workspace(dir.path().display().to_string(), "svc".into()).unwrap();
-    assert_eq!(ws.service().format_version, 2);
+    assert_eq!(ws.service().format_version, 3);
     let mut s = spec("http://h.io/x");
     let mut file = nv("f", "data/a.png");
     file.kind = "file".into();
@@ -224,11 +224,11 @@ fn newer_workspace_format_maps_to_its_own_error() {
     let path = dir.path().join("service.yaml");
     let yaml = std::fs::read_to_string(&path)
         .unwrap()
-        .replace("formatVersion: 2", "formatVersion: 99");
+        .replace("formatVersion: 3", "formatVersion: 99");
     std::fs::write(&path, yaml).unwrap();
     match XRestWorkspace::open_workspace(dir.path().display().to_string()) {
         Err(XRestError::UnsupportedFormat { found, supported }) => {
-            assert_eq!((found, supported), (99, 2))
+            assert_eq!((found, supported), (99, 3))
         }
         Err(e) => panic!("unexpected error {e:?}"),
         Ok(_) => panic!("a newer format must not open"),
@@ -354,6 +354,9 @@ fn env_cfg(name: &str, vars: Vec<NameValue>) -> EnvironmentConfig {
         name: name.into(),
         is_unsafe: false,
         variables: vars,
+        color: None,
+        confirm: ConfirmScope::Every,
+        min_countdown_seconds: 0,
     }
 }
 
@@ -368,7 +371,12 @@ fn save_environments_and_service_settings_through_ffi() {
     ws.save_environments(vec![env_cfg("QA", vec![nv("HOST", "h")])])
         .unwrap();
     assert_eq!(ws.selected_environment().as_deref(), Some("QA"));
-    assert_eq!(ws.variable_names(), vec!["HOST"]);
+    let names: Vec<String> = ws
+        .variable_names()
+        .into_iter()
+        .filter(|n| !n.starts_with('$'))
+        .collect();
+    assert_eq!(names, vec!["HOST"]);
 
     let info = ws.service();
     assert_eq!(info.auth_kind, "none");
@@ -612,4 +620,102 @@ async fn response_cookies_cross_the_ffi_boundary() {
     assert_eq!(resp.cookies[0].name, "sid");
     assert!(resp.cookies[0].secure);
     assert_eq!(resp.cookies[0].path.as_deref(), Some("/"));
+}
+
+// ---- variable layers and workspace safety ---------------------------------------------------
+
+#[test]
+fn globals_are_shared_by_every_attached_workspace_and_persist() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("app/variables.yaml");
+    let globals = XRestGlobals::open(path.display().to_string()).unwrap();
+    assert!(globals.variables().is_empty());
+
+    let a =
+        XRestWorkspace::create_workspace(dir.path().join("a").display().to_string(), "a".into())
+            .unwrap();
+    let b =
+        XRestWorkspace::create_workspace(dir.path().join("b").display().to_string(), "b".into())
+            .unwrap();
+    a.set_global_variables(globals.clone());
+    b.set_global_variables(globals.clone());
+
+    globals.save(vec![nv("EMAIL", "me@example.com")]).unwrap();
+    assert_eq!(a.preview("{{EMAIL}}".into()).resolved, "me@example.com");
+    assert_eq!(b.preview("{{EMAIL}}".into()).resolved, "me@example.com");
+
+    let reopened = XRestGlobals::open(path.display().to_string()).unwrap();
+    assert_eq!(reopened.variables()[0].value, "me@example.com");
+}
+
+#[test]
+fn report_overrides_and_workspace_variables_through_ffi() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws =
+        XRestWorkspace::create_workspace(dir.path().display().to_string(), "svc".into()).unwrap();
+    ws.save_environments(vec![env_cfg("DEV", vec![nv("USER", "42")])])
+        .unwrap();
+    ws.save_workspace_variables(vec![nv("REGION", "us-east-1")])
+        .unwrap();
+    ws.save_local_overrides("DEV".into(), vec![nv("USER", "7")])
+        .unwrap();
+    assert_eq!(ws.workspace_variables()[0].name, "REGION");
+    assert_eq!(ws.local_overrides("DEV".into())[0].value, "7");
+
+    let report = ws.variable_report(None).unwrap();
+    let user = report.iter().find(|r| r.name == "USER").unwrap();
+    assert_eq!(user.winner, Some(VariableLayer::Local));
+    assert_eq!(
+        user.values.iter().map(|v| v.layer).collect::<Vec<_>>(),
+        vec![VariableLayer::Local, VariableLayer::Environment]
+    );
+    assert!(matches!(
+        ws.variable_report(Some("NOPE".into())),
+        Err(XRestError::InvalidInput { .. })
+    ));
+
+    let names = ws.variable_names();
+    assert!(names.contains(&"REGION".to_string()) && names.contains(&"$uuid".to_string()));
+    let builtins = builtin_variables();
+    assert!(builtins
+        .iter()
+        .any(|b| b.name == "$isoTimestamp" && !b.description.is_empty()));
+}
+
+#[test]
+fn method_aware_policy_and_appearance_through_ffi() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws =
+        XRestWorkspace::create_workspace(dir.path().display().to_string(), "svc".into()).unwrap();
+    let mut envs = ws.environments();
+    let prod = envs.iter_mut().find(|e| e.name == "PROD").unwrap();
+    assert!(prod.is_unsafe);
+    assert_eq!(prod.color.as_deref(), Some("red"));
+    prod.confirm = ConfirmScope::Changes;
+    prod.min_countdown_seconds = 5;
+    ws.save_environments(envs).unwrap();
+    ws.select_environment("PROD".into()).unwrap();
+
+    let get = ws.send_policy_for("GET".into());
+    assert!(!get.requires_confirmation);
+    assert_eq!(get.min_countdown_seconds, 0);
+    let post = ws.send_policy_for("POST".into());
+    assert!(post.requires_confirmation);
+    assert_eq!(post.min_countdown_seconds, 5);
+    assert!(ws.send_policy().requires_confirmation);
+
+    assert!(color_palette().contains(&"teal".to_string()));
+    assert!(workspace_icons().contains(&"server".to_string()));
+    ws.set_appearance(WorkspaceAppearance {
+        color: Some("teal".into()),
+        icon: Some("server".into()),
+    })
+    .unwrap();
+    assert_eq!(ws.appearance().color.as_deref(), Some("teal"));
+    assert!(ws
+        .set_appearance(WorkspaceAppearance {
+            color: Some("neon".into()),
+            icon: None,
+        })
+        .is_err());
 }

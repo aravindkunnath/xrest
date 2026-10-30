@@ -891,6 +891,162 @@ public func FfiConverterTypeSecretProvider_lower(_ value: SecretProvider) -> UIn
 
 
 /**
+ * The user's global variables: one list shared by every workspace it is attached to with
+ * [`XRestWorkspace::set_global_variables`], stored as YAML at the path the app chooses.
+ * Thread-safe; a `save` is seen by every attached workspace's next send.
+ */
+public protocol XRestGlobalsProtocol: AnyObject, Sendable {
+    
+    /**
+     * Replace and write the list. Names are trimmed; rows without one are dropped.
+     */
+    func save(variables: [NameValue]) throws 
+    
+    func variables()  -> [NameValue]
+    
+}
+/**
+ * The user's global variables: one list shared by every workspace it is attached to with
+ * [`XRestWorkspace::set_global_variables`], stored as YAML at the path the app chooses.
+ * Thread-safe; a `save` is seen by every attached workspace's next send.
+ */
+open class XRestGlobals: XRestGlobalsProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_xrest_ffi_fn_clone_xrestglobals(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_xrest_ffi_fn_free_xrestglobals(handle, $0) }
+    }
+
+    
+    /**
+     * Load the file at `path` (a missing file is an empty list).
+     */
+public static func `open`(path: String)throws  -> XRestGlobals  {
+    return try  FfiConverterTypeXRestGlobals_lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_constructor_xrestglobals_open(
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+    /**
+     * Replace and write the list. Names are trimmed; rows without one are dropped.
+     */
+open func save(variables: [NameValue])throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestglobals_save(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeNameValue.lower(variables),uniffiCallStatus
+    )
+}
+}
+    
+open func variables() -> [NameValue]  {
+    return try!  FfiConverterSequenceTypeNameValue.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestglobals_variables(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeXRestGlobals: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = XRestGlobals
+
+    public static func lift(_ handle: UInt64) throws -> XRestGlobals {
+        return XRestGlobals(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: XRestGlobals) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> XRestGlobals {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: XRestGlobals, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeXRestGlobals_lift(_ handle: UInt64) throws -> XRestGlobals {
+    return try FfiConverterTypeXRestGlobals.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeXRestGlobals_lower(_ value: XRestGlobals) -> UInt64 {
+    return FfiConverterTypeXRestGlobals.lower(value)
+}
+
+
+
+
+
+
+/**
  * The execution history database, shared by every workspace it is attached to with
  * [`XRestWorkspace::set_history`]. Thread-safe.
  */
@@ -1079,6 +1235,8 @@ public func FfiConverterTypeXRestHistory_lower(_ value: XRestHistory) -> UInt64 
  */
 public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     
+    func appearance()  -> WorkspaceAppearance
+    
     func clearTokenCache() 
     
     func createEndpoint(name: String, spec: RequestSpec) throws  -> Endpoint
@@ -1154,6 +1312,11 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func listScratch()  -> [ScratchRequest]
     
     /**
+     * This user's overrides for `environment` (`.xrest/overrides.yaml`, never committed).
+     */
+    func localOverrides(environment: String)  -> [NameValue]
+    
+    /**
      * Add the operations of an OpenAPI document that are not yet endpoints (matched by method
      * + path). Never modifies existing endpoints; one commit in auto git mode.
      */
@@ -1194,6 +1357,16 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func saveEnvironments(envs: [EnvironmentConfig]) throws 
     
     /**
+     * Replace this user's overrides for `environment`; an empty list removes them.
+     */
+    func saveLocalOverrides(environment: String, variables: [NameValue]) throws 
+    
+    /**
+     * Replace the workspace variables. Names are trimmed; rows without one are dropped.
+     */
+    func saveWorkspaceVariables(variables: [NameValue]) throws 
+    
+    /**
      * Every distinct secret key referenced by the service, environments, endpoints and scratch
      * requests, sorted.
      */
@@ -1217,13 +1390,30 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func sendForEndpoint(endpointId: String, request: RequestSpec, confirmed: Bool) async throws  -> HttpResponse
     
     /**
-     * Whether a send in the current environment needs `confirmed = true`.
+     * Whether the current environment is unsafe at all, for any method. To decide whether a
+     * particular send needs `confirmed = true`, use [`XRestWorkspace::send_policy_for`].
      */
     func sendPolicy()  -> SendPolicy
     
+    /**
+     * Whether sending a `method` request in the current environment needs `confirmed = true`,
+     * and the workspace's minimum countdown for it. The same rule `send` enforces.
+     */
+    func sendPolicyFor(method: String)  -> SendPolicy
+    
     func service()  -> ServiceInfo
     
+    /**
+     * Set the workspace color and icon (`InvalidInput` for unknown names).
+     */
+    func setAppearance(appearance: WorkspaceAppearance) throws 
+    
     func setGitMode(mode: GitMode) throws 
+    
+    /**
+     * Attach the user's global variables (shared by every open workspace).
+     */
+    func setGlobalVariables(globals: XRestGlobals) 
     
     /**
      * Record every send of this workspace in `history` (see [`XRestHistory`]). Recording
@@ -1278,9 +1468,20 @@ public protocol XRestWorkspaceProtocol: AnyObject, Sendable {
     func variableNames()  -> [String]
     
     /**
+     * For every variable defined in any layer: each layer's row and which one is used, in
+     * `environment` (the selected one when `None`).
+     */
+    func variableReport(environment: String?) throws  -> [VariableReport]
+    
+    /**
      * Non-fatal problems found while loading the workspace.
      */
     func warnings()  -> [String]
+    
+    /**
+     * Variables shared by every environment (`variables.yaml`, committed with the workspace).
+     */
+    func workspaceVariables()  -> [NameValue]
     
 }
 /**
@@ -1383,6 +1584,15 @@ public static func openWorkspace(path: String)throws  -> XRestWorkspace  {
 }
     
 
+    
+open func appearance() -> WorkspaceAppearance  {
+    return try!  FfiConverterTypeWorkspaceAppearance_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_appearance(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
     
 open func clearTokenCache()  {try! rustCall() {
         uniffiCallStatus in
@@ -1662,6 +1872,19 @@ open func listScratch() -> [ScratchRequest]  {
 }
     
     /**
+     * This user's overrides for `environment` (`.xrest/overrides.yaml`, never committed).
+     */
+open func localOverrides(environment: String) -> [NameValue]  {
+    return try!  FfiConverterSequenceTypeNameValue.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_local_overrides(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(environment),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Add the operations of an OpenAPI document that are not yet endpoints (matched by method
      * + path). Never modifies existing endpoints; one commit in auto git mode.
      */
@@ -1757,6 +1980,31 @@ open func saveEnvironments(envs: [EnvironmentConfig])throws   {try rustCallWithE
 }
     
     /**
+     * Replace this user's overrides for `environment`; an empty list removes them.
+     */
+open func saveLocalOverrides(environment: String, variables: [NameValue])throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_save_local_overrides(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(environment),
+        FfiConverterSequenceTypeNameValue.lower(variables),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Replace the workspace variables. Names are trimmed; rows without one are dropped.
+     */
+open func saveWorkspaceVariables(variables: [NameValue])throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_save_workspace_variables(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeNameValue.lower(variables),uniffiCallStatus
+    )
+}
+}
+    
+    /**
      * Every distinct secret key referenced by the service, environments, endpoints and scratch
      * requests, sorted.
      */
@@ -1829,13 +2077,28 @@ open func sendForEndpoint(endpointId: String, request: RequestSpec, confirmed: B
 }
     
     /**
-     * Whether a send in the current environment needs `confirmed = true`.
+     * Whether the current environment is unsafe at all, for any method. To decide whether a
+     * particular send needs `confirmed = true`, use [`XRestWorkspace::send_policy_for`].
      */
 open func sendPolicy() -> SendPolicy  {
     return try!  FfiConverterTypeSendPolicy_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_xrest_ffi_fn_method_xrestworkspace_send_policy(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Whether sending a `method` request in the current environment needs `confirmed = true`,
+     * and the workspace's minimum countdown for it. The same rule `send` enforces.
+     */
+open func sendPolicyFor(method: String) -> SendPolicy  {
+    return try!  FfiConverterTypeSendPolicy_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_send_policy_for(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(method),uniffiCallStatus
     )
 })
 }
@@ -1849,11 +2112,35 @@ open func service() -> ServiceInfo  {
 })
 }
     
+    /**
+     * Set the workspace color and icon (`InvalidInput` for unknown names).
+     */
+open func setAppearance(appearance: WorkspaceAppearance)throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_set_appearance(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeWorkspaceAppearance_lower(appearance),uniffiCallStatus
+    )
+}
+}
+    
 open func setGitMode(mode: GitMode)throws   {try rustCallWithError(FfiConverterTypeXRestError_lift) {
         uniffiCallStatus in
     uniffi_xrest_ffi_fn_method_xrestworkspace_set_git_mode(
             self.uniffiCloneHandle(),
         FfiConverterTypeGitMode_lower(mode),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Attach the user's global variables (shared by every open workspace).
+     */
+open func setGlobalVariables(globals: XRestGlobals)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_set_global_variables(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeXRestGlobals_lower(globals),uniffiCallStatus
     )
 }
 }
@@ -1995,12 +2282,38 @@ open func variableNames() -> [String]  {
 }
     
     /**
+     * For every variable defined in any layer: each layer's row and which one is used, in
+     * `environment` (the selected one when `None`).
+     */
+open func variableReport(environment: String?)throws  -> [VariableReport]  {
+    return try  FfiConverterSequenceTypeVariableReport.lift(try rustCallWithError(FfiConverterTypeXRestError_lift) {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_variable_report(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(environment),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Non-fatal problems found while loading the workspace.
      */
 open func warnings() -> [String]  {
     return try!  FfiConverterSequenceString.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_xrest_ffi_fn_method_xrestworkspace_warnings(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Variables shared by every environment (`variables.yaml`, committed with the workspace).
+     */
+open func workspaceVariables() -> [NameValue]  {
+    return try!  FfiConverterSequenceTypeNameValue.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_method_xrestworkspace_workspace_variables(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -2052,6 +2365,63 @@ public func FfiConverterTypeXRestWorkspace_lower(_ value: XRestWorkspace) -> UIn
 }
 
 
+
+
+/**
+ * A built-in dynamic variable such as `$uuid`.
+ */
+public struct BuiltinVariable: Equatable, Hashable {
+    public var name: String
+    public var description: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, description: String) {
+        self.name = name
+        self.description = description
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BuiltinVariable: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBuiltinVariable: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BuiltinVariable {
+        return
+            try BuiltinVariable(
+                name: FfiConverterString.read(from: &buf), 
+                description: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BuiltinVariable, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBuiltinVariable_lift(_ buf: RustBuffer) throws -> BuiltinVariable {
+    return try FfiConverterTypeBuiltinVariable.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBuiltinVariable_lower(_ value: BuiltinVariable) -> RustBuffer {
+    return FfiConverterTypeBuiltinVariable.lower(value)
+}
 
 
 public struct Endpoint: Equatable, Hashable {
@@ -2191,13 +2561,37 @@ public struct EnvironmentConfig: Equatable, Hashable {
     public var name: String
     public var isUnsafe: Bool
     public var variables: [NameValue]
+    /**
+     * One of `color_palette()`, or `None`.
+     */
+    public var color: String?
+    /**
+     * Which sends need confirmation when `is_unsafe`.
+     */
+    public var confirm: ConfirmScope
+    /**
+     * Team minimum countdown in seconds (0 = none, at most 30).
+     */
+    public var minCountdownSeconds: UInt32
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(name: String, isUnsafe: Bool, variables: [NameValue]) {
+    public init(name: String, isUnsafe: Bool, variables: [NameValue], 
+        /**
+         * One of `color_palette()`, or `None`.
+         */color: String?, 
+        /**
+         * Which sends need confirmation when `is_unsafe`.
+         */confirm: ConfirmScope, 
+        /**
+         * Team minimum countdown in seconds (0 = none, at most 30).
+         */minCountdownSeconds: UInt32) {
         self.name = name
         self.isUnsafe = isUnsafe
         self.variables = variables
+        self.color = color
+        self.confirm = confirm
+        self.minCountdownSeconds = minCountdownSeconds
     }
 
     
@@ -2218,7 +2612,10 @@ public struct FfiConverterTypeEnvironmentConfig: FfiConverterRustBuffer {
             try EnvironmentConfig(
                 name: FfiConverterString.read(from: &buf), 
                 isUnsafe: FfiConverterBool.read(from: &buf), 
-                variables: FfiConverterSequenceTypeNameValue.read(from: &buf)
+                variables: FfiConverterSequenceTypeNameValue.read(from: &buf), 
+                color: FfiConverterOptionString.read(from: &buf), 
+                confirm: FfiConverterTypeConfirmScope.read(from: &buf), 
+                minCountdownSeconds: FfiConverterUInt32.read(from: &buf)
         )
     }
 
@@ -2226,6 +2623,9 @@ public struct FfiConverterTypeEnvironmentConfig: FfiConverterRustBuffer {
         FfiConverterString.write(value.name, into: &buf)
         FfiConverterBool.write(value.isUnsafe, into: &buf)
         FfiConverterSequenceTypeNameValue.write(value.variables, into: &buf)
+        FfiConverterOptionString.write(value.color, into: &buf)
+        FfiConverterTypeConfirmScope.write(value.confirm, into: &buf)
+        FfiConverterUInt32.write(value.minCountdownSeconds, into: &buf)
     }
 }
 
@@ -3176,6 +3576,77 @@ public func FfiConverterTypeInterpolationPreview_lower(_ value: InterpolationPre
 }
 
 
+/**
+ * One layer's row for a variable.
+ */
+public struct LayerValue: Equatable, Hashable {
+    public var layer: VariableLayer
+    /**
+     * The stored value; empty for a secret-backed row.
+     */
+    public var value: String
+    public var secretKey: String?
+    public var enabled: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(layer: VariableLayer, 
+        /**
+         * The stored value; empty for a secret-backed row.
+         */value: String, secretKey: String?, enabled: Bool) {
+        self.layer = layer
+        self.value = value
+        self.secretKey = secretKey
+        self.enabled = enabled
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LayerValue: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLayerValue: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LayerValue {
+        return
+            try LayerValue(
+                layer: FfiConverterTypeVariableLayer.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf), 
+                secretKey: FfiConverterOptionString.read(from: &buf), 
+                enabled: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LayerValue, into buf: inout [UInt8]) {
+        FfiConverterTypeVariableLayer.write(value.layer, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+        FfiConverterOptionString.write(value.secretKey, into: &buf)
+        FfiConverterBool.write(value.enabled, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLayerValue_lift(_ buf: RustBuffer) throws -> LayerValue {
+    return try FfiConverterTypeLayerValue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLayerValue_lower(_ value: LayerValue) -> RustBuffer {
+    return FfiConverterTypeLayerValue.lower(value)
+}
+
+
 public struct NameValue: Equatable, Hashable {
     public var name: String
     public var value: String
@@ -3763,12 +4234,22 @@ public func FfiConverterTypeScratchRequest_lower(_ value: ScratchRequest) -> Rus
 public struct SendPolicy: Equatable, Hashable {
     public var environment: String?
     public var requiresConfirmation: Bool
+    /**
+     * The workspace's minimum countdown (0 = none); only set when `requires_confirmation`.
+     * Apps use the longer of this and the user's own countdown.
+     */
+    public var minCountdownSeconds: UInt32
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(environment: String?, requiresConfirmation: Bool) {
+    public init(environment: String?, requiresConfirmation: Bool, 
+        /**
+         * The workspace's minimum countdown (0 = none); only set when `requires_confirmation`.
+         * Apps use the longer of this and the user's own countdown.
+         */minCountdownSeconds: UInt32) {
         self.environment = environment
         self.requiresConfirmation = requiresConfirmation
+        self.minCountdownSeconds = minCountdownSeconds
     }
 
     
@@ -3788,13 +4269,15 @@ public struct FfiConverterTypeSendPolicy: FfiConverterRustBuffer {
         return
             try SendPolicy(
                 environment: FfiConverterOptionString.read(from: &buf), 
-                requiresConfirmation: FfiConverterBool.read(from: &buf)
+                requiresConfirmation: FfiConverterBool.read(from: &buf), 
+                minCountdownSeconds: FfiConverterUInt32.read(from: &buf)
         )
     }
 
     public static func write(_ value: SendPolicy, into buf: inout [UInt8]) {
         FfiConverterOptionString.write(value.environment, into: &buf)
         FfiConverterBool.write(value.requiresConfirmation, into: &buf)
+        FfiConverterUInt32.write(value.minCountdownSeconds, into: &buf)
     }
 }
 
@@ -4027,6 +4510,136 @@ public func FfiConverterTypeServiceSettings_lower(_ value: ServiceSettings) -> R
 
 
 /**
+ * Where a variable's value comes from in one environment.
+ */
+public struct VariableReport: Equatable, Hashable {
+    public var name: String
+    /**
+     * Every layer with a row for the name, most specific first.
+     */
+    public var values: [LayerValue]
+    /**
+     * The layer whose value is used; `None` when every row is disabled.
+     */
+    public var winner: VariableLayer?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, 
+        /**
+         * Every layer with a row for the name, most specific first.
+         */values: [LayerValue], 
+        /**
+         * The layer whose value is used; `None` when every row is disabled.
+         */winner: VariableLayer?) {
+        self.name = name
+        self.values = values
+        self.winner = winner
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension VariableReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVariableReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VariableReport {
+        return
+            try VariableReport(
+                name: FfiConverterString.read(from: &buf), 
+                values: FfiConverterSequenceTypeLayerValue.read(from: &buf), 
+                winner: FfiConverterOptionTypeVariableLayer.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VariableReport, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterSequenceTypeLayerValue.write(value.values, into: &buf)
+        FfiConverterOptionTypeVariableLayer.write(value.winner, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVariableReport_lift(_ buf: RustBuffer) throws -> VariableReport {
+    return try FfiConverterTypeVariableReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVariableReport_lower(_ value: VariableReport) -> RustBuffer {
+    return FfiConverterTypeVariableReport.lower(value)
+}
+
+
+/**
+ * Workspace color and icon; names from `color_palette()` and `workspace_icons()`.
+ */
+public struct WorkspaceAppearance: Equatable, Hashable {
+    public var color: String?
+    public var icon: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(color: String?, icon: String?) {
+        self.color = color
+        self.icon = icon
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension WorkspaceAppearance: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWorkspaceAppearance: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WorkspaceAppearance {
+        return
+            try WorkspaceAppearance(
+                color: FfiConverterOptionString.read(from: &buf), 
+                icon: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WorkspaceAppearance, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.color, into: &buf)
+        FfiConverterOptionString.write(value.icon, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWorkspaceAppearance_lift(_ buf: RustBuffer) throws -> WorkspaceAppearance {
+    return try FfiConverterTypeWorkspaceAppearance.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWorkspaceAppearance_lower(_ value: WorkspaceAppearance) -> RustBuffer {
+    return FfiConverterTypeWorkspaceAppearance.lower(value)
+}
+
+
+/**
  * Target language for [`XRestWorkspace::export_code`].
  */
 
@@ -4114,6 +4727,81 @@ public func FfiConverterTypeCodeLanguage_lift(_ buf: RustBuffer) throws -> CodeL
 #endif
 public func FfiConverterTypeCodeLanguage_lower(_ value: CodeLanguage) -> RustBuffer {
     return FfiConverterTypeCodeLanguage.lower(value)
+}
+
+
+
+/**
+ * Which requests to an unsafe environment ask for confirmation.
+ */
+
+public enum ConfirmScope: Equatable, Hashable {
+    
+    /**
+     * Every request.
+     */
+    case every
+    /**
+     * Anything but GET, HEAD and OPTIONS.
+     */
+    case changes
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ConfirmScope: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConfirmScope: FfiConverterRustBuffer {
+    typealias SwiftType = ConfirmScope
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConfirmScope {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .every
+        
+        case 2: return .changes
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ConfirmScope, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .every:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .changes:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConfirmScope_lift(_ buf: RustBuffer) throws -> ConfirmScope {
+    return try FfiConverterTypeConfirmScope.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConfirmScope_lower(_ value: ConfirmScope) -> RustBuffer {
+    return FfiConverterTypeConfirmScope.lower(value)
 }
 
 
@@ -4312,6 +5000,111 @@ public func FfiConverterTypeRequestBody_lift(_ buf: RustBuffer) throws -> Reques
 #endif
 public func FfiConverterTypeRequestBody_lower(_ value: RequestBody) -> RustBuffer {
     return FfiConverterTypeRequestBody.lower(value)
+}
+
+
+
+/**
+ * One source of variable values, most specific first.
+ */
+
+public enum VariableLayer: Equatable, Hashable {
+    
+    /**
+     * This user's override for the environment (`.xrest/overrides.yaml`, not shared).
+     */
+    case local
+    /**
+     * The environment (`environments.yaml`).
+     */
+    case environment
+    /**
+     * Every environment of the workspace (`variables.yaml`).
+     */
+    case workspace
+    /**
+     * This user, every workspace (`XRestGlobals`).
+     */
+    case global
+    /**
+     * `{{$uuid}}` and friends.
+     */
+    case builtIn
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension VariableLayer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVariableLayer: FfiConverterRustBuffer {
+    typealias SwiftType = VariableLayer
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VariableLayer {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .local
+        
+        case 2: return .environment
+        
+        case 3: return .workspace
+        
+        case 4: return .global
+        
+        case 5: return .builtIn
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: VariableLayer, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .local:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .environment:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .workspace:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .global:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .builtIn:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVariableLayer_lift(_ buf: RustBuffer) throws -> VariableLayer {
+    return try FfiConverterTypeVariableLayer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVariableLayer_lower(_ value: VariableLayer) -> RustBuffer {
+    return FfiConverterTypeVariableLayer.lower(value)
 }
 
 
@@ -4686,6 +5479,30 @@ fileprivate struct FfiConverterOptionTypePreflight: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeVariableLayer: FfiConverterRustBuffer {
+    typealias SwiftType = VariableLayer?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeVariableLayer.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeVariableLayer.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -4703,6 +5520,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBuiltinVariable: FfiConverterRustBuffer {
+    typealias SwiftType = [BuiltinVariable]
+
+    public static func write(_ value: [BuiltinVariable], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBuiltinVariable.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BuiltinVariable] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BuiltinVariable]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBuiltinVariable.read(from: &buf))
         }
         return seq
     }
@@ -4886,6 +5728,31 @@ fileprivate struct FfiConverterSequenceTypeHistorySummary: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeLayerValue: FfiConverterRustBuffer {
+    typealias SwiftType = [LayerValue]
+
+    public static func write(_ value: [LayerValue], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLayerValue.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LayerValue] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LayerValue]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLayerValue.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeNameValue: FfiConverterRustBuffer {
     typealias SwiftType = [NameValue]
 
@@ -4957,6 +5824,31 @@ fileprivate struct FfiConverterSequenceTypeScratchRequest: FfiConverterRustBuffe
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeVariableReport: FfiConverterRustBuffer {
+    typealias SwiftType = [VariableReport]
+
+    public static func write(_ value: [VariableReport], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeVariableReport.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [VariableReport] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [VariableReport]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeVariableReport.read(from: &buf))
+        }
+        return seq
+    }
+}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_WAKE: Int8 = 1
 
@@ -5006,6 +5898,26 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
     }
 }
 /**
+ * Every built-in dynamic variable (`$uuid`, `$timestamp`, …) with a description.
+ */
+public func builtinVariables() -> [BuiltinVariable]  {
+    return try!  FfiConverterSequenceTypeBuiltinVariable.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_func_builtin_variables(uniffiCallStatus
+    )
+})
+}
+/**
+ * Color names accepted for environments and workspaces.
+ */
+public func colorPalette() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_func_color_palette(uniffiCallStatus
+    )
+})
+}
+/**
  * Fetch an OpenAPI/Swagger document (or any text) from an `http(s)` URL: 10 MiB cap enforced
  * while streaming, 30 s timeout, UTF-8 only. Other schemes fail with `InvalidInput`.
  */
@@ -5023,6 +5935,16 @@ public func fetchText(url: String)async throws  -> String  {
             errorHandler: FfiConverterTypeXRestError_lift
         )
 }
+/**
+ * Icon names accepted for workspaces.
+ */
+public func workspaceIcons() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_xrest_ffi_fn_func_workspace_icons(uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -5039,13 +5961,28 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_xrest_ffi_checksum_func_builtin_variables() != 40986) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_func_color_palette() != 221) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_func_fetch_text() != 53833) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_func_workspace_icons() != 27481) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_secretprovider_get() != 64551) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_secretprovider_contains() != 20032) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestglobals_save() != 14880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestglobals_variables() != 52461) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xresthistory_clear() != 53652) {
@@ -5058,6 +5995,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xresthistory_list() != 20773) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_appearance() != 19891) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_clear_token_cache() != 21902) {
@@ -5123,6 +6063,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_list_scratch() != 10678) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_local_overrides() != 58170) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_merge_openapi() != 12192) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5144,6 +6087,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_save_environments() != 44341) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_save_local_overrides() != 48009) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_save_workspace_variables() != 42976) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_secret_keys_in_use() != 21361) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5159,13 +6108,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_send_for_endpoint() != 32226) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_send_policy() != 53813) {
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_send_policy() != 46086) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_send_policy_for() != 27338) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_service() != 43918) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_appearance() != 18216) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_git_mode() != 3573) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_global_variables() != 4020) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_set_history() != 16640) {
@@ -5198,7 +6156,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_variable_names() != 35401) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_variable_report() != 52132) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_xrest_ffi_checksum_method_xrestworkspace_warnings() != 18924) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_method_xrestworkspace_workspace_variables() != 43189) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_xrest_ffi_checksum_constructor_xrestglobals_open() != 10976) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_xrest_ffi_checksum_constructor_xresthistory_open() != 62592) {

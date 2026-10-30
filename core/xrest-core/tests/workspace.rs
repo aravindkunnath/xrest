@@ -473,13 +473,14 @@ fn typed_body_and_options_persist_through_endpoint_versions() {
 }
 
 #[test]
-fn format_1_workspace_opens_and_is_stamped_2_on_first_save() {
+fn format_1_workspace_opens_and_is_stamped_current_on_first_save() {
     let dir = tempfile::tempdir().unwrap();
     Workspace::create(dir.path(), "svc").unwrap();
     let path = dir.path().join("service.yaml");
-    let yaml = fs::read_to_string(&path)
-        .unwrap()
-        .replace("formatVersion: 2", "formatVersion: 1");
+    let yaml = fs::read_to_string(&path).unwrap().replace(
+        &format!("formatVersion: {FORMAT_VERSION}"),
+        "formatVersion: 1",
+    );
     fs::write(&path, yaml).unwrap();
 
     let mut ws = Workspace::open(dir.path()).unwrap();
@@ -487,9 +488,12 @@ fn format_1_workspace_opens_and_is_stamped_2_on_first_save() {
     let mut s = spec("http://h.io/u/{id}");
     s.path_params = vec![NameValue::new("id", "7")];
     let ep = ws.create_endpoint("by id", s.clone()).unwrap();
-    assert_eq!(ws.format_version(), 2);
+    assert_eq!(ws.format_version(), FORMAT_VERSION);
     let after = fs::read_to_string(&path).unwrap();
-    assert!(after.contains("formatVersion: 2"), "{after}");
+    assert!(
+        after.contains(&format!("formatVersion: {FORMAT_VERSION}")),
+        "{after}"
+    );
 
     let reopened = Workspace::open(dir.path()).unwrap();
     let got = reopened.endpoint(&ep.id).unwrap();
@@ -497,22 +501,21 @@ fn format_1_workspace_opens_and_is_stamped_2_on_first_save() {
 }
 
 #[test]
-fn format_3_workspace_is_refused() {
+fn next_format_workspace_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     Workspace::create(dir.path(), "svc").unwrap();
     let path = dir.path().join("service.yaml");
-    let yaml = fs::read_to_string(&path)
-        .unwrap()
-        .replace("formatVersion: 2", "formatVersion: 3");
+    let yaml = fs::read_to_string(&path).unwrap().replace(
+        &format!("formatVersion: {FORMAT_VERSION}"),
+        &format!("formatVersion: {}", FORMAT_VERSION + 1),
+    );
     fs::write(&path, yaml).unwrap();
-    assert!(matches!(
-        Workspace::open(dir.path()),
+    match Workspace::open(dir.path()) {
         Err(Error::UnsupportedFormat {
-            found: 3,
-            supported: 2,
-            ..
-        })
-    ));
+            found, supported, ..
+        }) => assert_eq!((found, supported), (FORMAT_VERSION + 1, FORMAT_VERSION)),
+        other => panic!("expected UnsupportedFormat, got {:?}", other.err()),
+    }
 }
 
 // ---- environments and service settings (write APIs) -----------------------------------------
@@ -522,6 +525,7 @@ fn env(name: &str, vars: Vec<NameValue>) -> Environment {
         name: name.into(),
         is_unsafe: false,
         variables: vars,
+        ..Default::default()
     }
 }
 
@@ -726,14 +730,28 @@ fn preview_without_environment_leaves_variables_unresolved() {
     let p = ws.preview("{{A}}/x");
     assert_eq!(p.resolved, "{{A}}/x");
     assert_eq!(p.unresolved, vec!["A"]);
-    assert!(ws.variable_names().is_empty());
+    assert!(user_names(&ws).is_empty());
+}
+
+/// Autocomplete names without the built-ins, which are always offered last.
+fn user_names(ws: &Workspace) -> Vec<String> {
+    ws.variable_names()
+        .into_iter()
+        .filter(|n| !n.starts_with('$'))
+        .collect()
 }
 
 #[test]
 fn variable_names_lists_enabled_names_of_the_selected_environment() {
     let dir = tempfile::tempdir().unwrap();
     let (mut ws, _) = preview_ws(&dir);
-    assert_eq!(ws.variable_names(), vec!["HOST", "PATH_", "TOKEN"]);
+    assert_eq!(user_names(&ws), vec!["HOST", "PATH_", "TOKEN"]);
+    assert!(ws.variable_names().ends_with(&[
+        "$uuid".to_string(),
+        "$timestamp".to_string(),
+        "$isoTimestamp".to_string(),
+        "$randomInt".to_string()
+    ]));
     let mut e2 = env(
         "Z",
         vec![NameValue::new("ONLY_Z", "1"), NameValue::new("", "x")],
@@ -743,7 +761,7 @@ fn variable_names_lists_enabled_names_of_the_selected_environment() {
     envs.push(e2);
     ws.save_environments(envs).unwrap();
     ws.select_environment("Z").unwrap();
-    assert_eq!(ws.variable_names(), vec!["ONLY_Z"]);
+    assert_eq!(user_names(&ws), vec!["ONLY_Z"]);
 }
 
 // ---- request URL preview ----------------------------------------------------------------------

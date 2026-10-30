@@ -22,6 +22,7 @@ use crate::model::{AuthKind, Body, Environment, NameValue, Preflight, RequestSpe
 use crate::policy::SendPolicy;
 use crate::preflight::TokenCache;
 use crate::secrets::SecretStore;
+use crate::variables::VariableLayers;
 
 /// Largest file a request body may read (binary bodies and multipart file fields).
 pub const MAX_BODY_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -31,6 +32,8 @@ pub(crate) struct SendContext<'a> {
     pub root: &'a Path,
     pub service: &'a ServiceFile,
     pub environment: Option<&'a Environment>,
+    /// Global, workspace and local variables for `environment`.
+    pub layers: &'a VariableLayers,
     pub secrets: &'a dyn SecretStore,
     pub tokens: Arc<TokenCache>,
     pub http: &'a HttpOptions,
@@ -44,9 +47,9 @@ pub(crate) fn prepare_send(
     confirmed: bool,
 ) -> Result<PreparedSend> {
     let env = ctx.environment;
-    SendPolicy::for_environment(env).check(confirmed)?;
+    SendPolicy::for_request(env, &spec.method).check(confirmed)?;
 
-    let vars = variables(env);
+    let vars = ctx.layers.resolve(env);
     let mut r = Resolver {
         vars: &vars,
         secrets: ctx.secrets,
@@ -132,6 +135,7 @@ impl SecretStore for PlaceholderStore {
 pub(crate) struct ExportContext<'a> {
     pub service: &'a ServiceFile,
     pub environment: Option<&'a Environment>,
+    pub layers: &'a VariableLayers,
     pub secrets: &'a dyn SecretStore,
 }
 
@@ -145,7 +149,8 @@ pub(crate) fn resolve_for_export(
     include_secrets: bool,
 ) -> Result<ExportRequest> {
     let env = ctx.environment;
-    let vars = variables(env);
+    // Built-ins get fresh values, so the exported request is runnable as-is.
+    let vars = ctx.layers.resolve(env);
     let secrets: &dyn SecretStore = if include_secrets {
         ctx.secrets
     } else {
@@ -339,10 +344,12 @@ impl SecretStore for MaskingStore<'_> {
 /// example an unresolved `{{BASE_URL}}`), the text is shown as far as it resolved.
 pub(crate) fn preview_request_url(
     env: Option<&Environment>,
+    layers: &VariableLayers,
     secrets: &dyn SecretStore,
     spec: &RequestSpec,
 ) -> InterpolationPreview {
-    let vars = variables(env);
+    // Built-ins stay as written: a preview must not show a value the send will not use.
+    let vars = layers.resolve_static(env);
     let masking = MaskingStore(secrets);
     let mut r = Resolver {
         vars: &vars,
@@ -371,19 +378,25 @@ pub(crate) fn preview_request_url(
 }
 
 /// Resolve a preflight (the given one, else the service's) for a one-off test. Enforces the
-/// unsafe-environment policy first; ignores `enabled` and the token cache.
+/// unsafe-environment policy (judged by the preflight's own method) before anything else;
+/// ignores `enabled` and the token cache.
 pub(crate) fn prepare_test_preflight(
     ctx: SendContext<'_>,
     preflight: Option<Preflight>,
     confirmed: bool,
 ) -> Result<PreparedPreflightTest> {
     let env = ctx.environment;
-    SendPolicy::for_environment(env).check(confirmed)?;
     let cfg = preflight
         .or_else(|| ctx.service.preflight.clone())
         .ok_or_else(|| Error::Preflight("no preflight is configured".into()))?;
+    let method = if cfg.method.trim().is_empty() {
+        "POST"
+    } else {
+        cfg.method.as_str()
+    };
+    SendPolicy::for_request(env, method).check(confirmed)?;
 
-    let vars = variables(env);
+    let vars = ctx.layers.resolve(env);
     let mut r = Resolver {
         vars: &vars,
         secrets: ctx.secrets,
@@ -401,22 +414,6 @@ pub(crate) fn prepare_test_preflight(
         config: cfg,
         http: ctx.http.clone(),
     })
-}
-
-/// The environment's enabled variables; secret-backed ones become `{{secret.KEY}}` references.
-pub(crate) fn variables(env: Option<&Environment>) -> Variables {
-    let mut vars = Variables::new();
-    for v in env.map(|e| e.variables.as_slice()).unwrap_or_default() {
-        if !v.enabled || v.name.is_empty() {
-            continue;
-        }
-        let value = match v.secret() {
-            Some(key) => format!("{{{{secret.{key}}}}}"),
-            None => v.value.clone(),
-        };
-        vars.insert(v.name.clone(), value);
-    }
-    vars
 }
 
 pub(crate) use crate::model::normalize_method;

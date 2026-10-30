@@ -32,11 +32,13 @@ async fn fixture() -> Fixture {
                 NameValue::new("BASE_URL", uri.clone()),
                 NameValue::new("USER_ID", "42"),
             ],
+            ..Default::default()
         },
         Environment {
             name: "PROD".into(),
             is_unsafe: true,
             variables: vec![NameValue::new("BASE_URL", uri)],
+            ..Default::default()
         },
     ];
     ws.update_environments(envs).unwrap();

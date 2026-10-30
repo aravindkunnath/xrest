@@ -273,6 +273,7 @@ fn reimport_keeps_custom_and_deleted_environments() {
         name: name.into(),
         is_unsafe,
         variables: vec![],
+        ..Default::default()
     };
     ws.save_environments(vec![env("qa-eu", false), env("perf", true)])
         .unwrap();

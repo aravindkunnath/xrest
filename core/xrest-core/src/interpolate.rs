@@ -69,10 +69,11 @@ pub fn placeholders(text: &str) -> Vec<String> {
 }
 
 /// Non-secret placeholders in `text` that still have no value (call after [`interpolate`]).
+/// Built-ins such as `{{$uuid}}` are never listed: they always get a value when sent.
 pub fn unresolved(text: &str) -> Vec<String> {
     placeholders(text)
         .into_iter()
-        .filter(|n| !n.starts_with("secret."))
+        .filter(|n| !n.starts_with("secret.") && !crate::variables::is_builtin(n))
         .collect()
 }
 

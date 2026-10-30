@@ -52,7 +52,7 @@ pub struct AuthConfig {
     pub api_key_location: String,
 }
 
-/// An environment: named variable set plus the unsafe guardrail flag.
+/// An environment: named variable set plus the unsafe guardrail flag and its rules.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Environment {
@@ -61,6 +61,78 @@ pub struct Environment {
     pub is_unsafe: bool,
     #[serde(default)]
     pub variables: Vec<NameValue>,
+    /// Display color, one of [`PALETTE`]. Each platform maps the name to its own shade.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Which sends to an unsafe environment need confirmation.
+    #[serde(default, skip_serializing_if = "ConfirmScope::is_every")]
+    pub confirm: ConfirmScope,
+    /// Team minimum for the confirmation countdown, in seconds (0 = none). The app uses the
+    /// longer of this and the user's own setting. At most [`MAX_MIN_COUNTDOWN_SECONDS`].
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub min_countdown_seconds: u32,
+}
+
+/// Upper bound for [`Environment::min_countdown_seconds`].
+pub const MAX_MIN_COUNTDOWN_SECONDS: u32 = 30;
+
+/// Color names for environments and workspaces. Names, not hex, so each platform can pick
+/// shades that work in light and dark mode.
+pub const PALETTE: &[&str] = &[
+    "red", "orange", "amber", "green", "teal", "blue", "purple", "pink", "graphite",
+];
+
+/// Workspace icon names (platforms map them to their own symbols).
+pub const WORKSPACE_ICONS: &[&str] = &["card", "server", "person", "box", "globe", "bolt"];
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
+}
+
+/// Which requests to an unsafe environment ask for confirmation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfirmScope {
+    /// Every request.
+    #[default]
+    Every,
+    /// Only requests that may change data: anything but `GET`, `HEAD` and `OPTIONS`.
+    Changes,
+}
+
+impl ConfirmScope {
+    fn is_every(&self) -> bool {
+        *self == ConfirmScope::Every
+    }
+
+    /// Whether a request with `method` needs confirmation under this scope.
+    pub fn applies_to(self, method: &str) -> bool {
+        match self {
+            ConfirmScope::Every => true,
+            ConfirmScope::Changes => !matches!(
+                method.trim().to_ascii_uppercase().as_str(),
+                "GET" | "HEAD" | "OPTIONS"
+            ),
+        }
+    }
+}
+
+/// Workspace color and icon (`appearance:` in service.yaml).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceAppearance {
+    /// One of [`PALETTE`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// One of [`WORKSPACE_ICONS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
+impl WorkspaceAppearance {
+    pub fn is_empty(&self) -> bool {
+        self.color.is_none() && self.icon.is_none()
+    }
 }
 
 /// Legacy endpoint index entry in `service.yaml`. Read for compatibility, never written.
@@ -103,6 +175,8 @@ pub struct ServiceFile {
     pub selected_environment: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_url: Option<String>,
+    #[serde(default, skip_serializing_if = "WorkspaceAppearance::is_empty")]
+    pub appearance: WorkspaceAppearance,
 }
 
 impl ServiceFile {

@@ -22,6 +22,7 @@ fn fixture() -> Fixture {
             NameValue::new("BASE", "https://api.example.com"),
             NameValue::new("N", "7"),
         ],
+        ..Default::default()
     }])
     .unwrap();
     Fixture {
