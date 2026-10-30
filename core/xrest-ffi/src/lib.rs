@@ -1,0 +1,1724 @@
+//! UniFFI surface over `xrest-core`.
+//!
+//! The API is deliberately coarse: one object ([`XRestWorkspace`]) plus plain records. Records
+//! mirror the core types (the core stays free of any FFI dependency); conversions live here.
+//! Swift bindings are generated from this crate; see `macos/scripts/generate-bindings.sh`.
+
+use std::sync::{Arc, Mutex, MutexGuard};
+
+use xrest_core as core;
+
+uniffi::setup_scaffolding!();
+
+// ---- errors -------------------------------------------------------------------------------
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum XRestError {
+    /// The selected environment is unsafe and `confirmed` was false.
+    #[error("environment {environment:?} is unsafe: sending requires confirmation")]
+    ConfirmationRequired { environment: String },
+    #[error("{message}")]
+    NotFound { message: String },
+    #[error("{message}")]
+    InvalidInput { message: String },
+    #[error("{message}")]
+    Io { message: String },
+    #[error("{message}")]
+    Http { message: String },
+    #[error("{message}")]
+    Preflight { message: String },
+    /// The workspace was written by a newer XRest.
+    #[error("this workspace uses format {found}; this XRest supports up to {supported}. Update XRest to open it.")]
+    UnsupportedFormat { found: u32, supported: u32 },
+    #[error("missing secrets: {}", keys.join(", "))]
+    MissingSecrets { keys: Vec<String> },
+    /// A git command failed; `message` is git's own error text (or "git not found").
+    #[error("{message}")]
+    Git { message: String },
+    #[error("{message}")]
+    NotImplemented { message: String },
+}
+
+impl From<core::Error> for XRestError {
+    fn from(e: core::Error) -> Self {
+        let message = e.to_string();
+        match e {
+            core::Error::ConfirmationRequired { environment } => {
+                XRestError::ConfirmationRequired { environment }
+            }
+            core::Error::NotFound { .. } => XRestError::NotFound { message },
+            core::Error::UnsupportedFormat {
+                found, supported, ..
+            } => XRestError::UnsupportedFormat { found, supported },
+            core::Error::NotAWorkspace(_)
+            | core::Error::AlreadyExists(_)
+            | core::Error::InvalidId(_)
+            | core::Error::InvalidUrl { .. }
+            | core::Error::UnknownEnvironment(_)
+            | core::Error::Curl(_)
+            | core::Error::InvalidBody(_)
+            | core::Error::InvalidInput(_) => XRestError::InvalidInput { message },
+            core::Error::Io { .. } | core::Error::Yaml { .. } => XRestError::Io { message },
+            core::Error::MissingSecrets(keys) => XRestError::MissingSecrets { keys },
+            core::Error::Preflight(_) => XRestError::Preflight { message },
+            core::Error::Http(_) => XRestError::Http { message },
+            core::Error::Git(_) => XRestError::Git { message },
+            core::Error::NotImplemented(_) => XRestError::NotImplemented { message },
+        }
+    }
+}
+
+type Result<T> = std::result::Result<T, XRestError>;
+
+// ---- records ------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct NameValue {
+    pub name: String,
+    pub value: String,
+    pub enabled: bool,
+    pub secret_key: Option<String>,
+    /// `plain` or `secret` (informational).
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct Preflight {
+    pub enabled: bool,
+    pub method: String,
+    pub url: String,
+    pub body: String,
+    pub body_type: String,
+    pub body_params: Vec<NameValue>,
+    pub headers: Vec<NameValue>,
+    pub cache_token: bool,
+    pub cache_duration: String,
+    pub cache_duration_key: String,
+    pub cache_duration_unit: String,
+    pub token_key: String,
+    pub token_header: Option<String>,
+}
+
+/// A typed request body. File paths are relative to the workspace root and must stay inside it.
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum RequestBody {
+    /// No body. (Not called `None`, which would be ambiguous with Swift's `Optional.none`.)
+    Empty,
+    /// Text as-is; without `content_type` the type is sniffed (JSON-looking → JSON).
+    Raw {
+        content: String,
+        content_type: Option<String>,
+    },
+    Json {
+        content: String,
+    },
+    /// `application/x-www-form-urlencoded`.
+    Form {
+        fields: Vec<NameValue>,
+    },
+    /// `multipart/form-data`; fields with kind `file` upload the file at `value`.
+    Multipart {
+        fields: Vec<NameValue>,
+    },
+    /// The bytes of one file.
+    Binary {
+        path: String,
+        content_type: Option<String>,
+    },
+}
+
+/// Per-request transport options; `None` means the app default.
+#[derive(Debug, Clone, Default, uniffi::Record)]
+pub struct RequestOptions {
+    /// Milliseconds; 0 means the default.
+    pub timeout_ms: Option<u64>,
+    pub follow_redirects: Option<bool>,
+    /// `false` accepts invalid TLS certificates.
+    pub verify_tls: Option<bool>,
+    /// Proxy URL; empty forces a direct connection.
+    pub proxy: Option<String>,
+}
+
+/// App-wide transport defaults (Settings); a request's own options override them per send.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HttpOptions {
+    /// Milliseconds; 0 means the built-in default (30 s).
+    pub timeout_ms: u64,
+    pub follow_redirects: bool,
+    /// `false` accepts invalid TLS certificates.
+    pub verify_tls: bool,
+    /// `None` uses the system proxy; empty forces a direct connection.
+    pub proxy: Option<String>,
+}
+
+impl From<HttpOptions> for core::HttpOptions {
+    fn from(o: HttpOptions) -> Self {
+        let base = core::HttpOptions::default();
+        Self {
+            timeout: if o.timeout_ms > 0 {
+                std::time::Duration::from_millis(o.timeout_ms)
+            } else {
+                base.timeout
+            },
+            follow_redirects: o.follow_redirects,
+            insecure_skip_verify: !o.verify_tls,
+            use_system_proxy: true,
+            proxy: o.proxy,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RequestSpec {
+    pub method: String,
+    pub url: String,
+    pub authenticated: bool,
+    pub params: Vec<NameValue>,
+    /// Values for `{name}` tokens in the URL path.
+    pub path_params: Vec<NameValue>,
+    pub headers: Vec<NameValue>,
+    pub body: RequestBody,
+    pub options: RequestOptions,
+    pub preflight: Option<Preflight>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct Endpoint {
+    pub id: String,
+    pub name: String,
+    pub spec: RequestSpec,
+    pub last_version: i32,
+    /// Unix seconds.
+    pub last_updated: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ScratchRequest {
+    pub id: String,
+    pub name: String,
+    pub spec: RequestSpec,
+    /// Unix seconds.
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct EndpointVersion {
+    pub version: i32,
+    pub last_updated: u64,
+    pub spec: RequestSpec,
+}
+
+/// One field-level difference between two endpoint versions.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FieldChange {
+    /// `method`, `url`, `authenticated`, `param:<name>`, `pathParam:<name>`, `header:<name>`,
+    /// `body.type`, `body.content`, `options.<key>`, `preflight.<field>`.
+    pub field: String,
+    /// `added`, `removed` or `changed`.
+    pub change: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+/// Named variable set. (Not called `Environment` to avoid clashing with SwiftUI's `Environment`.)
+pub struct EnvironmentConfig {
+    pub name: String,
+    pub is_unsafe: bool,
+    pub variables: Vec<NameValue>,
+    /// One of `color_palette()`, or `None`.
+    pub color: Option<String>,
+    /// Which sends need confirmation when `is_unsafe`.
+    pub confirm: ConfirmScope,
+    /// Team minimum countdown in seconds (0 = none, at most 30).
+    pub min_countdown_seconds: u32,
+}
+
+/// Which requests to an unsafe environment ask for confirmation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ConfirmScope {
+    /// Every request.
+    Every,
+    /// Anything but GET, HEAD and OPTIONS.
+    Changes,
+}
+
+/// Workspace color and icon; names from `color_palette()` and `workspace_icons()`.
+#[derive(Debug, Clone, Default, uniffi::Record)]
+pub struct WorkspaceAppearance {
+    pub color: Option<String>,
+    pub icon: Option<String>,
+}
+
+/// One source of variable values, most specific first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum VariableLayer {
+    /// This user's override for the environment (`.xrest/overrides.yaml`, not shared).
+    Local,
+    /// The environment (`environments.yaml`).
+    Environment,
+    /// Every environment of the workspace (`variables.yaml`).
+    Workspace,
+    /// This user, every workspace (`XRestGlobals`).
+    Global,
+    /// `{{$uuid}}` and friends.
+    BuiltIn,
+}
+
+/// One layer's row for a variable.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct LayerValue {
+    pub layer: VariableLayer,
+    /// The stored value; empty for a secret-backed row.
+    pub value: String,
+    pub secret_key: Option<String>,
+    pub enabled: bool,
+}
+
+/// Where a variable's value comes from in one environment.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct VariableReport {
+    pub name: String,
+    /// Every layer with a row for the name, most specific first.
+    pub values: Vec<LayerValue>,
+    /// The layer whose value is used; `None` when every row is disabled.
+    pub winner: Option<VariableLayer>,
+}
+
+/// A built-in dynamic variable such as `$uuid`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BuiltinVariable {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ServiceInfo {
+    pub id: String,
+    pub name: String,
+    pub root_path: String,
+    pub is_authenticated: bool,
+    /// `none`, `basic`, `bearer` or `apikey`.
+    pub auth_kind: String,
+    /// On-disk format version (older workspaces are upgraded on the first save).
+    pub format_version: u32,
+    pub basic_user: String,
+    pub basic_pass: String,
+    pub bearer_token: String,
+    pub api_key_name: String,
+    pub api_key_value: String,
+    /// `header` or `query` (empty means header).
+    pub api_key_location: String,
+    pub preflight: Option<Preflight>,
+}
+
+/// The editable service settings (`update_service_settings`). `id`, git URL and format version
+/// are not editable.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ServiceSettings {
+    pub name: String,
+    pub is_authenticated: bool,
+    /// `none`, `basic`, `bearer` or `apikey`.
+    pub auth_type: String,
+    pub basic_user: String,
+    pub basic_pass: String,
+    pub bearer_token: String,
+    pub api_key_name: String,
+    pub api_key_value: String,
+    pub api_key_location: String,
+    pub preflight: Option<Preflight>,
+}
+
+/// Text with variables resolved and every secret shown as `••••••`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct InterpolationPreview {
+    pub resolved: String,
+    /// Plain variable names, then `secret.KEY` for secrets with no value.
+    pub unresolved: Vec<String>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SendPolicy {
+    pub environment: Option<String>,
+    pub requires_confirmation: bool,
+    /// The workspace's minimum countdown (0 = none); only set when `requires_confirmation`.
+    /// Apps use the longer of this and the user's own countdown.
+    pub min_countdown_seconds: u32,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HeaderPair {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub headers: Vec<HeaderPair>,
+    pub content_type: String,
+    /// UTF-8 text, or base64 when `body_is_base64`.
+    pub body: String,
+    pub body_is_base64: bool,
+    /// Re-indented JSON when the body is JSON, else `None`.
+    pub pretty_body: Option<String>,
+    pub size_bytes: u64,
+    pub time_ms: u64,
+    pub final_url: String,
+    pub environment: Option<String>,
+    pub unresolved_variables: Vec<String>,
+    pub cookies: Vec<ResponseCookie>,
+}
+
+/// A cookie set by a `Set-Cookie` response header.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ResponseCookie {
+    pub name: String,
+    pub value: String,
+    pub domain: Option<String>,
+    pub path: Option<String>,
+    pub expires: Option<String>,
+    pub max_age: Option<i64>,
+    pub secure: bool,
+    pub http_only: bool,
+    pub same_site: Option<String>,
+}
+
+impl From<core::ResponseCookie> for ResponseCookie {
+    fn from(c: core::ResponseCookie) -> Self {
+        Self {
+            name: c.name,
+            value: c.value,
+            domain: c.domain,
+            path: c.path,
+            expires: c.expires,
+            max_age: c.max_age,
+            secure: c.secure,
+            http_only: c.http_only,
+            same_site: c.same_site,
+        }
+    }
+}
+
+// ---- history --------------------------------------------------------------------------------
+
+/// A listing row of the execution history (no headers or bodies).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HistorySummary {
+    pub id: i64,
+    /// Unix milliseconds.
+    pub created_at: i64,
+    pub service_id: String,
+    pub service_name: String,
+    pub endpoint_id: Option<String>,
+    pub environment: Option<String>,
+    pub method: String,
+    pub url: String,
+    /// `None` when the request produced no response (see `error`).
+    pub status: Option<u16>,
+    pub truncated: bool,
+    pub time_ms: u64,
+    pub size_bytes: u64,
+    pub error: Option<String>,
+}
+
+/// One recorded send, secrets masked as `••••••`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HistoryEntry {
+    pub id: i64,
+    pub created_at: i64,
+    pub service_id: String,
+    pub service_name: String,
+    pub endpoint_id: Option<String>,
+    pub environment: Option<String>,
+    pub method: String,
+    pub url: String,
+    pub request_headers: Vec<HeaderPair>,
+    pub request_body: String,
+    pub status: Option<u16>,
+    pub status_text: String,
+    pub response_headers: Vec<HeaderPair>,
+    /// UTF-8 text, or base64 when `body_is_base64`.
+    pub response_body: String,
+    pub body_is_base64: bool,
+    /// The body was cut at 1 MiB.
+    pub truncated: bool,
+    pub time_ms: u64,
+    pub size_bytes: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HistoryFilter {
+    pub service_id: Option<String>,
+    pub endpoint_id: Option<String>,
+    pub method: Option<String>,
+    /// 2, 3, 4 or 5 for that status class; 0 for failed requests (no response).
+    pub status_class: Option<u8>,
+}
+
+impl From<HistoryFilter> for core::HistoryFilter {
+    fn from(f: HistoryFilter) -> Self {
+        Self {
+            service_id: f.service_id,
+            endpoint_id: f.endpoint_id,
+            method: f.method,
+            status_class: f.status_class,
+        }
+    }
+}
+
+impl From<core::HistorySummary> for HistorySummary {
+    fn from(s: core::HistorySummary) -> Self {
+        Self {
+            id: s.id,
+            created_at: s.created_at,
+            service_id: s.service_id,
+            service_name: s.service_name,
+            endpoint_id: s.endpoint_id,
+            environment: s.environment,
+            method: s.method,
+            url: s.url,
+            status: s.status,
+            truncated: s.truncated,
+            time_ms: s.time_ms,
+            size_bytes: s.size_bytes,
+            error: s.error,
+        }
+    }
+}
+
+impl From<core::HistoryEntry> for HistoryEntry {
+    fn from(e: core::HistoryEntry) -> Self {
+        let pairs = |v: Vec<(String, String)>| {
+            v.into_iter()
+                .map(|(name, value)| HeaderPair { name, value })
+                .collect()
+        };
+        Self {
+            id: e.id,
+            created_at: e.created_at,
+            service_id: e.service_id,
+            service_name: e.service_name,
+            endpoint_id: e.endpoint_id,
+            environment: e.environment,
+            method: e.method,
+            url: e.url,
+            request_headers: pairs(e.request_headers),
+            request_body: e.request_body,
+            status: e.status,
+            status_text: e.status_text,
+            response_headers: pairs(e.response_headers),
+            response_body: e.response_body,
+            body_is_base64: e.body_is_base64,
+            truncated: e.truncated,
+            time_ms: e.time_ms,
+            size_bytes: e.size_bytes,
+            error: e.error,
+        }
+    }
+}
+
+/// The execution history database, shared by every workspace it is attached to with
+/// [`XRestWorkspace::set_history`]. Thread-safe.
+#[derive(uniffi::Object)]
+pub struct XRestHistory {
+    store: Arc<core::SqliteHistory>,
+}
+
+#[uniffi::export]
+impl XRestHistory {
+    /// Open (creating if needed) the SQLite database at `path`.
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<Self>> {
+        Ok(Arc::new(Self {
+            store: Arc::new(core::SqliteHistory::open(path)?),
+        }))
+    }
+
+    /// Newest first, without headers or bodies.
+    pub fn list(
+        &self,
+        filter: HistoryFilter,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<HistorySummary>> {
+        use core::HistoryStore;
+        Ok(self
+            .store
+            .list(&filter.into(), limit, offset)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn get(&self, id: i64) -> Result<Option<HistoryEntry>> {
+        use core::HistoryStore;
+        Ok(self.store.get(id)?.map(Into::into))
+    }
+
+    pub fn count(&self, filter: HistoryFilter) -> Result<u64> {
+        use core::HistoryStore;
+        Ok(self.store.count(&filter.into())?)
+    }
+
+    pub fn clear(&self) -> Result<()> {
+        use core::HistoryStore;
+        Ok(self.store.clear()?)
+    }
+}
+
+/// The outcome of "Test Preflight": the exchange and the extracted token. `error` is set when the
+/// request failed, returned non-2xx, or the token could not be extracted.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PreflightTestResult {
+    pub method: String,
+    pub url: String,
+    pub request_headers: Vec<HeaderPair>,
+    pub request_body: String,
+    pub status: Option<u16>,
+    pub response_headers: Vec<HeaderPair>,
+    pub response_body: String,
+    pub token: Option<String>,
+    pub error: Option<String>,
+    pub time_ms: u64,
+}
+
+impl From<core::PreflightTestResult> for PreflightTestResult {
+    fn from(r: core::PreflightTestResult) -> Self {
+        let pairs = |v: Vec<(String, String)>| {
+            v.into_iter()
+                .map(|(name, value)| HeaderPair { name, value })
+                .collect()
+        };
+        Self {
+            method: r.method,
+            url: r.url,
+            request_headers: pairs(r.request_headers),
+            request_body: r.request_body,
+            status: r.status,
+            response_headers: pairs(r.response_headers),
+            response_body: r.response_body,
+            token: r.token,
+            error: r.error,
+            time_ms: r.time_ms,
+        }
+    }
+}
+
+// ---- conversions --------------------------------------------------------------------------
+
+/// One changed file in the working tree.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct GitFileStatus {
+    /// Relative to the workspace root.
+    pub path: String,
+    /// `modified`, `added`, `deleted`, `renamed`, `untracked` or `conflicted`.
+    pub status: String,
+}
+
+/// Result of merging an OpenAPI document into a workspace.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ImportSummary {
+    /// Operations added as new endpoints.
+    pub added: u32,
+    /// Operations whose method + path already existed.
+    pub skipped: u32,
+}
+
+/// Fetch an OpenAPI/Swagger document (or any text) from an `http(s)` URL: 10 MiB cap enforced
+/// while streaming, 30 s timeout, UTF-8 only. Other schemes fail with `InvalidInput`.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn fetch_text(url: String) -> Result<String> {
+    Ok(core::swagger::fetch_text(&url).await?)
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct GitStatus {
+    pub is_repo: bool,
+    pub branch: String,
+    pub remote_url: Option<String>,
+    pub uncommitted: Vec<GitFileStatus>,
+    /// As of the last fetch.
+    pub ahead: u32,
+    pub behind: u32,
+    /// Unix seconds of the last successful pull/push/sync.
+    pub last_sync: Option<u64>,
+}
+
+/// Target language for [`XRestWorkspace::export_code`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum CodeLanguage {
+    Curl,
+    /// Node.js, axios.
+    Axios,
+    /// `java.net.http.HttpClient`.
+    Java,
+    /// Kotlin, OkHttp.
+    Kotlin,
+}
+
+impl From<CodeLanguage> for core::CodeLanguage {
+    fn from(l: CodeLanguage) -> Self {
+        match l {
+            CodeLanguage::Curl => core::CodeLanguage::Curl,
+            CodeLanguage::Axios => core::CodeLanguage::Axios,
+            CodeLanguage::Java => core::CodeLanguage::Java,
+            CodeLanguage::Kotlin => core::CodeLanguage::Kotlin,
+        }
+    }
+}
+
+/// Whether saves commit to git by themselves (per user, per workspace; default `Manual`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum GitMode {
+    Auto,
+    Manual,
+}
+
+impl From<core::GitMode> for GitMode {
+    fn from(m: core::GitMode) -> Self {
+        match m {
+            core::GitMode::Auto => GitMode::Auto,
+            core::GitMode::Manual => GitMode::Manual,
+        }
+    }
+}
+
+impl From<GitMode> for core::GitMode {
+    fn from(m: GitMode) -> Self {
+        match m {
+            GitMode::Auto => core::GitMode::Auto,
+            GitMode::Manual => core::GitMode::Manual,
+        }
+    }
+}
+
+impl From<core::git::GitStatus> for GitStatus {
+    fn from(s: core::git::GitStatus) -> Self {
+        GitStatus {
+            is_repo: s.is_repo,
+            branch: s.branch,
+            remote_url: s.remote_url,
+            uncommitted: s
+                .uncommitted
+                .into_iter()
+                .map(|f| GitFileStatus {
+                    path: f.path,
+                    status: f.status,
+                })
+                .collect(),
+            ahead: s.ahead,
+            behind: s.behind,
+            last_sync: s.last_sync,
+        }
+    }
+}
+
+impl From<core::NameValue> for NameValue {
+    fn from(v: core::NameValue) -> Self {
+        Self {
+            name: v.name,
+            value: v.value,
+            enabled: v.enabled,
+            secret_key: v.secret_key.filter(|s| !s.is_empty()),
+            kind: v.kind,
+        }
+    }
+}
+
+impl From<NameValue> for core::NameValue {
+    fn from(v: NameValue) -> Self {
+        Self {
+            name: v.name,
+            value: v.value,
+            enabled: v.enabled,
+            secret_key: v.secret_key.filter(|s| !s.is_empty()),
+            kind: if v.kind.is_empty() {
+                "plain".into()
+            } else {
+                v.kind
+            },
+        }
+    }
+}
+
+fn nv_in(v: Vec<NameValue>) -> Vec<core::NameValue> {
+    v.into_iter().map(Into::into).collect()
+}
+
+fn nv_out(v: Vec<core::NameValue>) -> Vec<NameValue> {
+    v.into_iter().map(Into::into).collect()
+}
+
+impl From<core::Preflight> for Preflight {
+    fn from(p: core::Preflight) -> Self {
+        Self {
+            enabled: p.enabled,
+            method: p.method,
+            url: p.url,
+            body: p.body,
+            body_type: p.body_type,
+            body_params: nv_out(p.body_params),
+            headers: nv_out(p.headers),
+            cache_token: p.cache_token,
+            cache_duration: p.cache_duration,
+            cache_duration_key: p.cache_duration_key,
+            cache_duration_unit: p.cache_duration_unit,
+            token_key: p.token_key,
+            token_header: p.token_header,
+        }
+    }
+}
+
+impl From<Preflight> for core::Preflight {
+    fn from(p: Preflight) -> Self {
+        Self {
+            enabled: p.enabled,
+            method: p.method,
+            url: p.url,
+            body: p.body,
+            body_type: p.body_type,
+            body_params: nv_in(p.body_params),
+            headers: nv_in(p.headers),
+            cache_token: p.cache_token,
+            cache_duration: p.cache_duration,
+            cache_duration_key: p.cache_duration_key,
+            cache_duration_unit: p.cache_duration_unit,
+            token_key: p.token_key,
+            token_header: p.token_header,
+        }
+    }
+}
+
+impl From<core::Body> for RequestBody {
+    fn from(b: core::Body) -> Self {
+        match b {
+            core::Body::None => RequestBody::Empty,
+            core::Body::Raw {
+                content,
+                content_type,
+            } => RequestBody::Raw {
+                content,
+                content_type,
+            },
+            core::Body::Json { content } => RequestBody::Json { content },
+            core::Body::Form { fields } => RequestBody::Form {
+                fields: nv_out(fields),
+            },
+            core::Body::Multipart { fields } => RequestBody::Multipart {
+                fields: nv_out(fields),
+            },
+            core::Body::Binary { path, content_type } => RequestBody::Binary { path, content_type },
+        }
+    }
+}
+
+impl From<RequestBody> for core::Body {
+    fn from(b: RequestBody) -> Self {
+        match b {
+            RequestBody::Empty => core::Body::None,
+            RequestBody::Raw {
+                content,
+                content_type,
+            } => core::Body::Raw {
+                content,
+                content_type: content_type.filter(|c| !c.trim().is_empty()),
+            },
+            RequestBody::Json { content } => core::Body::Json { content },
+            RequestBody::Form { fields } => core::Body::Form {
+                fields: nv_in(fields),
+            },
+            RequestBody::Multipart { fields } => core::Body::Multipart {
+                fields: nv_in(fields),
+            },
+            RequestBody::Binary { path, content_type } => core::Body::Binary {
+                path,
+                content_type: content_type.filter(|c| !c.trim().is_empty()),
+            },
+        }
+    }
+}
+
+impl From<core::RequestOptions> for RequestOptions {
+    fn from(o: core::RequestOptions) -> Self {
+        Self {
+            timeout_ms: o.timeout_ms,
+            follow_redirects: o.follow_redirects,
+            verify_tls: o.verify_tls,
+            proxy: o.proxy,
+        }
+    }
+}
+
+impl From<RequestOptions> for core::RequestOptions {
+    fn from(o: RequestOptions) -> Self {
+        Self {
+            timeout_ms: o.timeout_ms.filter(|ms| *ms > 0),
+            follow_redirects: o.follow_redirects,
+            verify_tls: o.verify_tls,
+            proxy: o.proxy,
+        }
+    }
+}
+
+impl From<core::RequestSpec> for RequestSpec {
+    fn from(s: core::RequestSpec) -> Self {
+        Self {
+            method: s.method,
+            url: s.url,
+            authenticated: s.authenticated,
+            params: nv_out(s.params),
+            path_params: nv_out(s.path_params),
+            headers: nv_out(s.headers),
+            body: s.body.into(),
+            options: s.options.into(),
+            preflight: s.preflight.map(Into::into),
+        }
+    }
+}
+
+impl From<RequestSpec> for core::RequestSpec {
+    fn from(s: RequestSpec) -> Self {
+        Self {
+            method: s.method,
+            url: s.url,
+            authenticated: s.authenticated,
+            params: nv_in(s.params),
+            path_params: nv_in(s.path_params),
+            headers: nv_in(s.headers),
+            body: s.body.into(),
+            options: s.options.into(),
+            preflight: s.preflight.map(Into::into),
+        }
+    }
+}
+
+impl From<core::Endpoint> for Endpoint {
+    fn from(e: core::Endpoint) -> Self {
+        let spec = e.spec().into();
+        Self {
+            id: e.id,
+            name: e.name,
+            spec,
+            last_version: e.last_version,
+            last_updated: e.metadata.last_updated,
+        }
+    }
+}
+
+impl From<core::ScratchRequest> for ScratchRequest {
+    fn from(s: core::ScratchRequest) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            spec: s.spec.into(),
+            updated_at: s.updated_at,
+        }
+    }
+}
+
+impl From<core::EndpointVersion> for EndpointVersion {
+    fn from(v: core::EndpointVersion) -> Self {
+        Self {
+            version: v.version,
+            last_updated: v.last_updated,
+            spec: v.config.spec().into(),
+        }
+    }
+}
+
+impl From<core::FieldChange> for FieldChange {
+    fn from(c: core::FieldChange) -> Self {
+        Self {
+            field: c.field,
+            change: c.change.as_str().to_string(),
+            before: c.before,
+            after: c.after,
+        }
+    }
+}
+
+impl From<core::Environment> for EnvironmentConfig {
+    fn from(e: core::Environment) -> Self {
+        Self {
+            name: e.name,
+            is_unsafe: e.is_unsafe,
+            variables: nv_out(e.variables),
+            color: e.color,
+            confirm: e.confirm.into(),
+            min_countdown_seconds: e.min_countdown_seconds,
+        }
+    }
+}
+
+impl From<EnvironmentConfig> for core::Environment {
+    fn from(e: EnvironmentConfig) -> Self {
+        Self {
+            name: e.name,
+            is_unsafe: e.is_unsafe,
+            variables: nv_in(e.variables),
+            color: e.color,
+            confirm: e.confirm.into(),
+            min_countdown_seconds: e.min_countdown_seconds,
+        }
+    }
+}
+
+impl From<core::ConfirmScope> for ConfirmScope {
+    fn from(c: core::ConfirmScope) -> Self {
+        match c {
+            core::ConfirmScope::Every => ConfirmScope::Every,
+            core::ConfirmScope::Changes => ConfirmScope::Changes,
+        }
+    }
+}
+
+impl From<ConfirmScope> for core::ConfirmScope {
+    fn from(c: ConfirmScope) -> Self {
+        match c {
+            ConfirmScope::Every => core::ConfirmScope::Every,
+            ConfirmScope::Changes => core::ConfirmScope::Changes,
+        }
+    }
+}
+
+impl From<core::SendPolicy> for SendPolicy {
+    fn from(p: core::SendPolicy) -> Self {
+        Self {
+            environment: p.environment,
+            requires_confirmation: p.requires_confirmation,
+            min_countdown_seconds: p.min_countdown_seconds,
+        }
+    }
+}
+
+impl From<core::VariableLayer> for VariableLayer {
+    fn from(l: core::VariableLayer) -> Self {
+        match l {
+            core::VariableLayer::Local => VariableLayer::Local,
+            core::VariableLayer::Environment => VariableLayer::Environment,
+            core::VariableLayer::Workspace => VariableLayer::Workspace,
+            core::VariableLayer::Global => VariableLayer::Global,
+            core::VariableLayer::BuiltIn => VariableLayer::BuiltIn,
+        }
+    }
+}
+
+impl From<core::VariableReport> for VariableReport {
+    fn from(r: core::VariableReport) -> Self {
+        Self {
+            name: r.name,
+            values: r
+                .values
+                .into_iter()
+                .map(|v| LayerValue {
+                    layer: v.layer.into(),
+                    value: v.value,
+                    secret_key: v.secret_key,
+                    enabled: v.enabled,
+                })
+                .collect(),
+            winner: r.winner.map(Into::into),
+        }
+    }
+}
+
+/// The user's global variables: one list shared by every workspace it is attached to with
+/// [`XRestWorkspace::set_global_variables`], stored as YAML at the path the app chooses.
+/// Thread-safe; a `save` is seen by every attached workspace's next send.
+#[derive(uniffi::Object)]
+pub struct XRestGlobals {
+    path: std::path::PathBuf,
+    store: Arc<core::GlobalVariables>,
+}
+
+#[uniffi::export]
+impl XRestGlobals {
+    /// Load the file at `path` (a missing file is an empty list).
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<Self>> {
+        let path = std::path::PathBuf::from(path);
+        let rows = core::storage::load_global_variables(&path)?;
+        Ok(Arc::new(Self {
+            path,
+            store: Arc::new(core::GlobalVariables::new(rows)),
+        }))
+    }
+
+    pub fn variables(&self) -> Vec<NameValue> {
+        nv_out(self.store.get())
+    }
+
+    /// Replace and write the list. Names are trimmed; rows without one are dropped.
+    pub fn save(&self, variables: Vec<NameValue>) -> Result<()> {
+        let saved = core::storage::save_global_variables(&self.path, &nv_in(variables))?;
+        self.store.set(saved);
+        Ok(())
+    }
+}
+
+/// Every built-in dynamic variable (`$uuid`, `$timestamp`, …) with a description.
+#[uniffi::export]
+pub fn builtin_variables() -> Vec<BuiltinVariable> {
+    core::BUILTIN_VARIABLES
+        .iter()
+        .map(|b| BuiltinVariable {
+            name: b.name.to_string(),
+            description: b.description.to_string(),
+        })
+        .collect()
+}
+
+/// Color names accepted for environments and workspaces.
+#[uniffi::export]
+pub fn color_palette() -> Vec<String> {
+    core::PALETTE.iter().map(|c| c.to_string()).collect()
+}
+
+/// Icon names accepted for workspaces.
+#[uniffi::export]
+pub fn workspace_icons() -> Vec<String> {
+    core::WORKSPACE_ICONS
+        .iter()
+        .map(|c| c.to_string())
+        .collect()
+}
+
+impl From<core::ServiceSettings> for ServiceSettings {
+    fn from(s: core::ServiceSettings) -> Self {
+        Self {
+            name: s.name,
+            is_authenticated: s.is_authenticated,
+            auth_type: s.auth_type.as_str().to_string(),
+            basic_user: s.basic_user,
+            basic_pass: s.basic_pass,
+            bearer_token: s.bearer_token,
+            api_key_name: s.api_key_name,
+            api_key_value: s.api_key_value,
+            api_key_location: s.api_key_location,
+            preflight: s.preflight.map(Into::into),
+        }
+    }
+}
+
+impl TryFrom<ServiceSettings> for core::ServiceSettings {
+    type Error = XRestError;
+
+    fn try_from(s: ServiceSettings) -> Result<Self> {
+        let auth_type = match s.auth_type.trim().to_ascii_lowercase().as_str() {
+            "" | "none" => core::AuthKind::None,
+            "basic" => core::AuthKind::Basic,
+            "bearer" => core::AuthKind::Bearer,
+            "apikey" => core::AuthKind::Apikey,
+            other => {
+                return Err(XRestError::InvalidInput {
+                    message: format!("unknown auth type {other:?}"),
+                })
+            }
+        };
+        Ok(Self {
+            name: s.name,
+            is_authenticated: s.is_authenticated,
+            auth_type,
+            basic_user: s.basic_user,
+            basic_pass: s.basic_pass,
+            bearer_token: s.bearer_token,
+            api_key_name: s.api_key_name,
+            api_key_value: s.api_key_value,
+            api_key_location: s.api_key_location,
+            preflight: s.preflight.map(Into::into),
+        })
+    }
+}
+
+impl From<core::HttpResponse> for HttpResponse {
+    fn from(r: core::HttpResponse) -> Self {
+        Self {
+            status: r.status,
+            status_text: r.status_text,
+            headers: r
+                .headers
+                .into_iter()
+                .map(|(name, value)| HeaderPair { name, value })
+                .collect(),
+            content_type: r.content_type,
+            body: r.body,
+            body_is_base64: r.body_is_base64,
+            pretty_body: r.pretty_body,
+            size_bytes: r.size_bytes,
+            time_ms: r.time_ms,
+            final_url: r.final_url,
+            environment: r.environment,
+            unresolved_variables: r.unresolved_variables,
+            cookies: r.cookies.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+// ---- secrets ------------------------------------------------------------------------------
+
+/// Implemented by the app (e.g. over the Keychain) to supply secret values for
+/// `{{secret.KEY}}` placeholders and `secretKey` variables. Returns `None` when the key is
+/// unknown. Called synchronously from the sending thread, so it should be quick.
+#[uniffi::export(with_foreign)]
+pub trait SecretProvider: Send + Sync {
+    fn get(&self, key: String) -> Option<String>;
+    /// Whether a value exists for `key`. Used by previews, which must not fetch secret values
+    /// (for the Keychain that can mean an authorization prompt on every keystroke).
+    fn contains(&self, key: String) -> bool;
+}
+
+/// Looks keys up in the foreign provider first, then in the in-memory store.
+struct SecretChain {
+    provider: Mutex<Option<Arc<dyn SecretProvider>>>,
+    memory: core::MemorySecretStore,
+}
+
+impl core::SecretStore for SecretChain {
+    fn get(&self, key: &str) -> Option<String> {
+        // Clone the Arc so the foreign call runs without holding our lock.
+        let provider = self
+            .provider
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        provider
+            .and_then(|p| p.get(key.to_string()))
+            .or_else(|| self.memory.get(key))
+    }
+
+    fn contains(&self, key: &str) -> bool {
+        let provider = self
+            .provider
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        provider.is_some_and(|p| p.contains(key.to_string())) || self.memory.contains(key)
+    }
+}
+
+// ---- the workspace object -----------------------------------------------------------------
+
+/// One open workspace (a service directory with its endpoints and scratchpad).
+///
+/// Thread-safe: methods may be called from any thread. Synchronous methods only touch local
+/// files; [`XRestWorkspace::send`] is async and does not hold the internal lock while waiting
+/// on the network.
+#[derive(uniffi::Object)]
+pub struct XRestWorkspace {
+    inner: Mutex<core::Workspace>,
+    secrets: Arc<SecretChain>,
+    /// Serialises git commands (which run without `inner` held).
+    git_gate: Arc<Mutex<()>>,
+}
+
+impl XRestWorkspace {
+    fn wrap(mut ws: core::Workspace) -> Arc<Self> {
+        let secrets = Arc::new(SecretChain {
+            provider: Mutex::new(None),
+            memory: core::MemorySecretStore::default(),
+        });
+        ws.set_secret_store(secrets.clone());
+        Arc::new(Self {
+            inner: Mutex::new(ws),
+            secrets,
+            git_gate: Arc::new(Mutex::new(())),
+        })
+    }
+
+    fn lock(&self) -> MutexGuard<'_, core::Workspace> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Prepare under the lock, send and record without it, then report a recording failure.
+    async fn send_recorded(
+        &self,
+        endpoint_id: Option<String>,
+        request: RequestSpec,
+        confirmed: bool,
+    ) -> Result<HttpResponse> {
+        let (prepared, sink) = {
+            let ws = self.lock();
+            (
+                ws.prepare_send(&request.into(), confirmed)?,
+                ws.history_sink(endpoint_id.as_deref()),
+            )
+        };
+        let (result, warning) = prepared.execute_recorded(sink).await;
+        if let Some(w) = warning {
+            self.lock().push_warning(w);
+        }
+        Ok(result?.into())
+    }
+
+    /// Run a git command off the workspace lock and off the async executor.
+    async fn git_blocking<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&std::path::Path) -> core::Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let root = self.lock().root().to_path_buf();
+        let gate = self.git_gate.clone();
+        tokio::task::spawn_blocking(move || {
+            let _g = gate.lock().unwrap_or_else(|e| e.into_inner());
+            f(&root)
+        })
+        .await
+        .map_err(|e| XRestError::Git {
+            message: format!("git task failed: {e}"),
+        })?
+        .map_err(Into::into)
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl XRestWorkspace {
+    /// Open an existing workspace directory (must contain `service.yaml`).
+    #[uniffi::constructor]
+    pub fn open_workspace(path: String) -> Result<Arc<Self>> {
+        Ok(Self::wrap(core::Workspace::open(path)?))
+    }
+
+    /// Initialise a new workspace in `path` and open it.
+    #[uniffi::constructor]
+    pub fn create_workspace(path: String, name: String) -> Result<Arc<Self>> {
+        Ok(Self::wrap(core::Workspace::create(path, &name)?))
+    }
+
+    /// Create a workspace in `path` from an OpenAPI 3 / Swagger 2 document (JSON or YAML):
+    /// DEV/STAGE/PROD with `BASE_URL`, one endpoint per operation. Invalid content fails with
+    /// `InvalidInput` and creates nothing. Check `warnings()` (e.g. no server in the spec).
+    #[uniffi::constructor]
+    pub fn create_workspace_from_openapi(
+        path: String,
+        name: String,
+        content: String,
+    ) -> Result<Arc<Self>> {
+        Ok(Self::wrap(core::Workspace::create_from_openapi(
+            path, &name, &content,
+        )?))
+    }
+
+    /// Add the operations of an OpenAPI document that are not yet endpoints (matched by method
+    /// + path). Never modifies existing endpoints; one commit in auto git mode.
+    pub fn merge_openapi(&self, content: String) -> Result<ImportSummary> {
+        let s = self.lock().merge_openapi(&content)?;
+        Ok(ImportSummary {
+            added: s.added,
+            skipped: s.skipped,
+        })
+    }
+
+    pub fn service(&self) -> ServiceInfo {
+        let ws = self.lock();
+        let s = ws.service();
+        let c = ws.service_settings();
+        ServiceInfo {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            root_path: ws.root().to_string_lossy().into_owned(),
+            is_authenticated: s.is_authenticated,
+            auth_kind: s.effective_auth_kind().as_str().to_string(),
+            format_version: ws.format_version(),
+            basic_user: c.basic_user,
+            basic_pass: c.basic_pass,
+            bearer_token: c.bearer_token,
+            api_key_name: c.api_key_name,
+            api_key_value: c.api_key_value,
+            api_key_location: c.api_key_location,
+            preflight: c.preflight.map(Into::into),
+        }
+    }
+
+    /// Save the service name, auth and preflight. Keeps the id and git URL; clears the token
+    /// cache. Fails with `InvalidInput` for an empty name or unknown auth type.
+    pub fn update_service_settings(&self, settings: ServiceSettings) -> Result<()> {
+        Ok(self.lock().update_service_settings(settings.try_into()?)?)
+    }
+
+    /// Non-fatal problems found while loading the workspace.
+    pub fn warnings(&self) -> Vec<String> {
+        self.lock().warnings().to_vec()
+    }
+
+    // environments
+
+    pub fn environments(&self) -> Vec<EnvironmentConfig> {
+        self.lock()
+            .environments()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
+    }
+
+    /// Replace all environments. Names are trimmed, non-empty and unique (else `InvalidInput`).
+    /// The selection is kept if its name still exists, else it moves to the first environment.
+    pub fn save_environments(&self, envs: Vec<EnvironmentConfig>) -> Result<()> {
+        Ok(self
+            .lock()
+            .save_environments(envs.into_iter().map(Into::into).collect())?)
+    }
+
+    /// Enabled variable names of the selected environment, for autocomplete.
+    pub fn variable_names(&self) -> Vec<String> {
+        self.lock().variable_names()
+    }
+
+    /// Resolve `text` in the selected environment for display. Secrets (looked up through the
+    /// provider, then the memory store) are masked as `••••••`; their values are never returned.
+    pub fn preview(&self, text: String) -> InterpolationPreview {
+        let p = self.lock().preview(&text);
+        InterpolationPreview {
+            resolved: p.resolved,
+            unresolved: p.unresolved,
+        }
+    }
+
+    /// The URL `spec` would be sent to, for the confirmation sheet: variables interpolated,
+    /// path and query params applied as `send` does, secrets masked as `••••••`. No network,
+    /// no file reads; secrets are only tested for existence (`SecretProvider.contains`).
+    pub fn preview_request_url(&self, spec: RequestSpec) -> InterpolationPreview {
+        let p = self.lock().preview_request_url(&spec.into());
+        InterpolationPreview {
+            resolved: p.resolved,
+            unresolved: p.unresolved,
+        }
+    }
+
+    /// `spec` as code for the selected environment (variables, path/query params, service auth,
+    /// options applied). No I/O: no preflight request (its header is `<preflight token>`), no
+    /// file reads (file fields keep their path), no unsafe-environment confirmation. Secrets stay
+    /// `{{secret.KEY}}` placeholders unless `include_secrets`, which fails with `MissingSecrets`
+    /// when one has no value.
+    pub fn export_code(
+        &self,
+        spec: RequestSpec,
+        language: CodeLanguage,
+        include_secrets: bool,
+    ) -> Result<String> {
+        Ok(self
+            .lock()
+            .export_code(&spec.into(), language.into(), include_secrets)?)
+    }
+
+    pub fn selected_environment(&self) -> Option<String> {
+        self.lock().selected_environment().map(|e| e.name.clone())
+    }
+
+    pub fn select_environment(&self, name: String) -> Result<()> {
+        Ok(self.lock().select_environment(&name)?)
+    }
+
+    /// Whether the current environment is unsafe at all, for any method. To decide whether a
+    /// particular send needs `confirmed = true`, use [`XRestWorkspace::send_policy_for`].
+    pub fn send_policy(&self) -> SendPolicy {
+        self.lock().send_policy().into()
+    }
+
+    /// Whether sending a `method` request in the current environment needs `confirmed = true`,
+    /// and the workspace's minimum countdown for it. The same rule `send` enforces.
+    pub fn send_policy_for(&self, method: String) -> SendPolicy {
+        self.lock().send_policy_for(&method).into()
+    }
+
+    // variable layers
+
+    /// Attach the user's global variables (shared by every open workspace).
+    pub fn set_global_variables(&self, globals: Arc<XRestGlobals>) {
+        self.lock().set_global_variables(globals.store.clone());
+    }
+
+    /// Variables shared by every environment (`variables.yaml`, committed with the workspace).
+    pub fn workspace_variables(&self) -> Vec<NameValue> {
+        nv_out(self.lock().workspace_variables().to_vec())
+    }
+
+    /// Replace the workspace variables. Names are trimmed; rows without one are dropped.
+    pub fn save_workspace_variables(&self, variables: Vec<NameValue>) -> Result<()> {
+        Ok(self.lock().save_workspace_variables(nv_in(variables))?)
+    }
+
+    /// This user's overrides for `environment` (`.xrest/overrides.yaml`, never committed).
+    pub fn local_overrides(&self, environment: String) -> Vec<NameValue> {
+        nv_out(self.lock().local_overrides(&environment).to_vec())
+    }
+
+    /// Replace this user's overrides for `environment`; an empty list removes them.
+    pub fn save_local_overrides(
+        &self,
+        environment: String,
+        variables: Vec<NameValue>,
+    ) -> Result<()> {
+        Ok(self
+            .lock()
+            .save_local_overrides(&environment, nv_in(variables))?)
+    }
+
+    /// For every variable defined in any layer: each layer's row and which one is used, in
+    /// `environment` (the selected one when `None`).
+    pub fn variable_report(&self, environment: Option<String>) -> Result<Vec<VariableReport>> {
+        Ok(self
+            .lock()
+            .variable_report(environment.as_deref())?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    // appearance
+
+    pub fn appearance(&self) -> WorkspaceAppearance {
+        let a = self.lock().appearance().clone();
+        WorkspaceAppearance {
+            color: a.color,
+            icon: a.icon,
+        }
+    }
+
+    /// Set the workspace color and icon (`InvalidInput` for unknown names).
+    pub fn set_appearance(&self, appearance: WorkspaceAppearance) -> Result<()> {
+        Ok(self.lock().set_appearance(core::WorkspaceAppearance {
+            color: appearance.color,
+            icon: appearance.icon,
+        })?)
+    }
+
+    // endpoints
+
+    pub fn list_endpoints(&self) -> Vec<Endpoint> {
+        self.lock()
+            .endpoints()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub fn get_endpoint(&self, id: String) -> Result<Endpoint> {
+        Ok(self.lock().endpoint(&id)?.clone().into())
+    }
+
+    pub fn create_endpoint(&self, name: String, spec: RequestSpec) -> Result<Endpoint> {
+        Ok(self.lock().create_endpoint(&name, spec.into())?.into())
+    }
+
+    /// Save an endpoint. Records a new version when the request changed.
+    pub fn update_endpoint(&self, id: String, name: String, spec: RequestSpec) -> Result<Endpoint> {
+        Ok(self
+            .lock()
+            .update_endpoint(&id, Some(&name), spec.into())?
+            .into())
+    }
+
+    pub fn delete_endpoint(&self, id: String) -> Result<()> {
+        Ok(self.lock().delete_endpoint(&id)?)
+    }
+
+    /// Version history, newest first.
+    pub fn endpoint_versions(&self, id: String, limit: u32) -> Result<Vec<EndpointVersion>> {
+        Ok(self
+            .lock()
+            .endpoint_versions(&id, limit as usize)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// Write a past version's config as the current request. Recorded as a NEW version.
+    pub fn restore_endpoint_version(&self, id: String, version: i32) -> Result<Endpoint> {
+        Ok(self.lock().restore_endpoint_version(&id, version)?.into())
+    }
+
+    /// Field-level changes going from version `from` to version `to`.
+    pub fn diff_versions(&self, id: String, from: i32, to: i32) -> Result<Vec<FieldChange>> {
+        Ok(self
+            .lock()
+            .diff_versions(&id, from, to)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// Cap on retained versions per endpoint (clamped to 5-50).
+    pub fn set_max_versions(&self, n: u32) {
+        self.lock().set_max_versions(n as usize);
+    }
+
+    /// App-wide transport defaults for subsequent sends.
+    pub fn set_http_options(&self, options: HttpOptions) {
+        self.lock().set_http_options(options.into());
+    }
+
+    // scratchpad
+
+    pub fn list_scratch(&self) -> Vec<ScratchRequest> {
+        self.lock()
+            .scratch_requests()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect()
+    }
+
+    pub fn get_scratch(&self, id: String) -> Result<ScratchRequest> {
+        Ok(self.lock().scratch(&id)?.clone().into())
+    }
+
+    pub fn create_scratch(&self, name: String, spec: RequestSpec) -> Result<ScratchRequest> {
+        Ok(self.lock().create_scratch(&name, spec.into())?.into())
+    }
+
+    pub fn update_scratch(
+        &self,
+        id: String,
+        name: String,
+        spec: RequestSpec,
+    ) -> Result<ScratchRequest> {
+        Ok(self
+            .lock()
+            .update_scratch(&id, Some(&name), spec.into())?
+            .into())
+    }
+
+    pub fn delete_scratch(&self, id: String) -> Result<()> {
+        Ok(self.lock().delete_scratch(&id)?)
+    }
+
+    /// Move a scratch request into the versioned endpoints (the scratch file is removed).
+    pub fn promote_scratch(&self, id: String, name: Option<String>) -> Result<Endpoint> {
+        Ok(self.lock().promote_scratch(&id, name.as_deref())?.into())
+    }
+
+    /// Parse a cURL command into a new scratch request.
+    pub fn import_curl_as_scratch(&self, command: String) -> Result<ScratchRequest> {
+        Ok(self.lock().import_curl_as_scratch(&command)?.into())
+    }
+
+    // secrets and caches
+
+    /// Store a secret in memory for `{{secret.KEY}}` placeholders (tests and fallback). The
+    /// provider set with [`XRestWorkspace::set_secret_provider`] is consulted first.
+    pub fn set_secret(&self, key: String, value: String) {
+        self.secrets.memory.set(key, value);
+    }
+
+    /// Plug in the platform credential store. Lookup order: provider, then `set_secret`.
+    pub fn set_secret_provider(&self, provider: Arc<dyn SecretProvider>) {
+        *self
+            .secrets
+            .provider
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(provider);
+    }
+
+    /// Every distinct secret key referenced by the service, environments, endpoints and scratch
+    /// requests, sorted.
+    pub fn secret_keys_in_use(&self) -> Vec<String> {
+        self.lock().secret_keys_in_use()
+    }
+
+    pub fn clear_token_cache(&self) {
+        self.lock().clear_token_cache();
+    }
+
+    // git
+
+    /// Local-only status; `ahead`/`behind` reflect the last fetch.
+    pub async fn git_status(&self) -> Result<GitStatus> {
+        let last_sync = self.lock().git_status_last_sync();
+        let mut s = self.git_blocking(core::git::status).await?;
+        s.last_sync = last_sync;
+        Ok(s.into())
+    }
+
+    /// `git init` if needed, ensure `.gitignore`, and set `origin` when `remote` is given.
+    pub async fn git_init(&self, remote: Option<String>) -> Result<()> {
+        self.git_blocking(move |root| core::git::init(root, remote.as_deref()))
+            .await
+    }
+
+    /// Commit workspace content only; the new commit's SHA, or `None` if nothing changed.
+    pub async fn git_commit(&self, message: String) -> Result<Option<String>> {
+        self.git_blocking(move |root| core::git::commit(root, &message))
+            .await
+    }
+
+    /// Pull (merge). Conflicts abort the merge and fail with the conflicting paths. On success
+    /// the workspace reloads from disk.
+    pub async fn git_pull(&self) -> Result<()> {
+        self.git_blocking(core::git::pull).await?;
+        Ok(self.lock().finish_git_sync()?)
+    }
+
+    pub async fn git_push(&self) -> Result<()> {
+        self.git_blocking(core::git::push).await?;
+        Ok(self.lock().finish_git_sync()?)
+    }
+
+    /// Pull, then push; reloads from disk.
+    pub async fn git_sync(&self) -> Result<()> {
+        self.git_blocking(|root| {
+            core::git::pull(root)?;
+            core::git::push(root)
+        })
+        .await?;
+        Ok(self.lock().finish_git_sync()?)
+    }
+
+    pub fn git_mode(&self) -> GitMode {
+        self.lock().git_mode().into()
+    }
+
+    pub fn set_git_mode(&self, mode: GitMode) -> Result<()> {
+        Ok(self.lock().set_git_mode(mode.into())?)
+    }
+
+    /// Re-read the workspace from disk (after an external change).
+    pub fn reload(&self) -> Result<()> {
+        Ok(self.lock().reload()?)
+    }
+
+    // sending
+
+    /// Resolve and send `request` in the selected environment.
+    ///
+    /// Fails with [`XRestError::ConfirmationRequired`] if the environment is unsafe and
+    /// `confirmed` is false. A non-2xx status is a normal response, not an error.
+    pub async fn send(&self, request: RequestSpec, confirmed: bool) -> Result<HttpResponse> {
+        self.send_recorded(None, request, confirmed).await
+    }
+
+    /// Like [`XRestWorkspace::send`], recording the history entry against `endpoint_id`.
+    pub async fn send_for_endpoint(
+        &self,
+        endpoint_id: String,
+        request: RequestSpec,
+        confirmed: bool,
+    ) -> Result<HttpResponse> {
+        self.send_recorded(Some(endpoint_id), request, confirmed)
+            .await
+    }
+
+    /// Record every send of this workspace in `history` (see [`XRestHistory`]). Recording
+    /// failures become `warnings()`; they never fail a send.
+    pub fn set_history(&self, history: Arc<XRestHistory>) {
+        self.lock().set_history(history.store.clone());
+    }
+
+    /// Run a preflight request once (`None`: the service preflight) and report the exchange and
+    /// token. Uses the selected environment, never touches the token cache, and applies the same
+    /// unsafe-environment confirmation as [`XRestWorkspace::send`].
+    pub async fn test_preflight(
+        &self,
+        preflight: Option<Preflight>,
+        confirmed: bool,
+    ) -> Result<PreflightTestResult> {
+        let prepared = {
+            let ws = self.lock();
+            ws.prepare_test_preflight(preflight.map(Into::into), confirmed)?
+        };
+        Ok(prepared.execute().await?.into())
+    }
+}

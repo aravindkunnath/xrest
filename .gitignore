@@ -1,6 +1,17 @@
-# Wails v3 & Task runner
-.task/
-bin/
+# Rust
+core/target/
+
+# macOS app (XcodeGen output and Xcode user state; the .xcodeproj is generated from macos/project.yml)
+macos/XRest.xcodeproj/
+macos/build/
+macos/Frameworks/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# Legacy Wails v3 app (now in legacy/)
+legacy/.task/
+legacy/bin/
 *.exe
 *.exe~
 *.dll
@@ -8,8 +19,8 @@ bin/
 *.dylib
 
 # Frontend (Vite/Node)
-frontend/node_modules/
-frontend/dist/
+legacy/frontend/node_modules/
+legacy/frontend/dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -17,14 +28,14 @@ yarn-error.log*
 .eslintcache
 
 # Wails packaging & installer caches
-build/linux/appimage/build/
-build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+legacy/build/linux/appimage/build/
+legacy/build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 
 # Mobile generated files (per-machine absolute paths in overlays)
-build/ios/xcode/overlay.json
-build/ios/xcode/gen/
-build/android/overlay.json
-build/android/gen/
+legacy/build/ios/xcode/overlay.json
+legacy/build/ios/xcode/gen/
+legacy/build/android/overlay.json
+legacy/build/android/gen/
 
 # Operating System files
 .DS_Store
@@ -49,7 +60,7 @@ Thumbs.db
 # Test coverage
 *.out
 /coverage.html
-frontend/playwright-report
-frontend/test-results
+legacy/frontend/playwright-report
+legacy/frontend/test-results
 src-tauri/
 /test-results

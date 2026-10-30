@@ -1,0 +1,88 @@
+openapi: 3.0.3
+info:
+  title: Petstore v3
+  version: 1.0.0
+servers:
+  - url: "https://{env}.petstore.io/{version}"
+    variables:
+      env:
+        default: api
+      version:
+        default: v3
+        enum: [v3, v4]
+paths:
+  /pets:
+    parameters:
+      - $ref: "#/components/parameters/Limit"
+    get:
+      summary: List pets
+      parameters:
+        - name: X-Request-Id
+          in: header
+          schema:
+            type: string
+          example: abc-123
+        - name: tag
+          in: query
+          schema:
+            type: string
+    post:
+      operationId: createPet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+            example:
+              name: Rex
+              tags: [a, b]
+  /pets/{petId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        schema:
+          type: string
+          default: "42"
+    get:
+      summary: Get a pet
+    put:
+      summary: Replace a pet
+      requestBody:
+        $ref: "#/components/requestBodies/PetBody"
+    options:
+      operationId: petOptions
+  /login:
+    post:
+      summary: Log in
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  default: hunter2
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+  requestBodies:
+    PetBody:
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Pet"
+  schemas:
+    Pet:
+      type: object
+      example:
+        id: 7
+        name: rex

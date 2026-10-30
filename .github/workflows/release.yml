@@ -1,46 +1,162 @@
-name: Wails build
+name: Release
+
+# Builds the universal macOS app, signs it ourselves (no Apple Developer ID, no notarization),
+# packages it as a DMG and attaches it to a GitHub release.
+#
+# Signing:
+#   - Default: ad-hoc signature (`codesign --sign -`). Needs no secrets.
+#   - Optional: a self-signed code-signing certificate, used when these repo secrets exist:
+#       MACOS_CERT_P12_BASE64  base64 of the exported .p12 (cert + private key)
+#       MACOS_CERT_PASSWORD    password of the .p12
+#       MACOS_CERT_IDENTITY    certificate common name, e.g. "XRest Self-Signed"
+#     A stable identity keeps Keychain/TCC grants across updates; ad-hoc changes every build.
+#
+# Either way Gatekeeper will block the first launch of a downloaded copy. Users must right-click
+# -> Open (or run `xattr -dr com.apple.quarantine /Applications/XRest.app`).
+#
+# Triggers: pushing a tag like v1.2.3 publishes a release. Manual runs only upload the DMG as a
+# workflow artifact.
 
 on:
   push:
     tags:
-      # Match any new tag
-      - '*'
+      - 'v*'
+  workflow_dispatch:
 
-env:
-  # Necessary for most environments as build failure can occur due to OOM issues
-  NODE_OPTIONS: "--max-old-space-size=4096"
+permissions:
+  contents: write
 
 jobs:
-  build:
-    permissions:
-      contents: write
-    strategy:
-      # Failure in one platform build won't impact the others
-      fail-fast: false
-      matrix:
-        build:
-          - name: 'App'
-            platform:  'linux/amd64'
-            os: 'ubuntu-latest'
-          - name: 'App'
-            platform:  'windows/amd64'
-            os: 'windows-latest'
-          - name: 'App'
-            platform:  'darwin/universal'
-            os: 'macos-latest'
-
-    runs-on: ${{ matrix.build.os }}
+  dmg:
+    name: macOS DMG
+    runs-on: macos-15
+    env:
+      CERT_P12: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+      CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      - uses: actions/checkout@v4
 
-      - name: Build wails
-        uses: dAppServer/wails-build-action@v2.2
-        id: build
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          build-name: ${{ matrix.build.name }}
-          build-platform: ${{ matrix.build.platform }}
-          package: false
-          go-version: '1.25'
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - name: Install XcodeGen and xcbeautify
+        run: brew install xcodegen xcbeautify
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Build XRestCore.xcframework (release)
+        run: macos/scripts/build-xcframework.sh
+
+      - name: Generate Xcode project
+        run: cd macos && xcodegen
+
+      - name: Build app (universal, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project macos/XRest.xcodeproj -scheme XRest \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log \
+            | xcbeautify --renderer github-actions
+          APP="build/DerivedData/Build/Products/Release/XRest.app"
+          lipo -info "$APP/Contents/MacOS/XRest"
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+      - name: Import self-signed certificate
+        if: env.CERT_P12 != ''
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          echo "SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Sign app
+        run: |
+          IDENTITY="-"
+          EXTRA=()
+          if [[ -n "${SIGN_KEYCHAIN:-}" ]]; then
+            IDENTITY="$CERT_IDENTITY"
+            EXTRA=(--keychain "$SIGN_KEYCHAIN")
+          fi
+          echo "Signing with identity: $IDENTITY"
+          codesign --force --deep --options runtime --timestamp=none \
+            --sign "$IDENTITY" "${EXTRA[@]}" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dvv "$APP"
+
+      - name: Create DMG
+        run: |
+          DMG="XRest-${{ steps.version.outputs.version }}-universal.dmg"
+          STAGING="$RUNNER_TEMP/dmg"
+          mkdir -p "$STAGING"
+          cp -R "$APP" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "XRest" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
+          if [[ -n "${SIGN_KEYCHAIN:-}" ]]; then
+            codesign --force --sign "$CERT_IDENTITY" --keychain "$SIGN_KEYCHAIN" "$DMG"
+          fi
+          shasum -a 256 "$DMG" | tee "$DMG.sha256"
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xrest-dmg
+          path: |
+            ${{ env.DMG }}
+            ${{ env.DMG }}.sha256
+
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE=()
+          [[ "$GITHUB_REF_NAME" == *-* ]] && PRERELEASE=(--prerelease)
+          NOTES="Self-signed build (not notarized). On first launch, right-click XRest.app → Open, or run: \`xattr -dr com.apple.quarantine /Applications/XRest.app\`"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$DMG" "$DMG.sha256" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$DMG" "$DMG.sha256" \
+              --title "XRest $GITHUB_REF_NAME" --notes "$NOTES" "${PRERELEASE[@]}"
+          fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-release-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
+
+      - name: Clean up keychain
+        if: always() && env.SIGN_KEYCHAIN != ''
+        run: security delete-keychain "$SIGN_KEYCHAIN"

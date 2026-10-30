@@ -1,0 +1,33 @@
+id: s-1700000000000
+name: Petstore
+isAuthenticated: true
+authType: bearer
+auth:
+    type: bearer
+    active: true
+    basicUser: ""
+    basicPass: ""
+    bearerToken: "{{TOKEN}}"
+    apiKeyName: ""
+    apiKeyValue: ""
+    apiKeyLocation: ""
+preflight:
+    enabled: false
+    method: POST
+    url: ""
+    body: ""
+    bodyType: ""
+    bodyParams: []
+    headers: []
+    cacheToken: true
+    cacheDuration: derived
+    cacheDurationKey: expires_in
+    cacheDurationUnit: seconds
+    tokenKey: access_token
+    tokenHeader: null
+endpoints:
+    - id: e-1
+      name: List pets
+      url: '{{BASE_URL}}/pets'
+directory: /Users/someone/petstore
+selectedEnvironment: STAGE
