@@ -49,8 +49,10 @@ struct UnsafeConfirmationPresentation: Equatable {
     var typePrompt: String { "Type \(environment) to confirm" }
 
     var sendEnabled: Bool {
+        // A countdown only holds Send back while one is shown (never for unresolved prompts).
         ConfirmationPolicy.canSend(
-            style: effectiveStyle, remaining: remaining, typed: typed, environment: environment)
+            style: effectiveStyle, remaining: showsCountdown ? remaining : 0, typed: typed,
+            environment: environment)
     }
 
     var sendLabel: String {
